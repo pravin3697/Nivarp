@@ -1,5 +1,5 @@
 {
-  "name": "Nivarp — Rule-Based Trading Journal",
+  "name": "Nivarp — Rule-Based Trading",
   "short_name": "Nivarp",
   "description": "Disciplined execution and setup vault for the Indian Stock Market.",
   "start_url": "/",
@@ -9,6 +9,12 @@
   "theme_color": "#07080B",
   "orientation": "any",
   "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    },
     {
       "src": "/icon-192.png",
       "sizes": "192x192",
@@ -22,6 +28,5 @@
       "purpose": "any maskable"
     }
   ],
-  "categories": ["finance", "productivity", "utilities"],
-  "screenshots": []
+  "categories": ["finance", "productivity", "utilities"]
 }
