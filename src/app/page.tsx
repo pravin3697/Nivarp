@@ -35,8 +35,7 @@ import {
   CheckCircle2, 
   AlertCircle, 
   Info, 
-  X,
-  Download
+  X
 } from 'lucide-react';
 
 const STORAGE_KEY = 'NIVARP_MASTER_STORAGE';
@@ -61,7 +60,6 @@ export default function NivarpOS() {
 
   const [isLoaded, setIsLoaded] = useState(false);
   const [toast, setToast] = useState<ToastState | null>(null);
-  const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
 
   // Modals state
   const [isCsvModalOpen, setIsCsvModalOpen] = useState(false);
@@ -100,33 +98,11 @@ export default function NivarpOS() {
     setToast({ message, type });
   };
 
-  // Register Service Worker and PWA Install Prompt
   useEffect(() => {
     if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
       navigator.serviceWorker.register('/sw.js').catch(() => {});
     }
-
-    const handleBeforeInstall = (e: Event) => {
-      e.preventDefault();
-      setDeferredPrompt(e);
-    };
-
-    window.addEventListener('beforeinstallprompt', handleBeforeInstall);
-    return () => window.removeEventListener('beforeinstallprompt', handleBeforeInstall);
   }, []);
-
-  const handleInstallApp = async () => {
-    if (deferredPrompt) {
-      deferredPrompt.prompt();
-      const choice = await deferredPrompt.userChoice;
-      if (choice.outcome === 'accepted') {
-        showToast('Nivarp OS installed successfully!', 'success');
-      }
-      setDeferredPrompt(null);
-    } else {
-      showToast('Install option is already in your browser menu (Add to Home Screen / Install app).', 'info');
-    }
-  };
 
   useEffect(() => {
     if (toast) {
@@ -568,17 +544,6 @@ export default function NivarpOS() {
         </div>
 
         <div className="flex items-center gap-2 md:gap-3">
-          {deferredPrompt && (
-            <button
-              onClick={handleInstallApp}
-              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-cyan-500/10 hover:bg-cyan-500/20 border border-cyan-500/30 text-cyan-400 text-xs font-mono font-bold transition-all"
-              title="Install App on Phone / Desktop"
-            >
-              <Download className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Install App</span>
-            </button>
-          )}
-
           <button
             onClick={handleForceSync}
             className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white/[0.03] hover:bg-white/[0.06] border border-white/[0.06] text-[10px] font-mono text-zinc-400 transition-colors"
