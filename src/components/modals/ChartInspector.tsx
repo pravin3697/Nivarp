@@ -42,7 +42,6 @@ export function ChartInspector({
   const [isDragging, setIsDragging] = useState(false);
   const dragStartRef = useRef({ x: 0, y: 0 });
 
-  // Touch touch-to-drag and pinch detection
   const touchStartDistRef = useRef<number | null>(null);
 
   const hasMultiple = items && items.length > 1;
@@ -105,7 +104,6 @@ export function ChartInspector({
 
   if (!isOpen || !currentUrl) return null;
 
-  // Mouse pan handlers
   const handleMouseDown = (e: React.MouseEvent) => {
     e.preventDefault();
     setIsDragging(true);
@@ -122,7 +120,6 @@ export function ChartInspector({
 
   const handleMouseUp = () => setIsDragging(false);
 
-  // Touch pan & pinch handlers
   const handleTouchStart = (e: React.TouchEvent) => {
     if (e.touches.length === 1) {
       const touch = e.touches[0];
@@ -174,36 +171,48 @@ export function ChartInspector({
       className="fixed inset-0 z-[100] bg-black/95 backdrop-blur-2xl flex flex-col justify-between overflow-hidden select-none safe-bottom-padding"
       onWheel={handleWheelZoom}
     >
-      {/* Top Bar */}
+      {/* Top Bar: Left Title, Absolutely Centered Dead-Still Page Counter, Right Switcher & Close */}
       <div className="relative px-3 sm:px-6 py-3 flex items-center justify-between border-b border-white/10 bg-black/60 backdrop-blur-md z-10 gap-2">
-        <div className="flex items-center gap-2 max-w-[45%] sm:max-w-[32%] truncate">
+        
+        {/* Left Side: Chart Title */}
+        <div className="flex items-center gap-2 max-w-[35%] sm:max-w-[30%] truncate z-10">
           <span className="h-2 w-2 rounded-full bg-emerald-400 shadow-[0_0_10px_#10b981] shrink-0" />
           <h4 className="text-xs sm:text-sm font-bold font-mono text-white tracking-wide truncate">{currentTitle}</h4>
         </div>
 
+        {/* Absolute Dead-Center Perfectly Anchored Fixed Counter (No Left/Right Shifting) */}
         {hasMultiple && (
-          <div className="flex items-center gap-1 font-mono text-[11px] sm:text-xs text-zinc-400 bg-white/[0.04] px-2.5 py-1 rounded-xl border border-white/10 shadow-md">
+          <div className="absolute left-1/2 -translate-x-1/2 top-1/2 -translate-y-1/2 flex items-center justify-center w-28 sm:w-32 font-mono text-xs tabular-nums text-zinc-400 bg-white/[0.04] px-2 py-1 rounded-xl border border-white/10 shadow-md backdrop-blur-md z-20 pointer-events-auto">
             <button 
               onClick={handlePrev} 
               disabled={currentIndex === 0} 
-              className="hover:text-cyan-300 disabled:opacity-20 p-1"
+              className="hover:text-cyan-300 disabled:opacity-20 p-1 rounded hover:bg-white/[0.06] transition-colors shrink-0"
+              title="Previous Chart"
             >
               <ChevronLeft className="w-3.5 h-3.5" />
             </button>
-            <span className="font-bold text-cyan-300">{currentIndex + 1}</span>
-            <span className="text-zinc-600">/</span>
-            <span>{items.length}</span>
+
+            <span className="font-bold text-cyan-300 w-6 text-center select-none shrink-0 inline-block">
+              {currentIndex + 1}
+            </span>
+            <span className="text-zinc-600 select-none px-0.5 shrink-0">/</span>
+            <span className="w-6 text-center select-none text-zinc-400 shrink-0 inline-block">
+              {items.length}
+            </span>
+
             <button 
               onClick={handleNext} 
               disabled={currentIndex === items.length - 1} 
-              className="hover:text-cyan-300 disabled:opacity-20 p-1"
+              className="hover:text-cyan-300 disabled:opacity-20 p-1 rounded hover:bg-white/[0.06] transition-colors shrink-0"
+              title="Next Chart"
             >
               <ChevronRight className="w-3.5 h-3.5" />
             </button>
           </div>
         )}
 
-        <div className="flex items-center gap-2">
+        {/* Right Side: HTF/LTF Switcher & Close */}
+        <div className="flex items-center gap-2 z-10">
           {currentHtf && currentLtf && (
             <div className="flex items-center p-0.5 rounded-lg bg-white/[0.04] border border-white/10 text-[10px] sm:text-xs">
               <button
@@ -227,27 +236,27 @@ export function ChartInspector({
 
           <button
             onClick={onClose}
-            className="p-1.5 sm:p-2 rounded-xl bg-zinc-900 text-zinc-400 hover:text-white border border-white/10"
+            className="p-1.5 sm:p-2 rounded-xl bg-zinc-900 text-zinc-400 hover:text-white border border-white/10 transition-colors"
           >
             <X className="w-4 h-4 sm:w-5 h-5" />
           </button>
         </div>
       </div>
 
-      {/* Floating Prev/Next (Desktop & Tablet) */}
+      {/* Floating Prev/Next */}
       {hasMultiple && (
         <>
           <button
             onClick={handlePrev}
             disabled={currentIndex === 0}
-            className="hidden md:flex fixed left-5 top-1/2 -translate-y-1/2 z-20 p-3 rounded-2xl bg-black/75 hover:bg-zinc-900 text-zinc-200 hover:text-cyan-300 disabled:opacity-15 border border-white/15 backdrop-blur-xl shadow-2xl"
+            className="hidden md:flex fixed left-5 top-1/2 -translate-y-1/2 z-20 p-3 rounded-2xl bg-black/75 hover:bg-zinc-900 text-zinc-200 hover:text-cyan-300 disabled:opacity-15 border border-white/15 backdrop-blur-xl shadow-2xl transition-all"
           >
             <ChevronLeft className="w-6 h-6" />
           </button>
           <button
             onClick={handleNext}
             disabled={currentIndex === items.length - 1}
-            className="hidden md:flex fixed right-5 top-1/2 -translate-y-1/2 z-20 p-3 rounded-2xl bg-black/75 hover:bg-zinc-900 text-zinc-200 hover:text-cyan-300 disabled:opacity-15 border border-white/15 backdrop-blur-xl shadow-2xl"
+            className="hidden md:flex fixed right-5 top-1/2 -translate-y-1/2 z-20 p-3 rounded-2xl bg-black/75 hover:bg-zinc-900 text-zinc-200 hover:text-cyan-300 disabled:opacity-15 border border-white/15 backdrop-blur-xl shadow-2xl transition-all"
           >
             <ChevronRight className="w-6 h-6" />
           </button>
@@ -291,7 +300,7 @@ export function ChartInspector({
           >
             <ZoomOut className="w-4 h-4" />
           </button>
-          <span className="min-w-[40px] text-center font-bold text-cyan-400">
+          <span className="min-w-[42px] text-center font-bold text-cyan-400 tabular-nums">
             {Math.round(zoomScale * 100)}%
           </span>
           <button

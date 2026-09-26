@@ -42,6 +42,17 @@ const STORAGE_KEY = 'NIVARP_MASTER_STORAGE';
 const STUDY_STORAGE_KEY = 'NIVARP_STUDY_SPECIMENS';
 const CATEGORY_ORDER_KEY = 'NIVARP_CATEGORY_ORDER';
 
+// Strict default category order matching your workflow
+export const PREFERRED_CATEGORY_ORDER = [
+  'RETEST STRUCTURES',
+  'LIQUIDITY SPRING MODELS',
+  'BEAR TO BULL MODELS',
+  'BULL TO BEAR MODELS',
+  'OVEREXTENDED PIVOT MODELS',
+  'BEHAVIOURAL MODELS',
+  'EXECUTION STOPPED OUT/ BAD ENTRY'
+];
+
 interface ToastState {
   message: string;
   type: 'success' | 'info' | 'error';
@@ -52,7 +63,7 @@ const cleanStr = (s?: string) => (s || '').toLowerCase().trim().replace(/\s+/g, 
 export default function NivarpOS() {
   const [trades, setTrades] = useState<Trade[]>([]);
   const [collections, setCollections] = useState<PlaybookCollection[]>([]);
-  const [categoryOrder, setCategoryOrder] = useState<string[]>([]);
+  const [categoryOrder, setCategoryOrder] = useState<string[]>(PREFERRED_CATEGORY_ORDER);
   const [studySpecimens, setStudySpecimens] = useState<ChartSpecimen[]>([]);
   const [defaultRiskPerTrade, setDefaultRiskPerTrade] = useState<number>(600);
   const [activeTab, setActiveTab] = useState<'pulse' | 'codex' | 'matrix' | 'heatmap' | 'settings'>('pulse');
@@ -121,6 +132,7 @@ export default function NivarpOS() {
     });
   }, [collections]);
 
+  // Deterministic Category Sorter: Matches PREFERRED_CATEGORY_ORDER strictly
   const uniqueCategories = useMemo(() => {
     const catSet = new Set<string>();
     deduplicatedCollections.forEach(c => {
@@ -129,11 +141,11 @@ export default function NivarpOS() {
     });
 
     const categories = Array.from(catSet);
-    const cleanOrder = categoryOrder.map(c => c.trim().toUpperCase());
+    const activeOrder = (categoryOrder.length ? categoryOrder : PREFERRED_CATEGORY_ORDER).map(c => c.trim().toUpperCase());
 
     return categories.sort((a, b) => {
-      const idxA = cleanOrder.indexOf(a);
-      const idxB = cleanOrder.indexOf(b);
+      const idxA = activeOrder.indexOf(a);
+      const idxB = activeOrder.indexOf(b);
 
       if (idxA !== -1 && idxB !== -1) return idxA - idxB;
       if (idxA !== -1) return -1;
@@ -142,25 +154,14 @@ export default function NivarpOS() {
     });
   }, [deduplicatedCollections, categoryOrder]);
 
-  useEffect(() => {
-    if (!isLoaded || !uniqueCategories.length) return;
-    const cleanOrder = categoryOrder.map(c => c.trim().toUpperCase());
-    const missing = uniqueCategories.filter(c => !cleanOrder.includes(c));
-    
-    if (missing.length > 0) {
-      const updatedOrder = [...cleanOrder, ...missing];
-      setCategoryOrder(updatedOrder);
-      idbSet(CATEGORY_ORDER_KEY, updatedOrder);
-    }
-  }, [isLoaded, uniqueCategories, categoryOrder]);
-
   const playbookOrderedCollections = useMemo(() => {
     return [...deduplicatedCollections].sort((a, b) => {
       const catA = a.category.trim().toUpperCase();
       const catB = b.category.trim().toUpperCase();
 
-      const idxA = categoryOrder.indexOf(catA);
-      const idxB = categoryOrder.indexOf(catB);
+      const activeOrder = (categoryOrder.length ? categoryOrder : PREFERRED_CATEGORY_ORDER).map(c => c.trim().toUpperCase());
+      const idxA = activeOrder.indexOf(catA);
+      const idxB = activeOrder.indexOf(catB);
 
       const rankA = idxA === -1 ? 9999 : idxA;
       const rankB = idxB === -1 ? 9999 : idxB;
@@ -196,8 +197,11 @@ export default function NivarpOS() {
           });
         }
 
-        if (idbCatOrder && Array.isArray(idbCatOrder)) {
+        if (idbCatOrder && Array.isArray(idbCatOrder) && idbCatOrder.length > 0) {
           setCategoryOrder(idbCatOrder.map(c => c.trim().toUpperCase()));
+        } else {
+          setCategoryOrder(PREFERRED_CATEGORY_ORDER);
+          await idbSet(CATEGORY_ORDER_KEY, PREFERRED_CATEGORY_ORDER);
         }
 
         const initialSpecimens = Array.from(specimenMap.values());
@@ -295,7 +299,7 @@ export default function NivarpOS() {
         const restoredCols = Array.isArray(d.collections) ? d.collections : [];
         const restoredCats = Array.isArray(d.categoryOrder) 
           ? d.categoryOrder.map((c: string) => c.trim().toUpperCase()) 
-          : [];
+          : PREFERRED_CATEGORY_ORDER;
         const restoredStudy = Array.isArray(d.studySpecimens) ? d.studySpecimens : [];
 
         setTrades(restoredTrades);
@@ -427,7 +431,7 @@ export default function NivarpOS() {
 
     setTrades([]);
     setCollections([]);
-    setCategoryOrder([]);
+    setCategoryOrder(PREFERRED_CATEGORY_ORDER);
     setStudySpecimens([]);
     setSelectedCollection(null);
 
