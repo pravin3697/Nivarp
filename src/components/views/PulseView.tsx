@@ -35,6 +35,14 @@ export function PulseView({
     return `${rVal >= 0 ? '+' : ''}${rVal.toFixed(2)}R`;
   };
 
+  const getBehaviorBadge = (tag?: string) => {
+    if (!tag) return null;
+    if (tag === 'Rules Followed') return 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30';
+    if (tag === 'No Confirmation Entry') return 'bg-amber-500/10 text-amber-400 border-amber-500/30';
+    if (tag === 'SL Hunt / Slippage Hunt') return 'bg-purple-500/10 text-purple-400 border-purple-500/30';
+    return 'bg-rose-500/10 text-rose-400 border-rose-500/30';
+  };
+
   return (
     <div className="space-y-5 sm:space-y-6">
       {/* KPI Cards Row */}
@@ -141,6 +149,8 @@ export function PulseView({
           <div className="divide-y divide-white/[0.04]">
             {sortedRecentTrades.map(t => {
               const isGreen = t.rMultiple >= 0;
+              const behaviorClass = getBehaviorBadge(t.behaviorTag);
+
               return (
                 <div key={t.id} className="py-3 flex flex-col sm:flex-row sm:items-center justify-between hover:bg-white/[0.01] px-1 sm:px-2 rounded-xl transition-all gap-2">
                   <div className="flex items-start sm:items-center gap-3">
@@ -153,6 +163,11 @@ export function PulseView({
                       <div className="flex items-center gap-2">
                         <span className="text-sm font-bold text-white">{t.symbol}</span>
                         <span className="text-[11px] text-zinc-500 font-mono">({t.tradeDate})</span>
+                        {t.behaviorTag && (
+                          <span className={`px-1.5 py-0.2 rounded border text-[9px] font-mono font-bold ${behaviorClass}`}>
+                            {t.behaviorTag}
+                          </span>
+                        )}
                       </div>
                       <div className="text-[11px] text-zinc-400 mt-0.5 flex flex-wrap items-center gap-2">
                         <span className="text-cyan-400 font-semibold">{t.setupType}</span>

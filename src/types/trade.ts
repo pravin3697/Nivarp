@@ -1,3 +1,9 @@
+export type BehavioralTag = 
+  | 'Rules Followed' 
+  | 'No Confirmation Entry' 
+  | 'SL Hunt / Slippage Hunt' 
+  | 'Hallucinated Trade';
+
 export interface Trade {
   id: string;
   symbol: string;
@@ -13,6 +19,7 @@ export interface Trade {
   fees: number;
   setupType: string;
   regime?: 'Bullish' | 'Bearish' | 'Choppy';
+  behaviorTag?: BehavioralTag;
   mae?: string;
   mfe?: string;
   image1?: string; // HTF Context
@@ -29,8 +36,8 @@ export interface PlaybookCollection {
 
 export interface ChartSpecimen {
   id: string;
-  collectionId?: string; // Persistent link to collection id
-  collectionName: string; // Strategy name fallback
+  collectionId?: string;
+  collectionName: string;
   type: 'LIVE_TRADE' | 'STUDY_SETUP';
   title: string;
   date: string;

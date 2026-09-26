@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useMemo } from 'react';
-import { Trade, PlaybookCollection } from '@/types/trade';
+import { Trade, PlaybookCollection, BehavioralTag } from '@/types/trade';
 import { parseDateToTimestamp } from '@/lib/parser';
 import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip } from 'recharts';
 import { 
@@ -13,7 +13,11 @@ import {
   Flame, 
   BarChart3,
   ArrowUpRight,
-  ArrowDownRight
+  ArrowDownRight,
+  ShieldCheck,
+  AlertTriangle,
+  ZapOff,
+  Skull
 } from 'lucide-react';
 
 interface MatrixViewProps {
@@ -22,7 +26,105 @@ interface MatrixViewProps {
 }
 
 export function MatrixView({ collections, trades }: MatrixViewProps) {
-  // 1. Drawdown Depth Curve (Underwater Chart)
+  // 1. Behavioral Execution Analytics
+  const behaviorAnalytics = useMemo(() => {
+    const totalTrades = trades.length;
+
+    const tags: {
+      tag: BehavioralTag;
+      label: string;
+      color: string;
+      border: string;
+      bg: string;
+      icon: any;
+      trades: number;
+      wins: number;
+      netR: number;
+    }[] = [
+      {
+        tag: 'Rules Followed',
+        label: 'Rules Followed',
+        color: 'text-emerald-400',
+        border: 'border-emerald-500/30',
+        bg: 'bg-emerald-500/10',
+        icon: ShieldCheck,
+        trades: 0,
+        wins: 0,
+        netR: 0
+      },
+      {
+        tag: 'No Confirmation Entry',
+        label: 'No Confirmation Entry',
+        color: 'text-amber-400',
+        border: 'border-amber-500/30',
+        bg: 'bg-amber-500/10',
+        icon: AlertTriangle,
+        trades: 0,
+        wins: 0,
+        netR: 0
+      },
+      {
+        tag: 'SL Hunt / Slippage Hunt',
+        label: 'SL Hunt / Slippage Hunt',
+        color: 'text-purple-400',
+        border: 'border-purple-500/30',
+        bg: 'bg-purple-500/10',
+        icon: ZapOff,
+        trades: 0,
+        wins: 0,
+        netR: 0
+      },
+      {
+        tag: 'Hallucinated Trade',
+        label: 'Hallucinated Trade',
+        color: 'text-rose-400',
+        border: 'border-rose-500/30',
+        bg: 'bg-rose-500/10',
+        icon: Skull,
+        trades: 0,
+        wins: 0,
+        netR: 0
+      }
+    ];
+
+    let taggedCount = 0;
+    let disciplinedR = 0;
+    let leakR = 0;
+
+    trades.forEach(t => {
+      const tag = t.behaviorTag;
+      if (!tag) return;
+
+      taggedCount++;
+      const item = tags.find(x => x.tag === tag);
+      if (item) {
+        item.trades += 1;
+        if (t.rMultiple > 0) item.wins += 1;
+        item.netR = Number((item.netR + t.rMultiple).toFixed(2));
+      }
+
+      if (tag === 'Rules Followed') {
+        disciplinedR = Number((disciplinedR + t.rMultiple).toFixed(2));
+      } else {
+        leakR = Number((leakR + t.rMultiple).toFixed(2));
+      }
+    });
+
+    const complianceRate = taggedCount 
+      ? Math.round(((tags[0].trades) / taggedCount) * 100) 
+      : 0;
+
+    return {
+      tags,
+      taggedCount,
+      complianceRate,
+      disciplinedR,
+      leakR,
+      untaggedCount: totalTrades - taggedCount
+    };
+  }, [trades]);
+
+  // 2. Drawdown Depth Curve (Underwater Chart)
   const drawdownData = useMemo(() => {
     if (!trades.length) return { data: [], maxDrawdown: 0 };
     const sorted = [...trades].sort((a, b) => parseDateToTimestamp(a.tradeDate) - parseDateToTimestamp(b.tradeDate));
@@ -49,7 +151,7 @@ export function MatrixView({ collections, trades }: MatrixViewProps) {
     return { data, maxDrawdown: Number(maxDrawdown.toFixed(2)) };
   }, [trades]);
 
-  // 2. Time Edge (Hourly Trading Windows)
+  // 3. Time Edge (Hourly Trading Windows)
   const timeEdge = useMemo(() => {
     const timeSlots = [
       { label: '9AM - 10AM', filter: (h: number) => h === 9 },
@@ -90,7 +192,7 @@ export function MatrixView({ collections, trades }: MatrixViewProps) {
     return slotStats.filter(s => s.trades > 0 || ['10AM - 11AM', '11AM - 12PM', '12PM - 1PM'].includes(s.slot));
   }, [trades]);
 
-  // 3. Setup Edge Realization
+  // 4. Setup Edge Realization
   const setupEdge = useMemo(() => {
     const map = new Map<string, { total: number; wins: number; netR: number; category: string }>();
 
@@ -121,7 +223,7 @@ export function MatrixView({ collections, trades }: MatrixViewProps) {
     }).sort((a, b) => b.netR - a.netR);
   }, [collections, trades]);
 
-  // 4. Asset / Symbol Edge
+  // 5. Asset / Symbol Edge
   const assetEdge = useMemo(() => {
     const map = new Map<string, { total: number; wins: number; netR: number }>();
 
@@ -145,7 +247,7 @@ export function MatrixView({ collections, trades }: MatrixViewProps) {
       .sort((a, b) => b.netR - a.netR);
   }, [trades]);
 
-  // 5. Day of Week Edge
+  // 6. Day of Week Edge
   const dayEdge = useMemo(() => {
     const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
     const dayStats = days.map(d => ({ day: d, trades: 0, wins: 0, netR: 0 }));
@@ -166,7 +268,7 @@ export function MatrixView({ collections, trades }: MatrixViewProps) {
     return dayStats;
   }, [trades]);
 
-  // 6. MAE Heat Taken Distribution
+  // 7. MAE Heat Taken Distribution
   const maeStats = useMemo(() => {
     let low = 0;
     let mid = 0;
@@ -188,12 +290,87 @@ export function MatrixView({ collections, trades }: MatrixViewProps) {
   return (
     <div className="space-y-5 sm:space-y-6">
       {/* Top Banner */}
-      <div className="border-b border-white/[0.06] pb-3 sm:pb-4">
-        <h2 className="text-base sm:text-lg font-bold text-white flex items-center gap-2">
-          <Binary className="w-5 h-5 text-purple-400" />
-          Quant Edge Matrix
-        </h2>
-        <p className="text-xs text-zinc-400 mt-0.5">Statistical distributions across time windows, setups, and assets.</p>
+      <div className="border-b border-white/[0.06] pb-3 sm:pb-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
+        <div>
+          <h2 className="text-base sm:text-lg font-bold text-white flex items-center gap-2">
+            <Binary className="w-5 h-5 text-purple-400" />
+            Quant Edge & Behavioral Matrix
+          </h2>
+          <p className="text-xs text-zinc-400 mt-0.5">Statistical edge and psychological execution analysis.</p>
+        </div>
+        {behaviorAnalytics.untaggedCount > 0 && (
+          <span className="text-[11px] font-mono px-2.5 py-1 rounded-lg bg-amber-500/10 text-amber-400 border border-amber-500/30">
+            {behaviorAnalytics.untaggedCount} trades need behavioral tagging
+          </span>
+        )}
+      </div>
+
+      {/* NEW: BEHAVIORAL EXECUTION AUDIT SECTION */}
+      <div className="p-4 sm:p-6 rounded-2xl bg-[#090A10] border border-white/[0.06] space-y-4">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 pb-3 border-b border-white/[0.06]">
+          <div className="flex items-center gap-2">
+            <ShieldCheck className="w-5 h-5 text-emerald-400" />
+            <div>
+              <h3 className="text-sm font-bold text-white uppercase tracking-wider font-mono">Behavioral Discipline & Leakage Audit</h3>
+              <p className="text-[11px] text-zinc-500">True edge realization vs. cost of unforced execution errors.</p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-4 font-mono text-xs">
+            <div className="flex items-center gap-1.5">
+              <span className="text-zinc-500">Discipline Score:</span>
+              <span className="text-base font-black text-cyan-400">{behaviorAnalytics.complianceRate}%</span>
+            </div>
+            <div className="h-4 w-[1px] bg-white/10" />
+            <div className="flex items-center gap-1.5">
+              <span className="text-zinc-500">Rule Leakage Cost:</span>
+              <span className={`text-base font-black ${behaviorAnalytics.leakR <= 0 ? 'text-rose-400' : 'text-emerald-400'}`}>
+                {behaviorAnalytics.leakR >= 0 ? '+' : ''}{behaviorAnalytics.leakR}R
+              </span>
+            </div>
+          </div>
+        </div>
+
+        {/* 4 Behavioral Cards */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+          {behaviorAnalytics.tags.map(item => {
+            const Icon = item.icon;
+            const wr = item.trades ? Math.round((item.wins / item.trades) * 100) : 0;
+            const isProfit = item.netR >= 0;
+
+            return (
+              <div 
+                key={item.tag}
+                className={`p-4 rounded-xl border ${item.border} ${item.bg} flex flex-col justify-between space-y-3`}
+              >
+                <div className="flex items-start justify-between">
+                  <div className="space-y-0.5">
+                    <span className="text-[10px] font-mono text-zinc-400 uppercase tracking-wider block">Tag</span>
+                    <span className={`text-xs font-bold ${item.color} flex items-center gap-1.5`}>
+                      <Icon className="w-3.5 h-3.5 shrink-0" />
+                      <span>{item.label}</span>
+                    </span>
+                  </div>
+                  <span className="text-xs font-mono px-2 py-0.5 rounded bg-black/40 text-white font-bold border border-white/10">
+                    {item.trades} Trades
+                  </span>
+                </div>
+
+                <div className="space-y-1">
+                  <span className="text-[10px] font-mono text-zinc-500 block">Realized Return</span>
+                  <div className={`text-2xl font-black font-mono ${isProfit ? 'text-emerald-400' : 'text-rose-400'}`}>
+                    {isProfit ? '+' : ''}{item.netR.toFixed(2)}R
+                  </div>
+                </div>
+
+                <div className="pt-2 border-t border-white/[0.06] text-[10px] font-mono flex items-center justify-between text-zinc-400">
+                  <span>Win Rate: <strong className="text-white">{wr}%</strong></span>
+                  <span>{item.wins}W / {item.trades - item.wins}L</span>
+                </div>
+              </div>
+            );
+          })}
+        </div>
       </div>
 
       {/* Row 1: Underwater Drawdown Depth & Time Edge */}

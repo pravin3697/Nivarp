@@ -1,7 +1,6 @@
 import { supabase } from './supabaseClient';
 import { Trade, PlaybookCollection, ChartSpecimen } from '@/types/trade';
 
-// Preferred master order strictly defined
 export const MASTER_CATEGORY_ORDER = [
   'RETEST STRUCTURES',
   'LIQUIDITY SPRING MODELS',
@@ -12,32 +11,34 @@ export const MASTER_CATEGORY_ORDER = [
   'EXECUTION STOPPED OUT/ BAD ENTRY'
 ];
 
-export async function uploadScreenshotToCloud(file: File, folder: string = 'live'): Promise<string | null> {
+// Direct screenshot uploader supporting both File and raw Blob objects from Clipboard
+export async function uploadScreenshotToCloud(fileOrBlob: File | Blob, folder: string = 'live'): Promise<string | null> {
   try {
-    const fileExt = file.name.split('.').pop() || 'png';
+    const fileExt = (fileOrBlob instanceof File && fileOrBlob.name) ? fileOrBlob.name.split('.').pop() : 'png';
     const fileName = `${folder}/${Date.now()}_${Math.random().toString(36).substring(7)}.${fileExt}`;
 
     const { error: uploadError } = await supabase.storage
       .from('chart-vault')
-      .upload(fileName, file, {
+      .upload(fileName, fileOrBlob, {
         cacheControl: '3600',
-        upsert: false
+        upsert: false,
+        contentType: fileOrBlob.type || 'image/png'
       });
 
     if (uploadError) {
-      console.error('Storage Upload Error:', uploadError);
+      console.warn('Storage Upload Error (falling back to direct base64):', uploadError);
       return null;
     }
 
     const { data } = supabase.storage.from('chart-vault').getPublicUrl(fileName);
     return data.publicUrl;
   } catch (err) {
-    console.error('Failed to upload image to cloud:', err);
+    console.warn('Failed to upload image to cloud:', err);
     return null;
   }
 }
 
-// Sync all trades to PostgreSQL
+// Sync all trades to PostgreSQL (includes behavior_tag)
 export async function syncTradesToCloud(trades: Trade[]): Promise<{ success: boolean; error?: string }> {
   if (!trades.length) return { success: true };
   try {
@@ -55,6 +56,7 @@ export async function syncTradesToCloud(trades: Trade[]): Promise<{ success: boo
       fees: t.fees,
       setup_type: t.setupType,
       regime: t.regime || 'Bullish',
+      behavior_tag: t.behaviorTag || null,
       mae: t.mae || null,
       mfe: t.mfe || null,
       image1: t.image1 || null,
@@ -72,7 +74,6 @@ export async function syncTradesToCloud(trades: Trade[]): Promise<{ success: boo
   }
 }
 
-// Fetch all trades from PostgreSQL
 export async function fetchTradesFromCloud(): Promise<Trade[]> {
   try {
     const { data, error } = await supabase
@@ -96,6 +97,7 @@ export async function fetchTradesFromCloud(): Promise<Trade[]> {
       fees: Number(d.fees) || 0,
       setupType: d.setup_type || 'General Setup',
       regime: d.regime as any,
+      behaviorTag: d.behavior_tag as any,
       mae: d.mae || undefined,
       mfe: d.mfe || undefined,
       image1: d.image1 || undefined,
@@ -107,7 +109,6 @@ export async function fetchTradesFromCloud(): Promise<Trade[]> {
   }
 }
 
-// Sync Collections to PostgreSQL
 export async function syncCollectionsToCloud(collections: PlaybookCollection[]): Promise<{ success: boolean; error?: string }> {
   if (!collections.length) return { success: true };
   try {
@@ -119,21 +120,16 @@ export async function syncCollectionsToCloud(collections: PlaybookCollection[]):
     }));
 
     const { error } = await supabase.from('collections').upsert(payload, { onConflict: 'id' });
-    if (error) {
-      return { success: false, error: error.message };
-    }
+    if (error) return { success: false, error: error.message };
     return { success: true };
   } catch (err: any) {
     return { success: false, error: err?.message || 'Network error' };
   }
 }
 
-// Fetch Collections from PostgreSQL and return them strictly pre-sorted by your preferred order
 export async function fetchCollectionsFromCloud(): Promise<PlaybookCollection[]> {
   try {
-    const { data, error } = await supabase
-      .from('collections')
-      .select('*');
+    const { data, error } = await supabase.from('collections').select('*');
     if (error || !data || data.length === 0) return [];
 
     const mapped = data.map(d => ({
@@ -143,7 +139,6 @@ export async function fetchCollectionsFromCloud(): Promise<PlaybookCollection[]>
       description: d.description || ''
     }));
 
-    // Pre-sort by preferred master categories
     return mapped.sort((a, b) => {
       const idxA = MASTER_CATEGORY_ORDER.indexOf(a.category);
       const idxB = MASTER_CATEGORY_ORDER.indexOf(b.category);
@@ -157,7 +152,6 @@ export async function fetchCollectionsFromCloud(): Promise<PlaybookCollection[]>
   }
 }
 
-// Sync Study Specimens to PostgreSQL
 export async function syncSpecimensToCloud(specimens: ChartSpecimen[]): Promise<{ success: boolean; error?: string }> {
   if (!specimens.length) return { success: true };
   try {
@@ -171,22 +165,16 @@ export async function syncSpecimensToCloud(specimens: ChartSpecimen[]): Promise<
     }));
 
     const { error } = await supabase.from('study_specimens').upsert(payload, { onConflict: 'id' });
-    if (error) {
-      return { success: false, error: error.message };
-    }
+    if (error) return { success: false, error: error.message };
     return { success: true };
   } catch (err: any) {
     return { success: false, error: err?.message || 'Network error' };
   }
 }
 
-// Fetch Study Specimens from PostgreSQL
 export async function fetchSpecimensFromCloud(): Promise<ChartSpecimen[]> {
   try {
-    const { data, error } = await supabase
-      .from('study_specimens')
-      .select('*')
-      .order('id', { ascending: false });
+    const { data, error } = await supabase.from('study_specimens').select('*').order('id', { ascending: false });
     if (error || !data || data.length === 0) return [];
     return data.map(d => ({
       id: String(d.id),
@@ -202,7 +190,6 @@ export async function fetchSpecimensFromCloud(): Promise<ChartSpecimen[]> {
   }
 }
 
-// Master Force Sync
 export async function forcePushAllToCloud(
   trades: Trade[], 
   collections: PlaybookCollection[], 

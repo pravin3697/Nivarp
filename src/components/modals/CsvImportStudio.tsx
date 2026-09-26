@@ -1,9 +1,11 @@
 'use client';
 
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { Trade, PlaybookCollection } from '@/types/trade';
 import { CustomNumberInput, CustomSetupDropdown } from '@/components/ui/CustomControls';
-import { FileSpreadsheet, X, UploadCloud, Sparkles } from 'lucide-react';
+import { uploadScreenshotToCloud } from '@/lib/cloudSync';
+import { BEHAVIORAL_TAGS } from '@/components/modals/TradeModals';
+import { FileSpreadsheet, X, UploadCloud, Sparkles, Clipboard, Check, Loader2 } from 'lucide-react';
 
 interface CsvImportStudioProps {
   isOpen: boolean;
@@ -30,6 +32,60 @@ export function CsvImportStudio({
   onResetPreview,
   onConfirmImport
 }: CsvImportStudioProps) {
+  const [activePasteIndex, setActivePasteIndex] = useState<number | null>(null);
+  const [activePasteField, setActivePasteField] = useState<'image1' | 'image2'>('image1');
+  const [uploadingState, setUploadingState] = useState<{ idx: number; field: 'image1' | 'image2' } | null>(null);
+
+  // Global Clipboard paste listener inside CSV Importer
+  useEffect(() => {
+    if (!isOpen || csvPreview.length === 0) return;
+
+    const handlePaste = async (e: ClipboardEvent) => {
+      const items = e.clipboardData?.items;
+      if (!items) return;
+
+      for (let i = 0; i < items.length; i++) {
+        if (items[i].type.indexOf('image') !== -1) {
+          const file = items[i].getAsFile();
+          if (!file) continue;
+
+          e.preventDefault();
+          
+          // Determine which trade row and which chart field (image1 or image2) to paste into
+          const targetIndex = activePasteIndex !== null 
+            ? activePasteIndex 
+            : 0;
+
+          const targetField = activePasteField;
+
+          setUploadingState({ idx: targetIndex, field: targetField });
+
+          const cloudUrl = await uploadScreenshotToCloud(file, 'imported');
+          if (cloudUrl) {
+            onUpdateTrade(targetIndex, targetField, cloudUrl);
+          } else {
+            const reader = new FileReader();
+            reader.onload = (event) => {
+              onUpdateTrade(targetIndex, targetField, event.target?.result as string);
+            };
+            reader.readAsDataURL(file);
+          }
+
+          // Automatically prime the other box for the next paste
+          if (targetField === 'image1') {
+            setActivePasteField('image2');
+          }
+
+          setUploadingState(null);
+          break;
+        }
+      }
+    };
+
+    window.addEventListener('paste', handlePaste);
+    return () => window.removeEventListener('paste', handlePaste);
+  }, [isOpen, csvPreview, activePasteIndex, activePasteField, onUpdateTrade]);
+
   if (!isOpen) return null;
 
   return (
@@ -67,14 +123,21 @@ export function CsvImportStudio({
           <div className="space-y-4 overflow-y-auto pr-1 flex-1">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between text-xs font-mono bg-white/[0.02] p-3 rounded-xl border border-white/[0.04] gap-1">
               <span className="text-emerald-400 font-bold">✓ Matched {csvPreview.length} Trades in {csvFileName}</span>
-              <span className="text-zinc-500 text-[11px]">Chart 2 (LTF) auto-syncs to Codex</span>
+              <span className="text-zinc-400 text-[11px] flex items-center gap-1">
+                <Clipboard className="w-3 h-3 text-cyan-400" /> Focus any chart box & press <strong>Ctrl + V</strong> to paste directly
+              </span>
             </div>
 
             <div className="space-y-3">
               {csvPreview.map((trade, idx) => {
                 const isGreen = trade.rMultiple >= 0;
+                const isCurrentTrade = activePasteIndex === idx;
+
                 return (
-                  <div key={idx} className="p-3.5 sm:p-4 rounded-xl bg-zinc-900/60 border border-white/[0.08] space-y-3">
+                  <div 
+                    key={idx} 
+                    className="p-3.5 sm:p-4 rounded-xl bg-zinc-900/60 border border-white/[0.08] hover:border-white/20 transition-all space-y-3"
+                  >
                     <div className="flex flex-wrap items-center justify-between gap-2 pb-2 border-b border-white/[0.06]">
                       <div className="flex items-center gap-2">
                         <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-400">#{idx + 1}</span>
@@ -92,6 +155,31 @@ export function CsvImportStudio({
                         <span className={`font-bold ${isGreen ? 'text-emerald-400' : 'text-rose-400'}`}>
                           {isGreen ? '+' : ''}{trade.rMultiple}R
                         </span>
+                      </div>
+                    </div>
+
+                    {/* Behavioral Tag Pills */}
+                    <div>
+                      <label className="text-zinc-400 text-[11px] font-mono block mb-1">Behavioral Execution Tag</label>
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
+                        {BEHAVIORAL_TAGS.map(tag => {
+                          const isSelected = trade.behaviorTag === tag.label;
+                          return (
+                            <button
+                              type="button"
+                              key={tag.label}
+                              onClick={() => onUpdateTrade(idx, 'behaviorTag', tag.label)}
+                              className={`p-1.5 rounded-lg border text-[10px] font-bold text-center transition-all flex items-center justify-center gap-1 ${
+                                isSelected 
+                                  ? `${tag.bg} ${tag.color} ${tag.border} ring-1 ring-white/20 shadow-sm` 
+                                  : 'bg-white/[0.02] border-white/[0.06] text-zinc-400 hover:border-white/20'
+                              }`}
+                            >
+                              {isSelected && <Check className="w-2.5 h-2.5 shrink-0" />}
+                              <span className="truncate">{tag.label}</span>
+                            </button>
+                          );
+                        })}
                       </div>
                     </div>
 
@@ -136,28 +224,62 @@ export function CsvImportStudio({
                       </div>
                     </div>
 
+                    {/* Dual Chart Links with explicit focus targets */}
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs font-mono">
+                      {/* Chart 1: HTF Context */}
                       <div>
-                        <label className="text-zinc-400 text-[10px] block mb-1">Chart 1 (HTF Context Link)</label>
+                        <div className="flex items-center justify-between mb-1">
+                          <label className="text-zinc-400 text-[10px]">Chart 1 (HTF Context Link)</label>
+                          {uploadingState?.idx === idx && uploadingState?.field === 'image1' && (
+                            <span className="text-[10px] text-cyan-400 flex items-center gap-1">
+                              <Loader2 className="w-2.5 h-2.5 animate-spin" /> Pasting...
+                            </span>
+                          )}
+                        </div>
                         <input
-                          type="url"
+                          type="text"
                           value={trade.image1 || ''}
+                          onFocus={() => {
+                            setActivePasteIndex(idx);
+                            setActivePasteField('image1');
+                          }}
                           onChange={(e) => onUpdateTrade(idx, 'image1', e.target.value)}
-                          placeholder="https://www.tradingview.com/x/..."
-                          className="w-full bg-[#090A10] border border-white/10 rounded-xl p-2 text-cyan-400 outline-none"
+                          placeholder="Click & press Ctrl + V (or paste URL)"
+                          className={`w-full bg-[#090A10] rounded-xl p-2 text-cyan-400 outline-none transition-all ${
+                            isCurrentTrade && activePasteField === 'image1' 
+                              ? 'border border-cyan-400 ring-1 ring-cyan-400/40' 
+                              : 'border border-white/10 focus:border-cyan-400'
+                          }`}
                         />
                       </div>
+
+                      {/* Chart 2: LTF Execution */}
                       <div>
-                        <label className="text-emerald-400 text-[10px] flex items-center gap-1 mb-1">
-                          <span>Chart 2 (LTF Execution Link)</span>
-                          <Sparkles className="w-3 h-3 text-emerald-400" />
-                        </label>
+                        <div className="flex items-center justify-between mb-1">
+                          <label className="text-emerald-400 text-[10px] flex items-center gap-1">
+                            <span>Chart 2 (LTF Execution Link)</span>
+                            <Sparkles className="w-3 h-3 text-emerald-400" />
+                          </label>
+                          {uploadingState?.idx === idx && uploadingState?.field === 'image2' && (
+                            <span className="text-[10px] text-emerald-400 flex items-center gap-1">
+                              <Loader2 className="w-2.5 h-2.5 animate-spin" /> Pasting...
+                            </span>
+                          )}
+                        </div>
                         <input
-                          type="url"
+                          type="text"
                           value={trade.image2 || ''}
+                          onFocus={() => {
+                            setActivePasteIndex(idx);
+                            setActivePasteField('image2');
+                          }}
                           onChange={(e) => onUpdateTrade(idx, 'image2', e.target.value)}
-                          placeholder="https://www.tradingview.com/x/..."
-                          className="w-full bg-[#090A10] border border-emerald-500/30 rounded-xl p-2 text-emerald-400 outline-none"
+                          placeholder="Click & press Ctrl + V (or paste URL)"
+                          className={`w-full bg-[#090A10] rounded-xl p-2 text-emerald-400 outline-none transition-all ${
+                            isCurrentTrade && activePasteField === 'image2' 
+                              ? 'border border-emerald-400 ring-1 ring-emerald-400/40' 
+                              : 'border border-emerald-500/30 focus:border-emerald-400'
+                          }`}
                         />
                       </div>
                     </div>
