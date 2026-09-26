@@ -63,7 +63,7 @@ export function NivarpLogo({ size = 'md' }: NivarpLogoProps) {
         </svg>
       </div>
 
-      {/* Typography: NIVARP & Rule-Based System Subtitle */}
+      {/* Typography: NIVARP & Discipline Subtitle */}
       <div className="flex flex-col justify-center">
         <div className="flex items-center gap-1.5 leading-none">
           <span className={`font-black tracking-[0.32em] ${titleSize} text-white font-sans uppercase group-hover:text-cyan-300 transition-colors`}>
@@ -73,8 +73,8 @@ export function NivarpLogo({ size = 'md' }: NivarpLogoProps) {
         </div>
 
         <div className="flex items-center gap-1 mt-1 text-zinc-500 font-mono">
-          <span className={`tracking-[0.32em] uppercase font-bold ${subtitleSize} group-hover:text-cyan-400 transition-colors`}>
-            RULE-BASED SYSTEM
+          <span className={`tracking-[0.35em] uppercase font-bold ${subtitleSize} group-hover:text-cyan-400 transition-colors`}>
+            FOLLOW THE RULES
           </span>
         </div>
       </div>
