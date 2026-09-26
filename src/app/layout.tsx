@@ -14,7 +14,7 @@ export const viewport: Viewport = {
 };
 
 export const metadata: Metadata = {
-  title: "Nivarp — Rule-Based System",
+  title: "Nivarp — Rules-Based System",
   description: "Disciplined execution and setup vault for the Indian Stock Market.",
   manifest: "/manifest.json",
   appleWebApp: {
