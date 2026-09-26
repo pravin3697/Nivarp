@@ -1,7 +1,17 @@
 import { supabase } from './supabaseClient';
 import { Trade, PlaybookCollection, ChartSpecimen } from '@/types/trade';
 
-// Upload an actual image file to Supabase Cloud Storage
+// Preferred master order strictly defined
+export const MASTER_CATEGORY_ORDER = [
+  'RETEST STRUCTURES',
+  'LIQUIDITY SPRING MODELS',
+  'BEAR TO BULL MODELS',
+  'BULL TO BEAR MODELS',
+  'OVEREXTENDED PIVOT MODELS',
+  'BEHAVIOURAL MODELS',
+  'EXECUTION STOPPED OUT/ BAD ENTRY'
+];
+
 export async function uploadScreenshotToCloud(file: File, folder: string = 'live'): Promise<string | null> {
   try {
     const fileExt = file.name.split('.').pop() || 'png';
@@ -54,17 +64,15 @@ export async function syncTradesToCloud(trades: Trade[]): Promise<{ success: boo
 
     const { error } = await supabase.from('trades').upsert(payload, { onConflict: 'id' });
     if (error) {
-      console.error('Cloud Sync Error (Trades):', error);
       return { success: false, error: error.message };
     }
     return { success: true };
   } catch (e: any) {
-    console.error('Cloud sync failed:', e);
     return { success: false, error: e?.message || 'Network error' };
   }
 }
 
-// Fetch all trades from PostgreSQL in stable chronological order
+// Fetch all trades from PostgreSQL
 export async function fetchTradesFromCloud(): Promise<Trade[]> {
   try {
     const { data, error } = await supabase
@@ -112,7 +120,6 @@ export async function syncCollectionsToCloud(collections: PlaybookCollection[]):
 
     const { error } = await supabase.from('collections').upsert(payload, { onConflict: 'id' });
     if (error) {
-      console.error('Cloud Sync Error (Collections):', error);
       return { success: false, error: error.message };
     }
     return { success: true };
@@ -121,20 +128,30 @@ export async function syncCollectionsToCloud(collections: PlaybookCollection[]):
   }
 }
 
-// Fetch Collections from PostgreSQL in stable deterministic order
+// Fetch Collections from PostgreSQL and return them strictly pre-sorted by your preferred order
 export async function fetchCollectionsFromCloud(): Promise<PlaybookCollection[]> {
   try {
     const { data, error } = await supabase
       .from('collections')
-      .select('*')
-      .order('name', { ascending: true }); // Guarantees deterministic order from database
+      .select('*');
     if (error || !data || data.length === 0) return [];
-    return data.map(d => ({
+
+    const mapped = data.map(d => ({
       id: String(d.id),
       name: d.name.trim(),
       category: d.category ? d.category.trim().toUpperCase() : 'GENERAL',
       description: d.description || ''
     }));
+
+    // Pre-sort by preferred master categories
+    return mapped.sort((a, b) => {
+      const idxA = MASTER_CATEGORY_ORDER.indexOf(a.category);
+      const idxB = MASTER_CATEGORY_ORDER.indexOf(b.category);
+      const rankA = idxA === -1 ? 999 : idxA;
+      const rankB = idxB === -1 ? 999 : idxB;
+      if (rankA !== rankB) return rankA - rankB;
+      return a.name.localeCompare(b.name);
+    });
   } catch {
     return [];
   }
@@ -155,17 +172,15 @@ export async function syncSpecimensToCloud(specimens: ChartSpecimen[]): Promise<
 
     const { error } = await supabase.from('study_specimens').upsert(payload, { onConflict: 'id' });
     if (error) {
-      console.error('Supabase Sync Error (Study Specimens):', error);
       return { success: false, error: error.message };
     }
     return { success: true };
   } catch (err: any) {
-    console.error('Failed to sync specimens to cloud:', err);
     return { success: false, error: err?.message || 'Network error' };
   }
 }
 
-// Fetch Study Specimens from PostgreSQL in stable order
+// Fetch Study Specimens from PostgreSQL
 export async function fetchSpecimensFromCloud(): Promise<ChartSpecimen[]> {
   try {
     const { data, error } = await supabase
@@ -214,7 +229,6 @@ export async function forcePushAllToCloud(
   }
 }
 
-// Purge all records from both local cache and cloud database
 export async function purgeCloudData(): Promise<boolean> {
   try {
     await Promise.allSettled([
