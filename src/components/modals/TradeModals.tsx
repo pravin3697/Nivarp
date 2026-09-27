@@ -33,7 +33,6 @@ export function EditDebriefModal({
     setForm(trade);
   }, [trade]);
 
-  // Global Clipboard paste listener inside modal
   useEffect(() => {
     if (!isOpen) return;
 
@@ -47,15 +46,13 @@ export function EditDebriefModal({
           if (!file) continue;
 
           e.preventDefault();
-          // Prefer uploading to image2 (Execution / Codex) if empty, otherwise image1
           const targetField = !form?.image2 ? 'image2' : 'image1';
           setIsUploading(targetField);
 
-          const cloudUrl = await uploadScreenshotToCloud(file, 'debrief');
+          const cloudUrl = await uploadScreenshotToCloud(file);
           if (cloudUrl) {
             setForm(prev => prev ? { ...prev, [targetField]: cloudUrl } : null);
           } else {
-            // Local fallback
             const reader = new FileReader();
             reader.onload = (event) => {
               const b64 = event.target?.result as string;
@@ -89,7 +86,6 @@ export function EditDebriefModal({
         </div>
 
         <form onSubmit={(e) => { e.preventDefault(); onSave(form); }} className="space-y-4 text-xs font-mono">
-          {/* Behavioral Execution Tag Selector */}
           <div>
             <label className="text-zinc-400 block mb-1.5 flex items-center justify-between">
               <span>Behavioral Execution Tag</span>
@@ -158,7 +154,6 @@ export function EditDebriefModal({
             </div>
           </div>
 
-          {/* Dual Chart Links with Clipboard Paste indicator */}
           <div className="space-y-3">
             <div>
               <div className="flex items-center justify-between mb-1">
@@ -352,7 +347,6 @@ export function AddStudyModal({
   const [url, setUrl] = useState('');
   const [isUploading, setIsUploading] = useState(false);
 
-  // Global Clipboard paste listener directly inside Add Study Modal
   useEffect(() => {
     if (!isOpen) return;
 
@@ -368,11 +362,10 @@ export function AddStudyModal({
           e.preventDefault();
           setIsUploading(true);
 
-          const cloudUrl = await uploadScreenshotToCloud(file, 'study');
+          const cloudUrl = await uploadScreenshotToCloud(file);
           if (cloudUrl) {
             setUrl(cloudUrl);
           } else {
-            // Local base64 fallback
             const reader = new FileReader();
             reader.onload = (event) => {
               setUrl(event.target?.result as string);
@@ -448,7 +441,6 @@ export function AddStudyModal({
               )}
             </div>
 
-            {/* Visual Paste Zone */}
             <div 
               className={`p-3 rounded-xl border border-dashed text-center transition-all cursor-pointer ${
                 url 
@@ -463,7 +455,7 @@ export function AddStudyModal({
                       const blob = await item.getType(imgType);
                       const file = new File([blob], 'screenshot.png', { type: imgType });
                       setIsUploading(true);
-                      const cloudUrl = await uploadScreenshotToCloud(file, 'study');
+                      const cloudUrl = await uploadScreenshotToCloud(file);
                       setUrl(cloudUrl || URL.createObjectURL(blob));
                       setIsUploading(false);
                       break;
