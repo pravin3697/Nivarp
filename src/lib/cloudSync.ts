@@ -1,5 +1,13 @@
-import { supabase } from './supabaseClient';
+import { db } from './firebaseClient';
 import { Trade, PlaybookCollection, ChartSpecimen } from '@/types/trade';
+import { 
+  collection, 
+  doc, 
+  setDoc, 
+  getDocs, 
+  writeBatch,
+  deleteDoc
+} from 'firebase/firestore';
 
 export const MASTER_CATEGORY_ORDER = [
   'RETEST STRUCTURES',
@@ -11,133 +19,156 @@ export const MASTER_CATEGORY_ORDER = [
   'EXECUTION STOPPED OUT/ BAD ENTRY'
 ];
 
-// Direct screenshot uploader supporting both File and raw Blob objects from Clipboard
-export async function uploadScreenshotToCloud(fileOrBlob: File | Blob, folder: string = 'live'): Promise<string | null> {
+// Direct screenshot uploader using your dedicated ImgBB account API
+export async function uploadScreenshotToCloud(fileOrBlob: File | Blob): Promise<string | null> {
   try {
-    const fileExt = (fileOrBlob instanceof File && fileOrBlob.name) ? fileOrBlob.name.split('.').pop() : 'png';
-    const fileName = `${folder}/${Date.now()}_${Math.random().toString(36).substring(7)}.${fileExt}`;
+    const formData = new FormData();
+    formData.append('image', fileOrBlob);
 
-    const { error: uploadError } = await supabase.storage
-      .from('chart-vault')
-      .upload(fileName, fileOrBlob, {
-        cacheControl: '3600',
-        upsert: false,
-        contentType: fileOrBlob.type || 'image/png'
-      });
+    const IMGBB_KEY = 'ef3caf5880f01c4c57d0ebc97cdaac10';
 
-    if (uploadError) {
-      console.warn('Storage Upload Error (falling back to direct base64):', uploadError);
-      return null;
+    const res = await fetch(`https://api.imgbb.com/1/upload?key=${IMGBB_KEY}`, {
+      method: 'POST',
+      body: formData
+    });
+
+    const data = await res.json();
+    if (data && data.data && data.data.url) {
+      return data.data.url;
     }
-
-    const { data } = supabase.storage.from('chart-vault').getPublicUrl(fileName);
-    return data.publicUrl;
+    return null;
   } catch (err) {
-    console.warn('Failed to upload image to cloud:', err);
+    console.warn('Screenshot upload error:', err);
     return null;
   }
 }
 
-// Sync all trades to PostgreSQL (includes behavior_tag)
+// ------------------- TRADES -------------------
+
 export async function syncTradesToCloud(trades: Trade[]): Promise<{ success: boolean; error?: string }> {
   if (!trades.length) return { success: true };
   try {
-    const payload = trades.map(t => ({
-      id: String(t.id),
-      symbol: t.symbol,
-      trade_date: t.tradeDate,
-      direction: t.direction,
-      quantity: t.quantity,
-      entry_price: t.entryPrice,
-      exit_price: t.exitPrice,
-      sl_price: t.slPrice || null,
-      r_multiple: t.rMultiple,
-      net_pnl: t.netPnl,
-      fees: t.fees,
-      setup_type: t.setupType,
-      regime: t.regime || 'Bullish',
-      behavior_tag: t.behaviorTag || null,
-      mae: t.mae || null,
-      mfe: t.mfe || null,
-      image1: t.image1 || null,
-      image2: t.image2 || null,
-      notes: t.notes || null
-    }));
+    const batch = writeBatch(db);
+    trades.forEach(t => {
+      const docRef = doc(db, 'trades', String(t.id));
+      batch.set(docRef, {
+        id: String(t.id),
+        symbol: t.symbol,
+        tradeDate: t.tradeDate,
+        tradeTime: t.tradeTime || null,
+        direction: t.direction,
+        quantity: t.quantity,
+        entryPrice: t.entryPrice,
+        exitPrice: t.exitPrice,
+        slPrice: t.slPrice || null,
+        rMultiple: t.rMultiple,
+        netPnl: t.netPnl,
+        fees: t.fees,
+        setupType: t.setupType,
+        regime: t.regime || 'Bullish',
+        behaviorTag: t.behaviorTag || null,
+        mae: t.mae || null,
+        mfe: t.mfe || null,
+        image1: t.image1 || null,
+        image2: t.image2 || null,
+        notes: t.notes || null,
+        updatedAt: Date.now()
+      }, { merge: true });
+    });
 
-    const { error } = await supabase.from('trades').upsert(payload, { onConflict: 'id' });
-    if (error) {
-      return { success: false, error: error.message };
-    }
+    await batch.commit();
     return { success: true };
   } catch (e: any) {
-    return { success: false, error: e?.message || 'Network error' };
+    return { success: false, error: e?.message || 'Firestore sync error' };
   }
 }
 
 export async function fetchTradesFromCloud(): Promise<Trade[]> {
   try {
-    const { data, error } = await supabase
-      .from('trades')
-      .select('*')
-      .order('trade_date', { ascending: false });
-    if (error || !data) return [];
+    const snapshot = await getDocs(collection(db, 'trades'));
+    if (snapshot.empty) return [];
 
-    return data.map(d => ({
-      id: String(d.id),
-      symbol: d.symbol,
-      tradeDate: d.trade_date,
-      tradeTime: d.trade_time || undefined,
-      direction: d.direction as 'LONG' | 'SHORT',
-      quantity: Number(d.quantity) || 1,
-      entryPrice: Number(d.entry_price) || 0,
-      exitPrice: Number(d.exit_price) || 0,
-      slPrice: d.sl_price ? Number(d.sl_price) : undefined,
-      rMultiple: Number(d.r_multiple) || 0,
-      netPnl: Number(d.net_pnl) || 0,
-      fees: Number(d.fees) || 0,
-      setupType: d.setup_type || 'General Setup',
-      regime: d.regime as any,
-      behaviorTag: d.behavior_tag as any,
-      mae: d.mae || undefined,
-      mfe: d.mfe || undefined,
-      image1: d.image1 || undefined,
-      image2: d.image2 || undefined,
-      notes: d.notes || undefined
-    }));
+    const trades: Trade[] = [];
+    snapshot.forEach(docSnap => {
+      const d = docSnap.data();
+      trades.push({
+        id: String(d.id || docSnap.id),
+        symbol: d.symbol,
+        tradeDate: d.tradeDate,
+        tradeTime: d.tradeTime || undefined,
+        direction: d.direction as 'LONG' | 'SHORT',
+        quantity: Number(d.quantity) || 1,
+        entryPrice: Number(d.entryPrice) || 0,
+        exitPrice: Number(d.exitPrice) || 0,
+        slPrice: d.slPrice ? Number(d.slPrice) : undefined,
+        rMultiple: Number(d.rMultiple) || 0,
+        netPnl: Number(d.netPnl) || 0,
+        fees: Number(d.fees) || 0,
+        setupType: d.setupType || 'General Setup',
+        regime: d.regime as any,
+        behaviorTag: d.behaviorTag as any,
+        mae: d.mae || undefined,
+        mfe: d.mfe || undefined,
+        image1: d.image1 || undefined,
+        image2: d.image2 || undefined,
+        notes: d.notes || undefined
+      });
+    });
+
+    return trades;
   } catch {
     return [];
   }
 }
 
+// ------------------- COLLECTIONS (SETUPS) -------------------
+
 export async function syncCollectionsToCloud(collections: PlaybookCollection[]): Promise<{ success: boolean; error?: string }> {
   if (!collections.length) return { success: true };
   try {
-    const payload = collections.map(c => ({
-      id: String(c.id),
-      name: c.name.trim(),
-      category: c.category.trim().toUpperCase(),
-      description: c.description || ''
-    }));
+    const batch = writeBatch(db);
+    collections.forEach(c => {
+      const docRef = doc(db, 'collections', String(c.id));
+      batch.set(docRef, {
+        id: String(c.id),
+        name: c.name.trim(),
+        category: c.category.trim().toUpperCase(),
+        description: c.description || ''
+      }, { merge: true });
+    });
 
-    const { error } = await supabase.from('collections').upsert(payload, { onConflict: 'id' });
-    if (error) return { success: false, error: error.message };
+    await batch.commit();
     return { success: true };
   } catch (err: any) {
-    return { success: false, error: err?.message || 'Network error' };
+    return { success: false, error: err?.message || 'Firestore error' };
+  }
+}
+
+export async function deleteCollectionFromCloud(id: string): Promise<boolean> {
+  try {
+    await deleteDoc(doc(db, 'collections', String(id)));
+    return true;
+  } catch (err) {
+    console.error('Failed to delete setup from cloud:', err);
+    return false;
   }
 }
 
 export async function fetchCollectionsFromCloud(): Promise<PlaybookCollection[]> {
   try {
-    const { data, error } = await supabase.from('collections').select('*');
-    if (error || !data || data.length === 0) return [];
+    const snapshot = await getDocs(collection(db, 'collections'));
+    if (snapshot.empty) return [];
 
-    const mapped = data.map(d => ({
-      id: String(d.id),
-      name: d.name.trim(),
-      category: d.category ? d.category.trim().toUpperCase() : 'GENERAL',
-      description: d.description || ''
-    }));
+    const mapped: PlaybookCollection[] = [];
+    snapshot.forEach(docSnap => {
+      const d = docSnap.data();
+      mapped.push({
+        id: String(d.id || docSnap.id),
+        name: d.name.trim(),
+        category: d.category ? d.category.trim().toUpperCase() : 'GENERAL',
+        description: d.description || ''
+      });
+    });
 
     return mapped.sort((a, b) => {
       const idxA = MASTER_CATEGORY_ORDER.indexOf(a.category);
@@ -152,43 +183,68 @@ export async function fetchCollectionsFromCloud(): Promise<PlaybookCollection[]>
   }
 }
 
+// ------------------- STUDY SPECIMENS -------------------
+
 export async function syncSpecimensToCloud(specimens: ChartSpecimen[]): Promise<{ success: boolean; error?: string }> {
   if (!specimens.length) return { success: true };
   try {
-    const payload = specimens.map(s => ({
-      id: String(s.id),
-      collection_name: s.collectionName.trim(),
-      type: s.type || 'STUDY_SETUP',
-      title: s.title || '',
-      date: s.date || '',
-      image_url: s.imageUrl
-    }));
+    const batch = writeBatch(db);
+    specimens.forEach(s => {
+      const docRef = doc(db, 'study_specimens', String(s.id));
+      batch.set(docRef, {
+        id: String(s.id),
+        collectionName: s.collectionName.trim(),
+        type: s.type || 'STUDY_SETUP',
+        title: s.title || '',
+        date: s.date || '',
+        imageUrl: s.imageUrl,
+        rMultiple: s.rMultiple || null
+      }, { merge: true });
+    });
 
-    const { error } = await supabase.from('study_specimens').upsert(payload, { onConflict: 'id' });
-    if (error) return { success: false, error: error.message };
+    await batch.commit();
     return { success: true };
   } catch (err: any) {
-    return { success: false, error: err?.message || 'Network error' };
+    return { success: false, error: err?.message || 'Firestore error' };
+  }
+}
+
+export async function deleteSpecimenFromCloud(id: string): Promise<boolean> {
+  try {
+    await deleteDoc(doc(db, 'study_specimens', String(id)));
+    return true;
+  } catch (err) {
+    console.error('Failed to delete specimen from cloud:', err);
+    return false;
   }
 }
 
 export async function fetchSpecimensFromCloud(): Promise<ChartSpecimen[]> {
   try {
-    const { data, error } = await supabase.from('study_specimens').select('*').order('id', { ascending: false });
-    if (error || !data || data.length === 0) return [];
-    return data.map(d => ({
-      id: String(d.id),
-      collectionName: d.collection_name.trim(),
-      type: d.type || 'STUDY_SETUP',
-      title: d.title || '',
-      date: d.date || '',
-      imageUrl: d.image_url,
-      rMultiple: d.r_multiple != null ? Number(d.r_multiple) : undefined
-    }));
+    const snapshot = await getDocs(collection(db, 'study_specimens'));
+    if (snapshot.empty) return [];
+
+    const specimens: ChartSpecimen[] = [];
+    snapshot.forEach(docSnap => {
+      const d = docSnap.data();
+      specimens.push({
+        id: String(d.id || docSnap.id),
+        collectionName: d.collectionName.trim(),
+        type: d.type || 'STUDY_SETUP',
+        title: d.title || '',
+        date: d.date || '',
+        imageUrl: d.imageUrl,
+        rMultiple: d.rMultiple != null ? Number(d.rMultiple) : undefined
+      });
+    });
+
+    return specimens;
   } catch {
     return [];
   }
 }
+
+// ------------------- FORCE PUSH & PURGE -------------------
 
 export async function forcePushAllToCloud(
   trades: Trade[], 
@@ -196,6 +252,8 @@ export async function forcePushAllToCloud(
   specimens: ChartSpecimen[]
 ): Promise<{ success: boolean; error?: string }> {
   try {
+    await purgeCloudData();
+
     const [tradesRes, colsRes, specsRes] = await Promise.all([
       syncTradesToCloud(trades),
       syncCollectionsToCloud(collections),
@@ -218,14 +276,18 @@ export async function forcePushAllToCloud(
 
 export async function purgeCloudData(): Promise<boolean> {
   try {
-    await Promise.allSettled([
-      supabase.from('trades').delete().neq('id', '___all___'),
-      supabase.from('collections').delete().neq('id', '___all___'),
-      supabase.from('study_specimens').delete().neq('id', '___all___')
-    ]);
+    const collectionsToPurge = ['trades', 'collections', 'study_specimens'];
+    for (const colName of collectionsToPurge) {
+      const snapshot = await getDocs(collection(db, colName));
+      if (!snapshot.empty) {
+        const batch = writeBatch(db);
+        snapshot.forEach(docSnap => batch.delete(docSnap.ref));
+        await batch.commit();
+      }
+    }
     return true;
   } catch (err) {
-    console.error('Failed to purge cloud data:', err);
+    console.error('Failed to purge Firestore data:', err);
     return false;
   }
 }

@@ -60,7 +60,7 @@ export function CsvImportStudio({
 
           setUploadingState({ idx: targetIndex, field: targetField });
 
-          const cloudUrl = await uploadScreenshotToCloud(file, 'imported');
+          const cloudUrl = await uploadScreenshotToCloud(file);
           if (cloudUrl) {
             onUpdateTrade(targetIndex, targetField, cloudUrl);
           } else {

@@ -7,8 +7,10 @@ import {
   syncTradesToCloud, 
   fetchTradesFromCloud, 
   syncCollectionsToCloud, 
+  deleteCollectionFromCloud,
   fetchCollectionsFromCloud, 
   syncSpecimensToCloud, 
+  deleteSpecimenFromCloud,
   fetchSpecimensFromCloud, 
   forcePushAllToCloud, 
   purgeCloudData,
@@ -122,7 +124,6 @@ export default function NivarpOS() {
     });
   }, [collections]);
 
-  // STRICT category ordering that NEVER randomly shifts
   const uniqueCategories = useMemo(() => {
     const catSet = new Set<string>();
     deduplicatedCollections.forEach(c => {
@@ -201,7 +202,7 @@ export default function NivarpOS() {
           await idbSet(STUDY_STORAGE_KEY, initialSpecimens);
         }
 
-        // Fetch from Supabase Cloud
+        // Fetch from Cloud
         const [cloudTrades, cloudCollections, cloudSpecimens] = await Promise.all([
           fetchTradesFromCloud(),
           fetchCollectionsFromCloud(),
@@ -310,7 +311,7 @@ export default function NivarpOS() {
           idbSet(CATEGORY_ORDER_KEY, restoredCats)
         ]);
 
-        showToast("Restoring backup and pushing to Supabase Cloud...", "info");
+        showToast("Restoring backup and pushing to Cloud...", "info");
         const cloudRes = await forcePushAllToCloud(restoredTrades, restoredCols, restoredStudy);
 
         if (cloudRes.success) {
@@ -545,7 +546,7 @@ export default function NivarpOS() {
           >
             <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 shadow-[0_0_8px_#10b981]" />
             <Cloud className="w-3 h-3 text-emerald-400" />
-            <span className="hidden md:inline">SUPABASE CLOUD LIVE</span>
+            <span className="hidden md:inline">CLOUD LIVE</span>
           </button>
 
           <button 
@@ -610,17 +611,19 @@ export default function NivarpOS() {
             onOpenAddCollection={() => setIsAddCollectionOpen(true)}
             onOpenEditCollection={(col: PlaybookCollection) => { setEditingCollection(col); setIsEditCollectionOpen(true); }}
             onOpenAddStudy={() => setIsAddStudyChartOpen(true)}
-            onDeleteCollection={(id: string, name: string) => {
+            onDeleteCollection={async (id: string, name: string) => {
               setCollections((p: PlaybookCollection[]) => p.filter((c: PlaybookCollection) => c.id !== id));
+              await deleteCollectionFromCloud(id);
               showToast(`Setup collection "${name}" deleted.`, "info");
             }}
-            onDeleteSpecimen={(id: string) => {
+            onDeleteSpecimen={async (id: string) => {
               setStudySpecimens((p: ChartSpecimen[]) => {
                 const updated = p.filter((s: ChartSpecimen) => String(s.id) !== String(id));
                 idbSet(STUDY_STORAGE_KEY, updated);
                 return updated;
               });
-              showToast("Specimen chart removed.", "info");
+              await deleteSpecimenFromCloud(id);
+              showToast("Specimen chart permanently removed.", "info");
             }}
             onReorderSpecimens={handleReorderSpecimens}
             onReorderCategories={handleReorderCategories}
