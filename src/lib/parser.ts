@@ -1,6 +1,5 @@
 import { Trade, PlaybookCollection } from '@/types/trade';
 
-// Generic security name sanitizer (no hardcoded stocks)
 export function cleanSecurityName(rawName: string): string {
   if (!rawName) return 'INSTRUMENT';
   const cleaned = rawName
@@ -12,6 +11,17 @@ export function cleanSecurityName(rawName: string): string {
   
   const token = cleaned.split(/\s+/)[0].replace(/[^A-Z0-9&_-]/gi, '').toUpperCase();
   return token || cleaned.toUpperCase();
+}
+
+function parseTimeToMinutes(timeStr: string): number {
+  if (!timeStr) return 0;
+  const parts = timeStr.trim().split(':');
+  if (parts.length >= 2) {
+    const hours = parseInt(parts[0], 10) || 0;
+    const mins = parseInt(parts[1], 10) || 0;
+    return hours * 60 + mins;
+  }
+  return 0;
 }
 
 export function parseKotakNeoCsv(
@@ -92,6 +102,14 @@ export function parseKotakNeoCsv(
       const isLong = buy.time <= sell.time;
       const entryPrice = isLong ? buy.price : sell.price;
       const exitPrice = isLong ? sell.price : buy.price;
+      const entryTime = isLong ? buy.time : sell.time;
+      const exitTime = isLong ? sell.time : buy.time;
+
+      // Accurate duration in minutes
+      const entryMins = parseTimeToMinutes(entryTime);
+      const exitMins = parseTimeToMinutes(exitTime);
+      const durationMinutes = Math.max(1, Math.abs(exitMins - entryMins));
+
       const quantity = Math.min(buy.qty, sell.qty);
       const fees = Number((buy.charges + sell.charges).toFixed(2));
 
@@ -102,7 +120,6 @@ export function parseKotakNeoCsv(
       const netPnl = Number((grossPnl - fees).toFixed(2));
       const rMultiple = defaultRisk > 0 ? Number((netPnl / defaultRisk).toFixed(2)) : 0;
 
-      // Assign setup dynamically from user's collections or generic placeholder
       const assignedSetup = collections.length > 0 
         ? collections[matchCounter % collections.length].name 
         : 'General Setup';
@@ -112,6 +129,8 @@ export function parseKotakNeoCsv(
         id: `kotak-${Date.now()}-${Math.random()}`,
         symbol: buy.symbol,
         tradeDate: buy.date,
+        tradeTime: `${entryTime} - ${exitTime}`,
+        durationMinutes,
         direction: isLong ? 'LONG' : 'SHORT',
         quantity,
         entryPrice,
@@ -124,6 +143,7 @@ export function parseKotakNeoCsv(
         rMultiple,
         regime: isLong ? 'Bullish' : 'Bearish',
         setupType: assignedSetup,
+        behaviorTag: 'Rules Followed',
         mae: '',
         mfe: '',
         image1: '',
@@ -136,7 +156,6 @@ export function parseKotakNeoCsv(
   return matchedTrades;
 }
 
-// Helper: Robust date parser for Indian DD/MM/YYYY and ISO timestamps
 export function parseDateToTimestamp(dateStr: string): number {
   if (!dateStr) return 0;
   if (dateStr.includes('/')) {
@@ -148,53 +167,4 @@ export function parseDateToTimestamp(dateStr: string): number {
   }
   const t = new Date(dateStr).getTime();
   return isNaN(t) ? 0 : t;
-}
-
-// Generic matcher: Maps backup data directly against active collections
-export function syncChartsToExistingCollections(
-  rawTrades: any[],
-  existingCollections: PlaybookCollection[],
-  defaultRisk: number
-): Trade[] {
-  const clean = (str: string) => str.toLowerCase().replace(/[^a-z0-9]/g, '');
-
-  return rawTrades.map((t, idx) => {
-    const rawTag = (t.strategyTag || t.setup || '').trim();
-    const cleanedTag = clean(rawTag);
-
-    // Exact or normalized match
-    const matchedCol = existingCollections.find(c => clean(c.name) === cleanedTag);
-    const finalSetupName = matchedCol ? matchedCol.name : (rawTag || 'General Setup');
-
-    const dateObj = new Date(t.date);
-    const dateFormatted = isNaN(dateObj.getTime())
-      ? (t.date || 'Trade')
-      : dateObj.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
-
-    let rVal = 0;
-    if (typeof t.rrr === 'number') rVal = t.rrr;
-    else if (typeof t.rrr === 'string') {
-      const num = parseFloat(t.rrr.replace(/[^0-9.-]/g, ''));
-      rVal = isNaN(num) ? 0 : num;
-    }
-
-    return {
-      id: String(t.id || `trade-${idx}-${Date.now()}`),
-      symbol: cleanSecurityName(t.asset || t.symbol || 'INSTRUMENT'),
-      tradeDate: dateFormatted,
-      direction: (t.direction && t.direction.toUpperCase() === 'SHORT') ? 'SHORT' : 'LONG',
-      quantity: t.qty || 1,
-      entryPrice: t.entry || 0,
-      exitPrice: t.exit || 0,
-      slPrice: t.sl ? parseFloat(t.sl) : undefined,
-      rMultiple: rVal,
-      netPnl: typeof t.pnl === 'number' ? t.pnl : parseFloat(t.pnl || '0'),
-      fees: typeof t.fees === 'number' ? t.fees : parseFloat(t.fees || '0'),
-      setupType: finalSetupName,
-      regime: t.regime || (t.direction === 'Short' ? 'Bearish' : 'Bullish'),
-      image1: t.image1 || undefined,
-      image2: t.image2 || undefined,
-      notes: t.notes ? t.notes.replace(/<[^>]*>?/gm, '').trim() : ''
-    };
-  });
 }

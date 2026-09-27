@@ -9,6 +9,7 @@ export interface Trade {
   symbol: string;
   tradeDate: string;
   tradeTime?: string;
+  durationMinutes?: number; // Exact holding time in minutes
   direction: 'LONG' | 'SHORT';
   quantity: number;
   entryPrice: number;
