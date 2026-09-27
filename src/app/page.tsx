@@ -1,17 +1,11 @@
 'use client';
 
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { Trade, PlaybookCollection, ChartSpecimen } from '@/types/trade';
 import { parseKotakNeoCsv, parseDateToTimestamp } from '@/lib/parser';
 import { 
-  syncTradesToCloud, 
-  fetchTradesFromCloud, 
-  syncCollectionsToCloud, 
-  deleteCollectionFromCloud,
-  fetchCollectionsFromCloud, 
-  syncSpecimensToCloud, 
-  deleteSpecimenFromCloud,
-  fetchSpecimensFromCloud, 
+  syncMasterToCloud,
+  fetchMasterFromCloud,
   forcePushAllToCloud, 
   purgeCloudData,
   MASTER_CATEGORY_ORDER
@@ -63,6 +57,7 @@ export default function NivarpOS() {
 
   const [isLoaded, setIsLoaded] = useState(false);
   const [toast, setToast] = useState<ToastState | null>(null);
+  const isSyncingRef = useRef(false);
 
   // Modals state
   const [isCsvModalOpen, setIsCsvModalOpen] = useState(false);
@@ -162,14 +157,12 @@ export default function NivarpOS() {
     });
   }, [deduplicatedCollections, categoryOrder]);
 
-  // Initial Data Load
+  // Initial Load: IndexedDB First, then Firebase Master Doc
   useEffect(() => {
     let isMounted = true;
 
     async function loadData() {
       try {
-        const specimenMap = new Map<string, ChartSpecimen>();
-
         const [idbMaster, idbStudy, idbCatOrder] = await Promise.all([
           idbGet<any>(STORAGE_KEY),
           idbGet<ChartSpecimen[]>(STUDY_STORAGE_KEY),
@@ -183,49 +176,23 @@ export default function NivarpOS() {
         }
 
         if (idbStudy && Array.isArray(idbStudy)) {
-          idbStudy.forEach(s => {
-            if (s.id && s.imageUrl) specimenMap.set(String(s.id), s);
-          });
+          setStudySpecimens(idbStudy);
         }
 
         if (idbCatOrder && Array.isArray(idbCatOrder) && idbCatOrder.length > 0) {
           setCategoryOrder(idbCatOrder.map(c => c.trim().toUpperCase()));
-        } else {
-          setCategoryOrder(MASTER_CATEGORY_ORDER);
-          await idbSet(CATEGORY_ORDER_KEY, MASTER_CATEGORY_ORDER);
         }
 
-        const initialSpecimens = Array.from(specimenMap.values());
-        setStudySpecimens(initialSpecimens);
-
-        if (initialSpecimens.length > 0) {
-          await idbSet(STUDY_STORAGE_KEY, initialSpecimens);
-        }
-
-        // Fetch from Cloud
-        const [cloudTrades, cloudCollections, cloudSpecimens] = await Promise.all([
-          fetchTradesFromCloud(),
-          fetchCollectionsFromCloud(),
-          fetchSpecimensFromCloud()
-        ]);
-
-        if (isMounted) {
-          if (cloudTrades.length > 0) setTrades(cloudTrades);
-          if (cloudCollections.length > 0) setCollections(cloudCollections);
-
-          if (cloudSpecimens.length > 0) {
-            cloudSpecimens.forEach(s => {
-              if (!specimenMap.has(String(s.id))) {
-                specimenMap.set(String(s.id), s);
-              }
-            });
-            const allCombined = Array.from(specimenMap.values());
-            setStudySpecimens(allCombined);
-            await idbSet(STUDY_STORAGE_KEY, allCombined);
-          }
+        // Fetch from 1 single master doc in Firebase
+        const cloudData = await fetchMasterFromCloud();
+        if (isMounted && cloudData) {
+          if (cloudData.trades?.length) setTrades(cloudData.trades);
+          if (cloudData.collections?.length) setCollections(cloudData.collections);
+          if (cloudData.studySpecimens?.length) setStudySpecimens(cloudData.studySpecimens);
+          if (cloudData.categoryOrder?.length) setCategoryOrder(cloudData.categoryOrder);
         }
       } catch (err) {
-        console.warn('Storage sync failed:', err);
+        console.warn('Storage sync notice:', err);
       } finally {
         if (isMounted) {
           setIsLoaded(true);
@@ -237,7 +204,7 @@ export default function NivarpOS() {
     return () => { isMounted = false; };
   }, []);
 
-  // Background Auto-Sync
+  // Atomic Auto-Sync: Saves locally immediately, and batches 1 clean write to Firestore
   useEffect(() => {
     if (!isLoaded) return;
 
@@ -250,9 +217,21 @@ export default function NivarpOS() {
     idbSet(STUDY_STORAGE_KEY, studySpecimens);
     idbSet(CATEGORY_ORDER_KEY, categoryOrder);
 
-    syncTradesToCloud(trades);
-    syncCollectionsToCloud(deduplicatedCollections);
-    syncSpecimensToCloud(studySpecimens);
+    // Debounce cloud write: only sends 1 atomic payload when changes pause
+    const timer = setTimeout(async () => {
+      if (isSyncingRef.current) return;
+      isSyncingRef.current = true;
+      await syncMasterToCloud({
+        trades,
+        collections: deduplicatedCollections,
+        studySpecimens,
+        categoryOrder,
+        defaultRiskPerTrade
+      });
+      isSyncingRef.current = false;
+    }, 1200);
+
+    return () => clearTimeout(timer);
   }, [isLoaded, trades, deduplicatedCollections, categoryOrder, studySpecimens, defaultRiskPerTrade]);
 
   const handleExportBackup = () => {
@@ -311,14 +290,16 @@ export default function NivarpOS() {
           idbSet(CATEGORY_ORDER_KEY, restoredCats)
         ]);
 
-        showToast("Restoring backup and pushing to Cloud...", "info");
-        const cloudRes = await forcePushAllToCloud(restoredTrades, restoredCols, restoredStudy);
+        showToast("Restoring backup...", "info");
+        await syncMasterToCloud({
+          trades: restoredTrades,
+          collections: restoredCols,
+          studySpecimens: restoredStudy,
+          categoryOrder: restoredCats,
+          defaultRiskPerTrade: d.defaultRiskPerTrade || 600
+        });
 
-        if (cloudRes.success) {
-          showToast(`Restored & synced: ${restoredTrades.length} trades, ${restoredCols.length} setups.`, "success");
-        } else {
-          showToast(`Restored locally: ${cloudRes.error}`, "error");
-        }
+        showToast(`Restored & synced: ${restoredTrades.length} trades, ${restoredCols.length} setups.`, "success");
       } catch (err: any) {
         showToast(`Failed to parse backup: ${err.message}`, "error");
       }
@@ -611,19 +592,17 @@ export default function NivarpOS() {
             onOpenAddCollection={() => setIsAddCollectionOpen(true)}
             onOpenEditCollection={(col: PlaybookCollection) => { setEditingCollection(col); setIsEditCollectionOpen(true); }}
             onOpenAddStudy={() => setIsAddStudyChartOpen(true)}
-            onDeleteCollection={async (id: string, name: string) => {
+            onDeleteCollection={(id: string, name: string) => {
               setCollections((p: PlaybookCollection[]) => p.filter((c: PlaybookCollection) => c.id !== id));
-              await deleteCollectionFromCloud(id);
               showToast(`Setup collection "${name}" deleted.`, "info");
             }}
-            onDeleteSpecimen={async (id: string) => {
+            onDeleteSpecimen={(id: string) => {
               setStudySpecimens((p: ChartSpecimen[]) => {
                 const updated = p.filter((s: ChartSpecimen) => String(s.id) !== String(id));
                 idbSet(STUDY_STORAGE_KEY, updated);
                 return updated;
               });
-              await deleteSpecimenFromCloud(id);
-              showToast("Specimen chart permanently removed.", "info");
+              showToast("Specimen chart removed.", "info");
             }}
             onReorderSpecimens={handleReorderSpecimens}
             onReorderCategories={handleReorderCategories}

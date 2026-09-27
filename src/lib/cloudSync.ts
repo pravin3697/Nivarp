@@ -1,13 +1,6 @@
 import { db } from './firebaseClient';
 import { Trade, PlaybookCollection, ChartSpecimen } from '@/types/trade';
-import { 
-  collection, 
-  doc, 
-  setDoc, 
-  getDocs, 
-  writeBatch,
-  deleteDoc
-} from 'firebase/firestore';
+import { doc, getDoc, setDoc, deleteDoc } from 'firebase/firestore';
 
 export const MASTER_CATEGORY_ORDER = [
   'RETEST STRUCTURES',
@@ -19,7 +12,6 @@ export const MASTER_CATEGORY_ORDER = [
   'EXECUTION STOPPED OUT/ BAD ENTRY'
 ];
 
-// Direct screenshot uploader using your dedicated ImgBB account API
 export async function uploadScreenshotToCloud(fileOrBlob: File | Blob): Promise<string | null> {
   try {
     const formData = new FormData();
@@ -43,251 +35,131 @@ export async function uploadScreenshotToCloud(fileOrBlob: File | Blob): Promise<
   }
 }
 
-// ------------------- TRADES -------------------
+// ------------------- SAFE SEGMENTED FIRESTORE STORAGE (< 1MB PER DOC) -------------------
 
-export async function syncTradesToCloud(trades: Trade[]): Promise<{ success: boolean; error?: string }> {
-  if (!trades.length) return { success: true };
+function sanitizeForFirestore(obj: any): any {
+  return JSON.parse(JSON.stringify(obj, (key, value) => {
+    return value === undefined ? null : value;
+  }));
+}
+
+export async function syncMasterToCloud(payload: {
+  trades: Trade[];
+  collections: PlaybookCollection[];
+  studySpecimens: ChartSpecimen[];
+  categoryOrder: string[];
+  defaultRiskPerTrade: number;
+}): Promise<{ success: boolean; error?: string }> {
   try {
-    const batch = writeBatch(db);
-    trades.forEach(t => {
-      const docRef = doc(db, 'trades', String(t.id));
-      batch.set(docRef, {
-        id: String(t.id),
-        symbol: t.symbol,
-        tradeDate: t.tradeDate,
-        tradeTime: t.tradeTime || null,
-        direction: t.direction,
-        quantity: t.quantity,
-        entryPrice: t.entryPrice,
-        exitPrice: t.exitPrice,
-        slPrice: t.slPrice || null,
-        rMultiple: t.rMultiple,
-        netPnl: t.netPnl,
-        fees: t.fees,
-        setupType: t.setupType,
-        regime: t.regime || 'Bullish',
-        behaviorTag: t.behaviorTag || null,
-        mae: t.mae || null,
-        mfe: t.mfe || null,
-        image1: t.image1 || null,
-        image2: t.image2 || null,
-        notes: t.notes || null,
+    // 1. Save Settings & Collections (Tiny < 10KB)
+    await setDoc(doc(db, 'journal', 'meta'), sanitizeForFirestore({
+      collections: payload.collections,
+      categoryOrder: payload.categoryOrder,
+      defaultRiskPerTrade: payload.defaultRiskPerTrade,
+      updatedAt: Date.now()
+    }), { merge: true });
+
+    // 2. Save Trades (< 200KB)
+    await setDoc(doc(db, 'journal', 'trades'), sanitizeForFirestore({
+      trades: payload.trades,
+      updatedAt: Date.now()
+    }), { merge: true });
+
+    // 3. Chunk Specimens into buckets of 30 items so no single document ever hits 1MB
+    const chunkSize = 30;
+    const totalChunks = Math.ceil(payload.studySpecimens.length / chunkSize) || 1;
+
+    for (let i = 0; i < totalChunks; i++) {
+      const slice = payload.studySpecimens.slice(i * chunkSize, (i + 1) * chunkSize);
+      await setDoc(doc(db, 'journal', `specimens_${i}`), sanitizeForFirestore({
+        items: slice,
         updatedAt: Date.now()
-      }, { merge: true });
+      }));
+    }
+
+    // Record total chunk count
+    await setDoc(doc(db, 'journal', 'specimens_meta'), {
+      totalChunks,
+      updatedAt: Date.now()
     });
 
-    await batch.commit();
-    return { success: true };
-  } catch (e: any) {
-    return { success: false, error: e?.message || 'Firestore sync error' };
-  }
-}
-
-export async function fetchTradesFromCloud(): Promise<Trade[]> {
-  try {
-    const snapshot = await getDocs(collection(db, 'trades'));
-    if (snapshot.empty) return [];
-
-    const trades: Trade[] = [];
-    snapshot.forEach(docSnap => {
-      const d = docSnap.data();
-      trades.push({
-        id: String(d.id || docSnap.id),
-        symbol: d.symbol,
-        tradeDate: d.tradeDate,
-        tradeTime: d.tradeTime || undefined,
-        direction: d.direction as 'LONG' | 'SHORT',
-        quantity: Number(d.quantity) || 1,
-        entryPrice: Number(d.entryPrice) || 0,
-        exitPrice: Number(d.exitPrice) || 0,
-        slPrice: d.slPrice ? Number(d.slPrice) : undefined,
-        rMultiple: Number(d.rMultiple) || 0,
-        netPnl: Number(d.netPnl) || 0,
-        fees: Number(d.fees) || 0,
-        setupType: d.setupType || 'General Setup',
-        regime: d.regime as any,
-        behaviorTag: d.behaviorTag as any,
-        mae: d.mae || undefined,
-        mfe: d.mfe || undefined,
-        image1: d.image1 || undefined,
-        image2: d.image2 || undefined,
-        notes: d.notes || undefined
-      });
-    });
-
-    return trades;
-  } catch {
-    return [];
-  }
-}
-
-// ------------------- COLLECTIONS (SETUPS) -------------------
-
-export async function syncCollectionsToCloud(collections: PlaybookCollection[]): Promise<{ success: boolean; error?: string }> {
-  if (!collections.length) return { success: true };
-  try {
-    const batch = writeBatch(db);
-    collections.forEach(c => {
-      const docRef = doc(db, 'collections', String(c.id));
-      batch.set(docRef, {
-        id: String(c.id),
-        name: c.name.trim(),
-        category: c.category.trim().toUpperCase(),
-        description: c.description || ''
-      }, { merge: true });
-    });
-
-    await batch.commit();
     return { success: true };
   } catch (err: any) {
-    return { success: false, error: err?.message || 'Firestore error' };
+    console.warn('Cloud sync notice:', err?.message);
+    return { success: false, error: err?.message };
   }
 }
 
-export async function deleteCollectionFromCloud(id: string): Promise<boolean> {
+export async function fetchMasterFromCloud(): Promise<{
+  trades: Trade[];
+  collections: PlaybookCollection[];
+  studySpecimens: ChartSpecimen[];
+  categoryOrder: string[];
+  defaultRiskPerTrade?: number;
+} | null> {
   try {
-    await deleteDoc(doc(db, 'collections', String(id)));
-    return true;
+    // 1. Fetch Meta & Collections
+    const metaSnap = await getDoc(doc(db, 'journal', 'meta'));
+    const metaData = metaSnap.exists() ? metaSnap.data() : {};
+
+    // 2. Fetch Trades
+    const tradesSnap = await getDoc(doc(db, 'journal', 'trades'));
+    const tradesData = tradesSnap.exists() ? tradesSnap.data() : {};
+
+    // 3. Fetch Chunked Specimens
+    const specMetaSnap = await getDoc(doc(db, 'journal', 'specimens_meta'));
+    const totalChunks = specMetaSnap.exists() ? (specMetaSnap.data()?.totalChunks || 1) : 1;
+
+    const allSpecimens: ChartSpecimen[] = [];
+    for (let i = 0; i < totalChunks; i++) {
+      const chunkSnap = await getDoc(doc(db, 'journal', `specimens_${i}`));
+      if (chunkSnap.exists() && Array.isArray(chunkSnap.data()?.items)) {
+        allSpecimens.push(...chunkSnap.data().items);
+      }
+    }
+
+    // Deduplicate specimens by id
+    const uniqueSpecimensMap = new Map<string, ChartSpecimen>();
+    allSpecimens.forEach(s => {
+      if (s && s.id) uniqueSpecimensMap.set(String(s.id), s);
+    });
+
+    return {
+      trades: Array.isArray(tradesData.trades) ? tradesData.trades : [],
+      collections: Array.isArray(metaData.collections) ? metaData.collections : [],
+      studySpecimens: Array.from(uniqueSpecimensMap.values()),
+      categoryOrder: Array.isArray(metaData.categoryOrder) ? metaData.categoryOrder : MASTER_CATEGORY_ORDER,
+      defaultRiskPerTrade: metaData.defaultRiskPerTrade || 600
+    };
   } catch (err) {
-    console.error('Failed to delete setup from cloud:', err);
-    return false;
+    console.warn('Failed to fetch from Firebase:', err);
+    return null;
   }
 }
 
-export async function fetchCollectionsFromCloud(): Promise<PlaybookCollection[]> {
-  try {
-    const snapshot = await getDocs(collection(db, 'collections'));
-    if (snapshot.empty) return [];
-
-    const mapped: PlaybookCollection[] = [];
-    snapshot.forEach(docSnap => {
-      const d = docSnap.data();
-      mapped.push({
-        id: String(d.id || docSnap.id),
-        name: d.name.trim(),
-        category: d.category ? d.category.trim().toUpperCase() : 'GENERAL',
-        description: d.description || ''
-      });
-    });
-
-    return mapped.sort((a, b) => {
-      const idxA = MASTER_CATEGORY_ORDER.indexOf(a.category);
-      const idxB = MASTER_CATEGORY_ORDER.indexOf(b.category);
-      const rankA = idxA === -1 ? 999 : idxA;
-      const rankB = idxB === -1 ? 999 : idxB;
-      if (rankA !== rankB) return rankA - rankB;
-      return a.name.localeCompare(b.name);
-    });
-  } catch {
-    return [];
-  }
-}
-
-// ------------------- STUDY SPECIMENS -------------------
-
-export async function syncSpecimensToCloud(specimens: ChartSpecimen[]): Promise<{ success: boolean; error?: string }> {
-  if (!specimens.length) return { success: true };
-  try {
-    const batch = writeBatch(db);
-    specimens.forEach(s => {
-      const docRef = doc(db, 'study_specimens', String(s.id));
-      batch.set(docRef, {
-        id: String(s.id),
-        collectionName: s.collectionName.trim(),
-        type: s.type || 'STUDY_SETUP',
-        title: s.title || '',
-        date: s.date || '',
-        imageUrl: s.imageUrl,
-        rMultiple: s.rMultiple || null
-      }, { merge: true });
-    });
-
-    await batch.commit();
-    return { success: true };
-  } catch (err: any) {
-    return { success: false, error: err?.message || 'Firestore error' };
-  }
-}
-
-export async function deleteSpecimenFromCloud(id: string): Promise<boolean> {
-  try {
-    await deleteDoc(doc(db, 'study_specimens', String(id)));
-    return true;
-  } catch (err) {
-    console.error('Failed to delete specimen from cloud:', err);
-    return false;
-  }
-}
-
-export async function fetchSpecimensFromCloud(): Promise<ChartSpecimen[]> {
-  try {
-    const snapshot = await getDocs(collection(db, 'study_specimens'));
-    if (snapshot.empty) return [];
-
-    const specimens: ChartSpecimen[] = [];
-    snapshot.forEach(docSnap => {
-      const d = docSnap.data();
-      specimens.push({
-        id: String(d.id || docSnap.id),
-        collectionName: d.collectionName.trim(),
-        type: d.type || 'STUDY_SETUP',
-        title: d.title || '',
-        date: d.date || '',
-        imageUrl: d.imageUrl,
-        rMultiple: d.rMultiple != null ? Number(d.rMultiple) : undefined
-      });
-    });
-
-    return specimens;
-  } catch {
-    return [];
-  }
-}
-
-// ------------------- FORCE PUSH & PURGE -------------------
-
+// Master Force Sync
 export async function forcePushAllToCloud(
   trades: Trade[], 
   collections: PlaybookCollection[], 
-  specimens: ChartSpecimen[]
+  studySpecimens: ChartSpecimen[]
 ): Promise<{ success: boolean; error?: string }> {
-  try {
-    await purgeCloudData();
-
-    const [tradesRes, colsRes, specsRes] = await Promise.all([
-      syncTradesToCloud(trades),
-      syncCollectionsToCloud(collections),
-      syncSpecimensToCloud(specimens)
-    ]);
-
-    const errors: string[] = [];
-    if (!tradesRes.success && tradesRes.error) errors.push(`Trades: ${tradesRes.error}`);
-    if (!colsRes.success && colsRes.error) errors.push(`Collections: ${colsRes.error}`);
-    if (!specsRes.success && specsRes.error) errors.push(`Study: ${specsRes.error}`);
-
-    if (errors.length > 0) {
-      return { success: false, error: errors.join(' | ') };
-    }
-    return { success: true };
-  } catch (err: any) {
-    return { success: false, error: err?.message || 'Network error' };
-  }
+  return await syncMasterToCloud({
+    trades,
+    collections,
+    studySpecimens,
+    categoryOrder: MASTER_CATEGORY_ORDER,
+    defaultRiskPerTrade: 600
+  });
 }
 
+// Permanent Purge
 export async function purgeCloudData(): Promise<boolean> {
   try {
-    const collectionsToPurge = ['trades', 'collections', 'study_specimens'];
-    for (const colName of collectionsToPurge) {
-      const snapshot = await getDocs(collection(db, colName));
-      if (!snapshot.empty) {
-        const batch = writeBatch(db);
-        snapshot.forEach(docSnap => batch.delete(docSnap.ref));
-        await batch.commit();
-      }
-    }
+    await deleteDoc(doc(db, 'journal', 'meta'));
+    await deleteDoc(doc(db, 'journal', 'trades'));
+    await deleteDoc(doc(db, 'journal', 'specimens_meta'));
     return true;
   } catch (err) {
-    console.error('Failed to purge Firestore data:', err);
     return false;
   }
 }
