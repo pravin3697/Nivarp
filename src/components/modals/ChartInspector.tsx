@@ -1,7 +1,22 @@
 'use client';
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { X, ZoomIn, ZoomOut, RotateCcw, ChevronLeft, ChevronRight } from 'lucide-react';
+import { 
+  X, 
+  ZoomIn, 
+  ZoomOut, 
+  RotateCcw, 
+  ChevronLeft, 
+  ChevronRight, 
+  MoreVertical, 
+  Copy, 
+  Link2, 
+  Download, 
+  ExternalLink, 
+  Info,
+  Check,
+  Loader2
+} from 'lucide-react';
 
 export interface ChartGalleryItem {
   url: string;
@@ -41,9 +56,16 @@ export function ChartInspector({
   const [panPosition, setPanPosition] = useState({ x: 0, y: 0 });
   const [isDragging, setIsDragging] = useState(false);
   const dragStartRef = useRef({ x: 0, y: 0 });
-
   const touchStartDistRef = useRef<number | null>(null);
 
+  // Context Menu & Details State
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [isDetailsOpen, setIsDetailsOpen] = useState(false);
+  const [copiedAction, setCopiedAction] = useState<'image' | 'link' | null>(null);
+  const [isConverting, setIsConverting] = useState(false);
+  const [imageMeta, setImageMeta] = useState<{ width: number; height: number; sizeStr?: string }>({ width: 0, height: 0 });
+
+  const menuRef = useRef<HTMLDivElement>(null);
   const hasMultiple = items && items.length > 1;
 
   useEffect(() => {
@@ -64,8 +86,31 @@ export function ChartInspector({
       }
       setZoomScale(1);
       setPanPosition({ x: 0, y: 0 });
+      setIsMenuOpen(false);
+      setIsDetailsOpen(false);
     }
   }, [isOpen, initialUrl, title, htfUrl, ltfUrl, items, initialIndex]);
+
+  // Read natural image resolution
+  useEffect(() => {
+    if (!currentUrl) return;
+    const img = new Image();
+    img.src = currentUrl;
+    img.onload = () => {
+      setImageMeta({ width: img.naturalWidth, height: img.naturalHeight });
+    };
+  }, [currentUrl]);
+
+  // Close context menu on click outside
+  useEffect(() => {
+    const handleOutsideClick = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setIsMenuOpen(false);
+      }
+    };
+    if (isMenuOpen) document.addEventListener('mousedown', handleOutsideClick);
+    return () => document.removeEventListener('mousedown', handleOutsideClick);
+  }, [isMenuOpen]);
 
   const navigateTo = useCallback((index: number) => {
     if (!items || index < 0 || index >= items.length) return;
@@ -77,18 +122,16 @@ export function ChartInspector({
     setCurrentLtf(target.ltfUrl);
     setZoomScale(1);
     setPanPosition({ x: 0, y: 0 });
+    setIsMenuOpen(false);
+    setIsDetailsOpen(false);
   }, [items]);
 
   const handlePrev = useCallback(() => {
-    if (currentIndex > 0) {
-      navigateTo(currentIndex - 1);
-    }
+    if (currentIndex > 0) navigateTo(currentIndex - 1);
   }, [currentIndex, navigateTo]);
 
   const handleNext = useCallback(() => {
-    if (items && currentIndex < items.length - 1) {
-      navigateTo(currentIndex + 1);
-    }
+    if (items && currentIndex < items.length - 1) navigateTo(currentIndex + 1);
   }, [currentIndex, items, navigateTo]);
 
   useEffect(() => {
@@ -101,6 +144,97 @@ export function ChartInspector({
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isOpen, onClose, handlePrev, handleNext]);
+
+  // Smart Copy Media Link (Converts base64 to real ImgBB URL on-the-fly)
+  const handleCopyMediaLink = async () => {
+    try {
+      if (currentUrl.startsWith('http://') || currentUrl.startsWith('https://')) {
+        await navigator.clipboard.writeText(currentUrl);
+        setCopiedAction('link');
+        // Fast snap close in 350ms
+        setTimeout(() => {
+          setCopiedAction(null);
+          setIsMenuOpen(false);
+        }, 350);
+        return;
+      }
+
+      // Convert legacy base64 to real ImgBB image
+      if (currentUrl.startsWith('data:image')) {
+        setIsConverting(true);
+        const resBlob = await fetch(currentUrl).then(r => r.blob());
+        const formData = new FormData();
+        formData.append('image', resBlob);
+
+        const uploadRes = await fetch(`https://api.imgbb.com/1/upload?key=ef3caf5880f01c4c57d0ebc97cdaac10`, {
+          method: 'POST',
+          body: formData
+        });
+
+        const data = await uploadRes.json();
+        setIsConverting(false);
+
+        if (data?.data?.url) {
+          setCurrentUrl(data.data.url);
+          await navigator.clipboard.writeText(data.data.url);
+        } else {
+          await navigator.clipboard.writeText(currentUrl);
+        }
+
+        setCopiedAction('link');
+        // Fast snap close in 350ms
+        setTimeout(() => {
+          setCopiedAction(null);
+          setIsMenuOpen(false);
+        }, 350);
+      }
+    } catch (err) {
+      setIsConverting(false);
+      console.warn('Copy link error:', err);
+    }
+  };
+
+  // Copy Image directly to Clipboard for pasting
+  const handleCopyImage = async () => {
+    try {
+      setCopiedAction('image');
+      const response = await fetch(currentUrl);
+      const blob = await response.blob();
+      await navigator.clipboard.write([
+        new ClipboardItem({ [blob.type || 'image/png']: blob })
+      ]);
+      // Fast snap close in 350ms
+      setTimeout(() => {
+        setCopiedAction(null);
+        setIsMenuOpen(false);
+      }, 350);
+    } catch {
+      await navigator.clipboard.writeText(currentUrl);
+      setTimeout(() => {
+        setCopiedAction(null);
+        setIsMenuOpen(false);
+      }, 350);
+    }
+  };
+
+  const handleDownload = async () => {
+    try {
+      const response = await fetch(currentUrl);
+      const blob = await response.blob();
+      const blobUrl = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = blobUrl;
+      const cleanFileName = (currentTitle.replace(/[^a-z0-9_-]/gi, '_') || 'chart') + '.png';
+      a.download = cleanFileName;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(blobUrl);
+      setIsMenuOpen(false);
+    } catch {
+      window.open(currentUrl, '_blank');
+    }
+  };
 
   if (!isOpen || !currentUrl) return null;
 
@@ -171,16 +305,16 @@ export function ChartInspector({
       className="fixed inset-0 z-[100] bg-black/95 backdrop-blur-2xl flex flex-col justify-between overflow-hidden select-none safe-bottom-padding"
       onWheel={handleWheelZoom}
     >
-      {/* Top Bar: Left Title, Absolutely Centered Dead-Still Page Counter, Right Switcher & Close */}
-      <div className="relative px-3 sm:px-6 py-3 flex items-center justify-between border-b border-white/10 bg-black/60 backdrop-blur-md z-10 gap-2">
+      {/* Top Header Bar */}
+      <div className="relative px-3 sm:px-6 py-3 flex items-center justify-between border-b border-white/10 bg-black/60 backdrop-blur-md z-30 gap-2">
         
-        {/* Left Side: Chart Title */}
-        <div className="flex items-center gap-2 max-w-[35%] sm:max-w-[30%] truncate z-10">
+        {/* Left: Title */}
+        <div className="flex items-center gap-2 max-w-[32%] truncate z-10">
           <span className="h-2 w-2 rounded-full bg-emerald-400 shadow-[0_0_10px_#10b981] shrink-0" />
           <h4 className="text-xs sm:text-sm font-bold font-mono text-white tracking-wide truncate">{currentTitle}</h4>
         </div>
 
-        {/* Absolute Dead-Center Perfectly Anchored Fixed Counter (No Left/Right Shifting) */}
+        {/* Absolute Dead-Center Counter */}
         {hasMultiple && (
           <div className="absolute left-1/2 -translate-x-1/2 top-1/2 -translate-y-1/2 flex items-center justify-center w-28 sm:w-32 font-mono text-xs tabular-nums text-zinc-400 bg-white/[0.04] px-2 py-1 rounded-xl border border-white/10 shadow-md backdrop-blur-md z-20 pointer-events-auto">
             <button 
@@ -211,8 +345,8 @@ export function ChartInspector({
           </div>
         )}
 
-        {/* Right Side: HTF/LTF Switcher & Close */}
-        <div className="flex items-center gap-2 z-10">
+        {/* Right: HTF/LTF Switcher + Quick Actions Menu + Close */}
+        <div className="flex items-center gap-2 z-10" ref={menuRef}>
           {currentHtf && currentLtf && (
             <div className="flex items-center p-0.5 rounded-lg bg-white/[0.04] border border-white/10 text-[10px] sm:text-xs">
               <button
@@ -234,16 +368,121 @@ export function ChartInspector({
             </div>
           )}
 
+          {/* Options Dropdown Menu */}
+          <div className="relative">
+            <button
+              onClick={() => setIsMenuOpen(prev => !prev)}
+              className="p-1.5 sm:p-2 rounded-xl bg-zinc-900 text-zinc-300 hover:text-white border border-white/10 hover:border-white/20 transition-all flex items-center justify-center"
+              title="Image Options"
+            >
+              <MoreVertical className="w-4 h-4" />
+            </button>
+
+            {isMenuOpen && (
+              <div className="absolute right-0 top-full mt-2 w-56 bg-[#0E1019]/95 border border-white/15 rounded-2xl shadow-2xl backdrop-blur-2xl py-1.5 z-50 font-mono text-xs divide-y divide-white/[0.05] animate-in fade-in zoom-in-95 duration-100">
+                <div className="p-1 space-y-0.5">
+                  {/* Copy Image */}
+                  <button
+                    onClick={handleCopyImage}
+                    className="w-full px-3 py-2 rounded-xl flex items-center justify-between hover:bg-white/[0.06] text-zinc-200 hover:text-white transition-colors text-left"
+                  >
+                    <span className="flex items-center gap-2.5">
+                      <Copy className="w-3.5 h-3.5 text-cyan-400" />
+                      <span>Copy Image</span>
+                    </span>
+                    {copiedAction === 'image' && <Check className="w-3.5 h-3.5 text-emerald-400" />}
+                  </button>
+
+                  {/* Copy Media Link */}
+                  <button
+                    onClick={handleCopyMediaLink}
+                    disabled={isConverting}
+                    className="w-full px-3 py-2 rounded-xl flex items-center justify-between hover:bg-white/[0.06] text-zinc-200 hover:text-white transition-colors text-left disabled:opacity-50"
+                  >
+                    <span className="flex items-center gap-2.5">
+                      <Link2 className="w-3.5 h-3.5 text-cyan-400" />
+                      <span>{isConverting ? 'Uploading to CDN...' : 'Copy Media Link'}</span>
+                    </span>
+                    {isConverting ? (
+                      <Loader2 className="w-3.5 h-3.5 text-cyan-400 animate-spin" />
+                    ) : (
+                      copiedAction === 'link' && <Check className="w-3.5 h-3.5 text-emerald-400" />
+                    )}
+                  </button>
+
+                  {/* Download Image */}
+                  <button
+                    onClick={handleDownload}
+                    className="w-full px-3 py-2 rounded-xl flex items-center gap-2.5 hover:bg-white/[0.06] text-zinc-200 hover:text-white transition-colors text-left"
+                  >
+                    <Download className="w-3.5 h-3.5 text-emerald-400" />
+                    <span>Download Image</span>
+                  </button>
+
+                  {/* Open in New Tab */}
+                  <a
+                    href={currentUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="w-full px-3 py-2 rounded-xl flex items-center gap-2.5 hover:bg-white/[0.06] text-zinc-200 hover:text-white transition-colors text-left"
+                  >
+                    <ExternalLink className="w-3.5 h-3.5 text-purple-400" />
+                    <span>Open in New Tab</span>
+                  </a>
+                </div>
+
+                {/* View Details */}
+                <div className="p-1">
+                  <button
+                    onClick={() => setIsDetailsOpen(prev => !prev)}
+                    className="w-full px-3 py-2 rounded-xl flex items-center justify-between hover:bg-white/[0.06] text-zinc-300 hover:text-white transition-colors text-left"
+                  >
+                    <span className="flex items-center gap-2.5">
+                      <Info className="w-3.5 h-3.5 text-amber-400" />
+                      <span>View Details</span>
+                    </span>
+                    <span className="text-[10px] text-zinc-500">
+                      {isDetailsOpen ? '▲' : '▼'}
+                    </span>
+                  </button>
+
+                  {isDetailsOpen && (
+                    <div className="p-2.5 mt-1 rounded-xl bg-black/60 border border-white/10 space-y-2 text-[11px] text-zinc-400 animate-in fade-in duration-100">
+                      <div>
+                        <span className="text-[10px] text-zinc-500 uppercase block">Filename / Title</span>
+                        <span className="text-white truncate block font-bold">{currentTitle}</span>
+                      </div>
+                      <div>
+                        <span className="text-[10px] text-zinc-500 uppercase block">Resolution</span>
+                        <span className="text-cyan-300 font-bold">
+                          {imageMeta.width ? `${imageMeta.width} x ${imageMeta.height}` : 'Calculating...'}
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-[10px] text-zinc-500 uppercase block">Host Source</span>
+                        <span className="text-zinc-400 truncate block">
+                          {currentUrl.startsWith('data:') ? 'Local Screenshot' : 'Cloud CDN (ImgBB)'}
+                        </span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Close Fullscreen */}
           <button
             onClick={onClose}
             className="p-1.5 sm:p-2 rounded-xl bg-zinc-900 text-zinc-400 hover:text-white border border-white/10 transition-colors"
+            title="Close (Esc)"
           >
             <X className="w-4 h-4 sm:w-5 h-5" />
           </button>
         </div>
       </div>
 
-      {/* Floating Prev/Next */}
+      {/* Floating Prev/Next Buttons */}
       {hasMultiple && (
         <>
           <button
