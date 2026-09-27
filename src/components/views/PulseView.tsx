@@ -31,6 +31,26 @@ export function PulseView({
     });
   }, [trades]);
 
+  // Advanced execution statistics
+  const advancedStats = useMemo(() => {
+    const wins = trades.filter(t => t.rMultiple > 0);
+    const losses = trades.filter(t => t.rMultiple < 0);
+
+    const avgWin = wins.length 
+      ? Number((wins.reduce((acc, t) => acc + t.rMultiple, 0) / wins.length).toFixed(2)) 
+      : 0;
+
+    const avgLoss = losses.length 
+      ? Number((losses.reduce((acc, t) => acc + t.rMultiple, 0) / losses.length).toFixed(2)) 
+      : 0;
+
+    const expectancy = trades.length 
+      ? Number((trades.reduce((acc, t) => acc + t.rMultiple, 0) / trades.length).toFixed(2)) 
+      : 0;
+
+    return { avgWin, avgLoss, expectancy };
+  }, [trades]);
+
   const formatR = (rVal: number) => {
     return `${rVal >= 0 ? '+' : ''}${rVal.toFixed(2)}R`;
   };
@@ -45,32 +65,37 @@ export function PulseView({
 
   return (
     <div className="space-y-5 sm:space-y-6">
-      {/* KPI Cards Row */}
+      {/* KPI Cards Row (Enhanced with Avg Win, Avg Loss, and Expectancy) */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+        {/* Net Harvested & Expectancy */}
         <div className="p-4 sm:p-5 rounded-2xl bg-[#090A10] border border-white/[0.06]">
           <div className="flex items-center justify-between text-zinc-500 text-[10px] sm:text-xs font-mono uppercase mb-1 sm:mb-2">
-            <span>Net Harvested</span>
+            <span>Net Edge</span>
             <Activity className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-emerald-400" />
           </div>
           <div className="text-2xl sm:text-3xl font-black font-mono text-emerald-400 truncate">
             {formatR(stats.netR)}
           </div>
-          <div className="mt-2 sm:mt-3 pt-2 sm:pt-3 border-t border-white/[0.04] text-[10px] sm:text-[11px] font-mono text-zinc-400">
-            Profit Factor: <strong className="text-white">{stats.profitFactor}</strong>
+          <div className="mt-2 sm:mt-3 pt-2 sm:pt-3 border-t border-white/[0.04] text-[10px] sm:text-[11px] font-mono text-zinc-400 flex items-center justify-between">
+            <span>PF: <strong className="text-white">{stats.profitFactor}</strong></span>
+            <span>Exp: <strong className="text-cyan-400">{formatR(advancedStats.expectancy)}/T</strong></span>
           </div>
         </div>
 
+        {/* Strike Accuracy & Risk/Reward */}
         <div className="p-4 sm:p-5 rounded-2xl bg-[#090A10] border border-white/[0.06]">
           <div className="flex items-center justify-between text-zinc-500 text-[10px] sm:text-xs font-mono uppercase mb-1 sm:mb-2">
-            <span>Strike Accuracy</span>
+            <span>Win Rate</span>
             <Target className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-cyan-400" />
           </div>
           <div className="text-2xl sm:text-3xl font-black font-mono text-white">{stats.winRate}%</div>
-          <div className="mt-2 sm:mt-3 pt-2 sm:pt-3 border-t border-white/[0.04] text-[10px] sm:text-[11px] font-mono text-zinc-400">
-            Total Trades: <strong className="text-white">{stats.total}</strong>
+          <div className="mt-2 sm:mt-3 pt-2 sm:pt-3 border-t border-white/[0.04] text-[10px] sm:text-[11px] font-mono text-zinc-400 flex items-center justify-between">
+            <span>Win: <strong className="text-emerald-400">+{advancedStats.avgWin}R</strong></span>
+            <span>Loss: <strong className="text-rose-400">{advancedStats.avgLoss}R</strong></span>
           </div>
         </div>
 
+        {/* Directional Bias */}
         <div className="p-4 sm:p-5 rounded-2xl bg-[#090A10] border border-white/[0.06]">
           <div className="flex items-center justify-between text-zinc-500 text-[10px] sm:text-xs font-mono uppercase mb-1 sm:mb-2">
             <span>Directional Bias</span>
@@ -80,20 +105,21 @@ export function PulseView({
             {stats.longs}L <span className="text-zinc-600">/</span> {stats.shorts}S
           </div>
           <div className="mt-2 sm:mt-3 pt-2 sm:pt-3 border-t border-white/[0.04] text-[10px] sm:text-[11px] font-mono text-zinc-400">
-            Execution Ratio
+            Total Trades: <strong className="text-white">{stats.total}</strong>
           </div>
         </div>
 
+        {/* Drawdown & ATH Peak */}
         <div className="p-4 sm:p-5 rounded-2xl bg-[#090A10] border border-white/[0.06]">
           <div className="flex items-center justify-between text-zinc-500 text-[10px] sm:text-xs font-mono uppercase mb-1 sm:mb-2">
-            <span>Max Drawdown</span>
+            <span>Drawdown & Peak</span>
             <ShieldAlert className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-rose-400" />
           </div>
           <div className="text-2xl sm:text-3xl font-black font-mono text-rose-400">
             -{stats.maxDD.toFixed(2)}R
           </div>
-          <div className="mt-2 sm:mt-3 pt-2 sm:pt-3 border-t border-white/[0.04] text-[10px] sm:text-[11px] font-mono text-zinc-400 truncate">
-            Peak: <strong className="text-emerald-400">+{stats.athR.toFixed(2)}R</strong>
+          <div className="mt-2 sm:mt-3 pt-2 sm:pt-3 border-t border-white/[0.04] text-[10px] sm:text-[11px] font-mono text-zinc-400 flex items-center justify-between">
+            <span>ATH Peak: <strong className="text-emerald-400">+{stats.athR.toFixed(2)}R</strong></span>
           </div>
         </div>
       </div>
@@ -103,7 +129,7 @@ export function PulseView({
         <div className="flex items-center justify-between mb-3">
           <h3 className="font-mono text-xs uppercase text-zinc-400 flex items-center gap-2">
             <span className="h-2 w-2 rounded-full bg-emerald-400" />
-            <span>Cumulative R Growth</span>
+            <span>Cumulative R Growth Trajectory</span>
           </h3>
           <span className="text-xs font-mono text-emerald-400 font-bold">{formatR(stats.netR)}</span>
         </div>
