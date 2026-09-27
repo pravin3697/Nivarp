@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react';
 import { CustomNumberInput } from '@/components/ui/CustomControls';
-import { Sliders, Database, Download, Upload, Trash2, CloudUpload, RefreshCw, Smartphone } from 'lucide-react';
+import { Sliders, Database, Download, Upload, Trash2, Cloud, RefreshCw, Smartphone } from 'lucide-react';
 
 interface SettingsViewProps {
   defaultRisk: number;
@@ -41,7 +41,7 @@ export function SettingsView({
             <div>
               <h3 className="font-bold text-sm text-white">1R Capital Benchmark</h3>
               <p className="text-xs text-zinc-500">
-                Denominator used to normalize Kotak Neo net P&L into R-multiples.
+                Denominator used to normalize Kotak Neo net P&L into R-multiples across your journal.
               </p>
             </div>
           </div>
@@ -57,25 +57,25 @@ export function SettingsView({
         </div>
       </div>
 
-      {/* Cloud Synchronization Engine */}
+      {/* Cloud Synchronization Engine (Firebase Real-Time) */}
       <div className="p-4 sm:p-6 rounded-2xl bg-[#090A10] border border-white/[0.06] space-y-4">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div className="flex items-center gap-3">
-            <div className="p-2 rounded-xl bg-cyan-500/10 text-cyan-400 shrink-0">
-              <CloudUpload className="w-5 h-5" />
+            <div className="p-2 rounded-xl bg-amber-500/10 text-amber-400 shrink-0">
+              <Cloud className="w-5 h-5" />
             </div>
             <div>
-              <h3 className="font-bold text-sm text-white">Supabase Cloud Sync Engine</h3>
-              <p className="text-xs text-zinc-500">Synchronize local data with PostgreSQL database.</p>
+              <h3 className="font-bold text-sm text-white">Firebase Real-Time Cloud Sync</h3>
+              <p className="text-xs text-zinc-500">Continuous cloud sync across mobile, desktop, and web with permanent image storage.</p>
             </div>
           </div>
           <button
             onClick={handleManualSync}
             disabled={isSyncing}
-            className="flex items-center justify-center gap-2 px-4 py-2 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-black font-mono font-bold text-xs shadow-lg shadow-cyan-500/20 disabled:opacity-50 transition-all w-full sm:w-auto"
+            className="flex items-center justify-center gap-2 px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-black font-mono font-bold text-xs shadow-lg shadow-amber-500/20 disabled:opacity-50 transition-all w-full sm:w-auto"
           >
             <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin' : ''}`} />
-            <span>{isSyncing ? 'Syncing...' : 'Force Push to Cloud'}</span>
+            <span>{isSyncing ? 'Syncing...' : 'Force Sync with Cloud'}</span>
           </button>
         </div>
       </div>
