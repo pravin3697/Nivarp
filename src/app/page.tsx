@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useMemo, useEffect, useRef } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { Trade, PlaybookCollection, ChartSpecimen } from '@/types/trade';
 import { parseKotakNeoCsv, parseDateToTimestamp } from '@/lib/parser';
 import { 
@@ -57,7 +57,6 @@ export default function NivarpOS() {
 
   const [isLoaded, setIsLoaded] = useState(false);
   const [toast, setToast] = useState<ToastState | null>(null);
-  const isSyncingRef = useRef(false);
 
   // Modals state
   const [isCsvModalOpen, setIsCsvModalOpen] = useState(false);
@@ -183,7 +182,6 @@ export default function NivarpOS() {
           setCategoryOrder(idbCatOrder.map(c => c.trim().toUpperCase()));
         }
 
-        // Fetch from 1 single master doc in Firebase
         const cloudData = await fetchMasterFromCloud();
         if (isMounted && cloudData) {
           if (cloudData.trades?.length) setTrades(cloudData.trades);
@@ -204,10 +202,11 @@ export default function NivarpOS() {
     return () => { isMounted = false; };
   }, []);
 
-  // Atomic Auto-Sync: Saves locally immediately, and batches 1 clean write to Firestore
+  // Debounced Atomic Cloud Sync: 2-second buffer prevents Firebase write stream exhaustion
   useEffect(() => {
     if (!isLoaded) return;
 
+    // Instant local save to browser IndexedDB
     idbSet(STORAGE_KEY, {
       trades, 
       collections: deduplicatedCollections, 
@@ -217,10 +216,8 @@ export default function NivarpOS() {
     idbSet(STUDY_STORAGE_KEY, studySpecimens);
     idbSet(CATEGORY_ORDER_KEY, categoryOrder);
 
-    // Debounce cloud write: only sends 1 atomic payload when changes pause
+    // Wait 2 seconds of inactivity before writing 1 clean atomic payload to Firestore
     const timer = setTimeout(async () => {
-      if (isSyncingRef.current) return;
-      isSyncingRef.current = true;
       await syncMasterToCloud({
         trades,
         collections: deduplicatedCollections,
@@ -228,8 +225,7 @@ export default function NivarpOS() {
         categoryOrder,
         defaultRiskPerTrade
       });
-      isSyncingRef.current = false;
-    }, 1200);
+    }, 2000);
 
     return () => clearTimeout(timer);
   }, [isLoaded, trades, deduplicatedCollections, categoryOrder, studySpecimens, defaultRiskPerTrade]);
