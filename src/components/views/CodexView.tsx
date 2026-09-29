@@ -37,30 +37,31 @@ export interface CodexViewProps {
 
 const cleanStr = (s?: string) => (s || '').toLowerCase().trim().replace(/\s+/g, ' ');
 
+// Natural Numerical Sorter: Strictly honors 1, 2, 3, 4 ... 10, 11
 export function sortSetupsSmartly(a: PlaybookCollection, b: PlaybookCollection): number {
-  const nameA = cleanStr(a.name);
-  const nameB = cleanStr(b.name);
+  const nameA = a.name.trim();
+  const nameB = b.name.trim();
 
-  const baseA = nameA.replace(/^(failed|extended)\s+/i, '');
-  const baseB = nameB.replace(/^(failed|extended)\s+/i, '');
+  const numMatchA = nameA.match(/^#?(\d+)[\s.-_]/);
+  const numMatchB = nameB.match(/^#?(\d+)[\s.-_]/);
 
-  const getRank = (name: string) => {
-    if (name.includes('failed')) return 3;
-    if (name.includes('extended')) return 2;
+  if (numMatchA && numMatchB) {
+    const numA = parseInt(numMatchA[1], 10);
+    const numB = parseInt(numMatchB[1], 10);
+    if (numA !== numB) return numA - numB;
+  } else if (numMatchA) {
+    return -1;
+  } else if (numMatchB) {
     return 1;
-  };
-
-  if (baseA === baseB) {
-    return getRank(nameA) - getRank(nameB);
   }
 
-  const isFailedA = nameA.includes('failed');
-  const isFailedB = nameB.includes('failed');
+  const isFailedA = cleanStr(nameA).includes('failed');
+  const isFailedB = cleanStr(nameB).includes('failed');
   if (isFailedA !== isFailedB) {
     return isFailedA ? 1 : -1;
   }
 
-  return baseA.localeCompare(baseB);
+  return nameA.localeCompare(nameB, undefined, { numeric: true, sensitivity: 'base' });
 }
 
 export function CodexView({
@@ -78,18 +79,17 @@ export function CodexView({
   onDeleteSpecimen,
   onReorderSpecimens,
   onReorderCategories,
-  onReorderCollections,
   onOpenInspector
 }: CodexViewProps) {
+  // Specimen drag-and-drop state inside opened setup vault
   const [draggedIdx, setDraggedIdx] = useState<number | null>(null);
   const [dragOverIdx, setDragOverIdx] = useState<number | null>(null);
 
+  // Category section drag-and-drop state
   const [draggedCatIdx, setDraggedCatIdx] = useState<number | null>(null);
   const [dragOverCatIdx, setDragOverCatIdx] = useState<number | null>(null);
 
-  const [draggedCardId, setDraggedCardId] = useState<string | null>(null);
-  const [dragOverCardId, setDragOverCardId] = useState<string | null>(null);
-
+  // Specimen Drag Handlers
   const handleDragStart = (e: React.DragEvent, index: number) => {
     setDraggedIdx(index);
     e.dataTransfer.effectAllowed = 'move';
@@ -115,6 +115,7 @@ export function CodexView({
     setDragOverIdx(null);
   };
 
+  // Category Drag Handlers
   const handleCatDragStart = (e: React.DragEvent, index: number) => {
     setDraggedCatIdx(index);
     e.dataTransfer.effectAllowed = 'move';
@@ -149,39 +150,6 @@ export function CodexView({
     onReorderCategories(updated);
   };
 
-  const handleCardDragStart = (e: React.DragEvent, colId: string) => {
-    e.stopPropagation();
-    setDraggedCardId(colId);
-  };
-
-  const handleCardDragOver = (e: React.DragEvent, colId: string) => {
-    e.preventDefault();
-    e.stopPropagation();
-    if (dragOverCardId !== colId) setDragOverCardId(colId);
-  };
-
-  const handleCardDrop = (e: React.DragEvent, targetCol: PlaybookCollection, categoryCollections: PlaybookCollection[]) => {
-    e.preventDefault();
-    e.stopPropagation();
-    if (!draggedCardId || draggedCardId === targetCol.id || !onReorderCollections) {
-      setDraggedCardId(null);
-      setDragOverCardId(null);
-      return;
-    }
-    const fromIdx = categoryCollections.findIndex(c => c.id === draggedCardId);
-    const toIdx = categoryCollections.findIndex(c => c.id === targetCol.id);
-    if (fromIdx === -1 || toIdx === -1) return;
-
-    const reorderedCat = [...categoryCollections];
-    const [moved] = reorderedCat.splice(fromIdx, 1);
-    reorderedCat.splice(toIdx, 0, moved);
-
-    const otherCols = collections.filter(c => cleanStr(c.category) !== cleanStr(targetCol.category));
-    onReorderCollections([...reorderedCat, ...otherCols]);
-    setDraggedCardId(null);
-    setDragOverCardId(null);
-  };
-
   const currentSetupGallery: ChartGalleryItem[] = activeCollectionSpecimens.map(s => ({
     url: s.imageUrl,
     title: s.title
@@ -203,7 +171,7 @@ export function CodexView({
             <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
               <button 
                 onClick={onOpenAddCollection} 
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-cyan-500/10 border border-cyan-500/30 text-cyan-400 text-xs font-mono font-bold"
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-cyan-500/10 border border-cyan-500/30 text-cyan-400 text-xs font-mono font-bold hover:bg-cyan-500/20 transition-all"
               >
                 <Plus className="w-3.5 h-3.5" /><span>New Setup</span>
               </button>
@@ -251,9 +219,9 @@ export function CodexView({
                       draggable
                       onDragStart={(e) => handleCatDragStart(e, catIdx)}
                       onDragEnd={() => { setDraggedCatIdx(null); setDragOverCatIdx(null); }}
-                      className="flex items-center gap-2 cursor-grab select-none"
+                      className="flex items-center gap-2 cursor-grab select-none group"
                     >
-                      <GripVertical className="w-3.5 h-3.5 text-zinc-600 hidden sm:inline" />
+                      <GripVertical className="w-3.5 h-3.5 text-zinc-600 group-hover:text-cyan-400 transition-colors" />
                       <h3 className="font-mono text-xs uppercase tracking-wider text-cyan-400 font-bold">
                         {cat}
                       </h3>
@@ -266,21 +234,21 @@ export function CodexView({
                       <button
                         onClick={() => handleMoveCategory(catIdx, 'up')}
                         disabled={catIdx === 0}
-                        className="p-1 text-zinc-400 hover:text-cyan-300 disabled:opacity-20"
+                        className="p-1 text-zinc-400 hover:text-cyan-300 disabled:opacity-20 transition-colors"
                       >
-                        <ChevronUp className="w-3 h-3" />
+                        <ChevronUp className="w-3.5 h-3.5" />
                       </button>
                       <button
                         onClick={() => handleMoveCategory(catIdx, 'down')}
                         disabled={catIdx === uniqueCategories.length - 1}
-                        className="p-1 text-zinc-400 hover:text-cyan-300 disabled:opacity-20"
+                        className="p-1 text-zinc-400 hover:text-cyan-300 disabled:opacity-20 transition-colors"
                       >
-                        <ChevronDown className="w-3 h-3" />
+                        <ChevronDown className="w-3.5 h-3.5" />
                       </button>
                     </div>
                   </div>
 
-                  {/* 4 Cards per Row on desktop and large screens */}
+                  {/* 4 Cards Across: Clean Click-To-Open Cards */}
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
                     {catCollections.map(col => {
                       const colClean = cleanStr(col.name);
@@ -298,42 +266,39 @@ export function CodexView({
                       return (
                         <div 
                           key={col.id} 
-                          draggable
-                          onDragStart={(e) => handleCardDragStart(e, col.id)}
-                          onDragOver={(e) => handleCardDragOver(e, col.id)}
-                          onDrop={(e) => handleCardDrop(e, col, catCollections)}
-                          onDragEnd={() => { setDraggedCardId(null); setDragOverCardId(null); }}
                           onClick={() => onSelectCollection(col)} 
-                          className="relative p-3 rounded-xl bg-[#090A10] border border-white/[0.08] hover:border-cyan-500/50 cursor-pointer flex flex-col justify-between group transition-all"
+                          className="relative p-3 rounded-xl bg-[#090A10] border border-white/[0.08] hover:border-cyan-500/50 hover:bg-white/[0.015] cursor-pointer flex flex-col justify-between group transition-all"
                         >
                           <div>
-                            <div className="flex items-center justify-between pb-1">
+                            <div className="flex items-center justify-between pb-1 gap-2">
                               <h4 className="font-bold text-xs sm:text-sm text-white group-hover:text-cyan-400 truncate">
                                 {col.name}
                               </h4>
                               <div className="flex items-center gap-1 shrink-0">
                                 <button 
                                   onClick={(e) => { e.stopPropagation(); onOpenEditCollection(col); }} 
-                                  className="text-zinc-500 hover:text-cyan-400 p-0.5"
+                                  className="text-zinc-500 hover:text-cyan-400 p-0.5 transition-colors"
+                                  title="Edit Setup"
                                 >
                                   <Pencil className="w-3 h-3" />
                                 </button>
                                 <button 
                                   onClick={(e) => { e.stopPropagation(); onDeleteCollection(col.id, col.name); }} 
-                                  className="text-zinc-500 hover:text-rose-400 p-0.5"
+                                  className="text-zinc-500 hover:text-rose-400 p-0.5 transition-colors"
+                                  title="Delete Setup"
                                 >
                                   <Trash2 className="w-3 h-3" />
                                 </button>
                               </div>
                             </div>
 
-                            {/* Compact Height Container (24 = 96px) to fit 4 per row without scrolling */}
+                            {/* Compact Chart Preview */}
                             <div className="mt-1.5 w-full h-24 rounded-lg bg-black/40 overflow-hidden relative flex items-center justify-center">
                               {previewImage ? (
                                 <img
                                   src={previewImage}
                                   alt={col.name}
-                                  className="w-full h-full object-cover opacity-80 group-hover:opacity-100"
+                                  className="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition-opacity"
                                 />
                               ) : (
                                 <span className="text-[9px] font-mono text-zinc-500">
@@ -345,7 +310,7 @@ export function CodexView({
 
                           <div className="mt-2 pt-1.5 border-t border-white/[0.05] text-[10px] font-mono text-zinc-400 flex items-center justify-between">
                             <span>{chartCount} Charts</span>
-                            <span className="text-cyan-400 font-bold">Open →</span>
+                            <span className="text-cyan-400 font-bold group-hover:translate-x-0.5 transition-transform">Open →</span>
                           </div>
                         </div>
                       );
@@ -362,7 +327,7 @@ export function CodexView({
             <div className="flex items-center gap-3">
               <button 
                 onClick={() => onSelectCollection(null)} 
-                className="p-1.5 rounded-lg bg-zinc-900 border border-white/10 text-zinc-300"
+                className="p-1.5 rounded-lg bg-zinc-900 border border-white/10 text-zinc-300 hover:text-white transition-colors"
               >
                 <ArrowLeft className="w-4 h-4" />
               </button>
@@ -371,7 +336,7 @@ export function CodexView({
                   <h2 className="text-base sm:text-xl font-black text-white">{selectedCollection.name}</h2>
                   <button 
                     onClick={() => onOpenEditCollection(selectedCollection)}
-                    className="p-1 rounded text-zinc-400 hover:text-cyan-400"
+                    className="p-1 rounded text-zinc-400 hover:text-cyan-400 transition-colors"
                   >
                     <Pencil className="w-3 h-3" />
                   </button>
@@ -381,7 +346,7 @@ export function CodexView({
             
             <button 
               onClick={onOpenAddStudy} 
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-400/10 border border-amber-400/30 text-amber-400 text-xs font-mono font-bold w-full sm:w-auto justify-center"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-400/10 border border-amber-400/30 text-amber-400 text-xs font-mono font-bold hover:bg-amber-400/20 transition-all w-full sm:w-auto justify-center"
             >
               <ImagePlus className="w-3.5 h-3.5" /><span>Add Study Chart</span>
             </button>
@@ -400,13 +365,13 @@ export function CodexView({
                   onDragStart={(e) => handleDragStart(e, idx)}
                   onDragOver={(e) => handleDragOver(e, idx)}
                   onDrop={(e) => handleDrop(e, idx)}
-                  className="group relative rounded-xl bg-[#090A10] border border-white/[0.08] overflow-hidden"
+                  className="group relative rounded-xl bg-[#090A10] border border-white/[0.08] overflow-hidden cursor-grab active:cursor-grabbing hover:border-zinc-500 transition-all"
                 >
                   <div className="relative h-48 sm:h-52 w-full bg-black select-none">
                     <img 
                       src={specimen.imageUrl} 
                       alt={specimen.title} 
-                      className="w-full h-full object-cover opacity-90 group-hover:opacity-100" 
+                      className="w-full h-full object-cover opacity-90 group-hover:opacity-100 transition-opacity" 
                       onClick={() => onOpenInspector(specimen.imageUrl, specimen.title, idx, currentSetupGallery)} 
                     />
 
@@ -415,7 +380,7 @@ export function CodexView({
                         e.stopPropagation();
                         onDeleteSpecimen(specimen.id);
                       }}
-                      className="absolute top-2 right-2 p-1.5 rounded-lg bg-black/80 hover:bg-rose-500/20 text-zinc-400 hover:text-rose-400 border border-white/15 z-10"
+                      className="absolute top-2 right-2 p-1.5 rounded-lg bg-black/80 hover:bg-rose-500/20 text-zinc-400 hover:text-rose-400 border border-white/15 z-10 opacity-0 group-hover:opacity-100 transition-opacity"
                     >
                       <Trash2 className="w-3 h-3" />
                     </button>
