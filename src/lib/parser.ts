@@ -13,6 +13,13 @@ export function cleanSecurityName(rawName: string): string {
   return token || cleaned.toUpperCase();
 }
 
+// Strips leading numerical ordering tags like "1 - ", "2. ", "#3 " for pristine UI display
+export function displaySetupName(name?: string): string {
+  if (!name) return 'General Setup';
+  // Strips "1 - ", "1 -", "1. ", "- ", "1: ", "1) " cleanly
+  return name.replace(/^(\s*#?\d+\s*[-–—.:)]*\s*|^\s*[-–—.:)]+\s*)/, '').trim();
+}
+
 function parseTimeToMinutes(timeStr: string): number {
   if (!timeStr) return 0;
   const parts = timeStr.trim().split(':');
@@ -105,7 +112,6 @@ export function parseKotakNeoCsv(
       const entryTime = isLong ? buy.time : sell.time;
       const exitTime = isLong ? sell.time : buy.time;
 
-      // Accurate duration in minutes
       const entryMins = parseTimeToMinutes(entryTime);
       const exitMins = parseTimeToMinutes(exitTime);
       const durationMinutes = Math.max(1, Math.abs(exitMins - entryMins));

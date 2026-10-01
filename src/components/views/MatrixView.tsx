@@ -2,7 +2,7 @@
 
 import React, { useMemo } from 'react';
 import { Trade, PlaybookCollection, BehavioralTag } from '@/types/trade';
-import { parseDateToTimestamp } from '@/lib/parser';
+import { parseDateToTimestamp, displaySetupName} from '@/lib/parser';
 import { 
   ResponsiveContainer, 
   AreaChart, 
@@ -277,28 +277,30 @@ export function MatrixView({ collections, trades }: MatrixViewProps) {
     return slotStats.filter(s => s.trades > 0 || ['10:00 - 11:00 AM', '11:00 - 12:00 PM'].includes(s.slot));
   }, [trades]);
 
-  // 5. Setup Edge Realization
+ // 5. Setup Edge Realization (Cleaned Name Display)
   const setupEdge = useMemo(() => {
-    const map = new Map<string, { total: number; wins: number; netR: number; category: string }>();
+    const map = new Map<string, { total: number; wins: number; netR: number; category: string; cleanName: string }>();
 
     collections.forEach(col => {
-      map.set(col.name.toLowerCase(), { total: 0, wins: 0, netR: 0, category: col.category });
+      const clean = displaySetupName(col.name);
+      const key = clean.toLowerCase();
+      map.set(key, { total: 0, wins: 0, netR: 0, category: col.category, cleanName: clean });
     });
 
     trades.forEach(t => {
-      const key = (t.setupType || 'General Setup').toLowerCase();
-      const current = map.get(key) || { total: 0, wins: 0, netR: 0, category: 'UNASSIGNED' };
+      const clean = displaySetupName(t.setupType);
+      const key = clean.toLowerCase();
+      const current = map.get(key) || { total: 0, wins: 0, netR: 0, category: 'UNASSIGNED', cleanName: clean };
       current.total += 1;
       if (t.rMultiple > 0) current.wins += 1;
       current.netR += t.rMultiple;
       map.set(key, current);
     });
 
-    return Array.from(map.entries()).map(([name, data]) => {
-      const properName = collections.find(c => c.name.toLowerCase() === name)?.name || name;
+    return Array.from(map.values()).map(data => {
       const wr = data.total ? Math.round((data.wins / data.total) * 100) : 0;
       return {
-        name: properName,
+        name: data.cleanName,
         category: data.category,
         total: data.total,
         wins: data.wins,

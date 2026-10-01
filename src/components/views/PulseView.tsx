@@ -2,7 +2,7 @@
 
 import React, { useMemo, useState } from 'react';
 import { Trade } from '@/types/trade';
-import { parseDateToTimestamp } from '@/lib/parser';
+import { parseDateToTimestamp, displaySetupName } from '@/lib/parser';
 import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip } from 'recharts';
 import { Activity, Target, Layers, ShieldAlert, Maximize2, Pencil, ShieldCheck, Filter, Calendar } from 'lucide-react';
 
@@ -23,12 +23,9 @@ export function PulseView({
   onOpenInspector,
   onOpenDebrief,
 }: PulseViewProps) {
-  // Mode: 'rules-only' (System Edge) vs 'all' (Realized Portfolio)
   const [filterMode, setFilterMode] = useState<'rules-only' | 'all'>('rules-only');
-  // Timeframe: 'week' | 'month' | 'all'
   const [timeframe, setTimeframe] = useState<'week' | 'month' | 'all'>('all');
 
-  // Filtered trades by Timeframe AND Rule Discipline
   const activeTrades = useMemo(() => {
     const now = new Date();
 
@@ -50,7 +47,7 @@ export function PulseView({
         return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
       }
 
-      return true; // 'all'
+      return true;
     });
 
     if (filterMode === 'rules-only') {
@@ -59,7 +56,6 @@ export function PulseView({
     return timeFiltered;
   }, [trades, filterMode, timeframe]);
 
-  // Recalculated Pristine vs Realized Statistics
   const dynamicStats = useMemo(() => {
     const list = activeTrades;
     const total = list.length;
@@ -117,7 +113,6 @@ export function PulseView({
     };
   }, [activeTrades]);
 
-  // Dynamic Growth Trajectory Curve
   const dynamicGrowthCurve = useMemo(() => {
     const chronological = [...activeTrades].sort((a, b) => parseDateToTimestamp(a.tradeDate) - parseDateToTimestamp(b.tradeDate));
     let cumR = 0;
@@ -127,7 +122,6 @@ export function PulseView({
     });
   }, [activeTrades]);
 
-  // Sort trades: strictly newest on top
   const sortedRecentTrades = useMemo(() => {
     return [...activeTrades].sort((a, b) => {
       const timeA = parseDateToTimestamp(a.tradeDate);
@@ -150,10 +144,10 @@ export function PulseView({
 
   return (
     <div className="space-y-5 sm:space-y-6">
-      {/* Top Filter Bar: Rock-solid anchored layout with ZERO jumping or shifting */}
+      {/* Top Filter Bar */}
       <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 p-3 rounded-2xl bg-[#090A10] border border-white/[0.06] select-none">
         
-        {/* Left: Discipline Mode Toggle with Fixed Dimensions */}
+        {/* Left: Discipline Mode Toggle */}
         <div className="flex items-center gap-2">
           <div className="flex items-center p-1 rounded-xl bg-white/[0.03] border border-white/[0.06] text-xs font-mono">
             <button
@@ -181,7 +175,7 @@ export function PulseView({
           </div>
         </div>
 
-        {/* Right: Timeframe Switcher with Static Locked Button Widths */}
+        {/* Right: Timeframe Switcher */}
         <div className="flex items-center justify-between sm:justify-end gap-2.5">
           <div className="flex items-center gap-1.5 text-xs font-mono text-zinc-500 shrink-0">
             <Calendar className="w-3.5 h-3.5 text-cyan-400" />
@@ -315,7 +309,7 @@ export function PulseView({
         </div>
       </div>
 
-      {/* Trade Entries */}
+      {/* Trade Entries (with Cleaned Setup Name) */}
       <div className="p-4 sm:p-6 rounded-2xl bg-[#090A10] border border-white/[0.06] space-y-3">
         <div className="flex items-center justify-between pb-1">
           <h3 className="font-mono text-xs uppercase text-zinc-400">
@@ -333,6 +327,8 @@ export function PulseView({
             {sortedRecentTrades.map(t => {
               const isGreen = t.rMultiple >= 0;
               const behaviorClass = getBehaviorBadge(t.behaviorTag);
+              // Cleaned setup name removes "1 - ", "2 - ", etc.
+              const cleanSetup = displaySetupName(t.setupType);
 
               return (
                 <div key={t.id} className="py-3 flex flex-col sm:flex-row sm:items-center justify-between hover:bg-white/[0.01] px-1 sm:px-2 rounded-xl transition-all gap-2">
@@ -353,7 +349,7 @@ export function PulseView({
                         )}
                       </div>
                       <div className="text-[11px] text-zinc-400 mt-0.5 flex flex-wrap items-center gap-2">
-                        <span className="text-cyan-400 font-semibold">{t.setupType}</span>
+                        <span className="text-cyan-400 font-semibold">{cleanSetup}</span>
                         <span>•</span>
                         <span>₹{t.entryPrice} → ₹{t.exitPrice}</span>
                         {t.slPrice && <span className="text-rose-400/80 font-mono">• SL: ₹{t.slPrice}</span>}
