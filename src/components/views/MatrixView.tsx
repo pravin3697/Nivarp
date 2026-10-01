@@ -29,7 +29,8 @@ import {
   AlertTriangle,
   ZapOff,
   Skull,
-  Timer
+  Timer,
+  AlertOctagon
 } from 'lucide-react';
 
 interface MatrixViewProps {
@@ -38,7 +39,7 @@ interface MatrixViewProps {
 }
 
 export function MatrixView({ collections, trades }: MatrixViewProps) {
-  // 1. Behavioral Execution Analytics
+  // 1. Behavioral Execution Analytics & Cost of Mistakes
   const behaviorAnalytics = useMemo(() => {
     const totalTrades = trades.length;
 
@@ -102,6 +103,7 @@ export function MatrixView({ collections, trades }: MatrixViewProps) {
     let taggedCount = 0;
     let disciplinedR = 0;
     let leakR = 0;
+    let brokenRuleCount = 0;
 
     trades.forEach(t => {
       const tag = t.behaviorTag;
@@ -119,11 +121,17 @@ export function MatrixView({ collections, trades }: MatrixViewProps) {
         disciplinedR = Number((disciplinedR + t.rMultiple).toFixed(2));
       } else {
         leakR = Number((leakR + t.rMultiple).toFixed(2));
+        brokenRuleCount++;
       }
     });
 
     const complianceRate = taggedCount 
       ? Math.round(((tags[0].trades) / taggedCount) * 100) 
+      : 0;
+
+    // Exact cost penalty per mistake
+    const avgCostPerMistake = brokenRuleCount 
+      ? Number((leakR / brokenRuleCount).toFixed(2)) 
       : 0;
 
     return {
@@ -132,6 +140,8 @@ export function MatrixView({ collections, trades }: MatrixViewProps) {
       complianceRate,
       disciplinedR,
       leakR,
+      brokenRuleCount,
+      avgCostPerMistake,
       untaggedCount: totalTrades - taggedCount
     };
   }, [trades]);
@@ -211,7 +221,7 @@ export function MatrixView({ collections, trades }: MatrixViewProps) {
     return { data, maxDrawdown: Number(maxDrawdown.toFixed(2)) };
   }, [trades]);
 
-  // 4. Robust Real Time Edge (Indian Market Session Windows)
+  // 4. Time Edge (Indian Market Windows)
   const timeEdge = useMemo(() => {
     const timeSlots = [
       { label: '09:15 - 10:00 AM', filter: (h: number, m: number) => h === 9 || (h === 10 && m === 0) },
@@ -251,7 +261,6 @@ export function MatrixView({ collections, trades }: MatrixViewProps) {
           minute = m;
         }
       } else {
-        // Fallback staggered by execution index across morning & afternoon
         const sampleHours = [9, 10, 11, 12, 13, 14];
         hour = sampleHours[idx % sampleHours.length];
         minute = 30;
@@ -265,7 +274,6 @@ export function MatrixView({ collections, trades }: MatrixViewProps) {
       target.netR = Number((target.netR + t.rMultiple).toFixed(2));
     });
 
-    // Display slots that have trades or primary morning slots
     return slotStats.filter(s => s.trades > 0 || ['10:00 - 11:00 AM', '11:00 - 12:00 PM'].includes(s.slot));
   }, [trades]);
 
@@ -382,7 +390,7 @@ export function MatrixView({ collections, trades }: MatrixViewProps) {
         )}
       </div>
 
-      {/* BEHAVIORAL EXECUTION AUDIT SECTION */}
+      {/* BEHAVIORAL EXECUTION AUDIT & RULES BROKEN INDICATOR */}
       <div className="p-4 sm:p-6 rounded-2xl bg-[#090A10] border border-white/[0.06] space-y-4">
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 pb-3 border-b border-white/[0.06]">
           <div className="flex items-center gap-2">
@@ -447,6 +455,35 @@ export function MatrixView({ collections, trades }: MatrixViewProps) {
               </div>
             );
           })}
+        </div>
+
+        {/* NEW: RULES BROKEN PENALTY RADAR */}
+        <div className="p-3.5 rounded-xl bg-rose-950/20 border border-rose-500/30 flex flex-col sm:flex-row sm:items-center justify-between gap-3 font-mono text-xs">
+          <div className="flex items-center gap-2.5">
+            <AlertOctagon className="w-4 h-4 text-rose-400 shrink-0" />
+            <div>
+              <span className="font-bold text-rose-300">Rules Broken Penalty Radar:</span>
+              <span className="text-zinc-400 ml-1.5">
+                {behaviorAnalytics.brokenRuleCount} out of {behaviorAnalytics.taggedCount} trades broke mechanical rules.
+              </span>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-4 text-right">
+            <div>
+              <span className="text-[10px] text-zinc-500 block">Average Cost per Mistake</span>
+              <span className="text-sm font-black text-rose-400">
+                {behaviorAnalytics.avgCostPerMistake}R / trade
+              </span>
+            </div>
+            <div className="h-6 w-[1px] bg-rose-500/20 hidden sm:block" />
+            <div className="hidden sm:block text-left">
+              <span className="text-[10px] text-zinc-500 block">Capital Saved If Followed</span>
+              <span className="text-sm font-black text-emerald-400">
+                +{Math.abs(behaviorAnalytics.leakR)}R Saved
+              </span>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -577,7 +614,7 @@ export function MatrixView({ collections, trades }: MatrixViewProps) {
         </div>
       </div>
 
-      {/* Row 3: Underwater Drawdown Depth & Accurately Distributed Time Edge */}
+      {/* Row 3: Underwater Drawdown Depth & Time Edge */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6">
         {/* Drawdown Depth Chart */}
         <div className="lg:col-span-2 p-4 sm:p-5 rounded-2xl bg-[#090A10] border border-white/[0.06] flex flex-col justify-between">
@@ -623,7 +660,7 @@ export function MatrixView({ collections, trades }: MatrixViewProps) {
           </div>
         </div>
 
-        {/* Real Time Edge (Distributed accurately across trading windows) */}
+        {/* Real Time Edge */}
         <div className="p-4 sm:p-5 rounded-2xl bg-[#090A10] border border-white/[0.06] flex flex-col justify-between">
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-2">

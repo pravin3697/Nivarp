@@ -4,7 +4,7 @@ import React, { useMemo, useState } from 'react';
 import { Trade } from '@/types/trade';
 import { parseDateToTimestamp } from '@/lib/parser';
 import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip } from 'recharts';
-import { Activity, Target, Layers, ShieldAlert, Maximize2, Pencil, ShieldCheck, Filter } from 'lucide-react';
+import { Activity, Target, Layers, ShieldAlert, Maximize2, Pencil, ShieldCheck, Filter, Calendar } from 'lucide-react';
 
 interface PulseViewProps {
   trades: Trade[];
@@ -25,14 +25,39 @@ export function PulseView({
 }: PulseViewProps) {
   // Mode: 'rules-only' (System Edge) vs 'all' (Realized Portfolio)
   const [filterMode, setFilterMode] = useState<'rules-only' | 'all'>('rules-only');
+  // Timeframe: 'week' | 'month' | 'all'
+  const [timeframe, setTimeframe] = useState<'week' | 'month' | 'all'>('all');
 
-  // Filtered trades based on selection
+  // Filtered trades by Timeframe AND Rule Discipline
   const activeTrades = useMemo(() => {
+    const now = new Date();
+
+    const timeFiltered = trades.filter(t => {
+      const ts = parseDateToTimestamp(t.tradeDate);
+      if (!ts) return true;
+      const d = new Date(ts);
+
+      if (timeframe === 'week') {
+        const currentDay = now.getDay();
+        const diffToMonday = currentDay === 0 ? 6 : currentDay - 1;
+        const monday = new Date(now);
+        monday.setDate(now.getDate() - diffToMonday);
+        monday.setHours(0, 0, 0, 0);
+        return d >= monday;
+      }
+
+      if (timeframe === 'month') {
+        return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
+      }
+
+      return true; // 'all'
+    });
+
     if (filterMode === 'rules-only') {
-      return trades.filter(t => t.behaviorTag === 'Rules Followed' || (!t.behaviorTag && t.rMultiple > 0));
+      return timeFiltered.filter(t => t.behaviorTag === 'Rules Followed' || (!t.behaviorTag && t.rMultiple > 0));
     }
-    return trades;
-  }, [trades, filterMode]);
+    return timeFiltered;
+  }, [trades, filterMode, timeframe]);
 
   // Recalculated Pristine vs Realized Statistics
   const dynamicStats = useMemo(() => {
@@ -125,43 +150,67 @@ export function PulseView({
 
   return (
     <div className="space-y-5 sm:space-y-6">
-      {/* Top Filter Bar: System Edge vs Realized Portfolio */}
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 p-3 rounded-2xl bg-[#090A10] border border-white/[0.06]">
+      {/* Top Filter Bar: Rock-solid anchored layout with ZERO jumping or shifting */}
+      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 p-3 rounded-2xl bg-[#090A10] border border-white/[0.06] select-none">
+        
+        {/* Left: Discipline Mode Toggle with Fixed Dimensions */}
         <div className="flex items-center gap-2">
-          <Filter className="w-4 h-4 text-cyan-400" />
-          <span className="text-xs font-mono text-zinc-400 uppercase tracking-wider font-bold">Execution Filter:</span>
-          <span className="text-xs font-mono text-zinc-500">
-            {filterMode === 'rules-only' ? 'Showing Pristine Mechanical System Edge' : 'Showing All Realized Executions'}
-          </span>
+          <div className="flex items-center p-1 rounded-xl bg-white/[0.03] border border-white/[0.06] text-xs font-mono">
+            <button
+              onClick={() => setFilterMode('rules-only')}
+              className={`flex items-center justify-center gap-1.5 px-3.5 py-1.5 rounded-lg font-bold transition-all w-36 text-center ${
+                filterMode === 'rules-only'
+                  ? 'bg-emerald-500 text-black shadow-md'
+                  : 'text-zinc-400 hover:text-white'
+              }`}
+            >
+              <ShieldCheck className="w-3.5 h-3.5 shrink-0" />
+              <span>Rules-Based</span>
+            </button>
+            <button
+              onClick={() => setFilterMode('all')}
+              className={`flex items-center justify-center gap-1.5 px-3.5 py-1.5 rounded-lg font-bold transition-all w-36 text-center ${
+                filterMode === 'all'
+                  ? 'bg-zinc-800 text-white shadow-md'
+                  : 'text-zinc-400 hover:text-white'
+              }`}
+            >
+              <Layers className="w-3.5 h-3.5 shrink-0" />
+              <span>All Executions</span>
+            </button>
+          </div>
         </div>
 
-        <div className="flex items-center p-1 rounded-xl bg-white/[0.03] border border-white/[0.06] text-xs font-mono w-full sm:w-auto">
-          <button
-            onClick={() => setFilterMode('rules-only')}
-            className={`flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg font-bold transition-all ${
-              filterMode === 'rules-only'
-                ? 'bg-emerald-500 text-black shadow-md'
-                : 'text-zinc-400 hover:text-white'
-            }`}
-          >
-            <ShieldCheck className="w-3.5 h-3.5" />
-            <span>Rules-Based Only</span>
-          </button>
-          <button
-            onClick={() => setFilterMode('all')}
-            className={`flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg font-bold transition-all ${
-              filterMode === 'all'
-                ? 'bg-zinc-800 text-white shadow-md'
-                : 'text-zinc-400 hover:text-white'
-            }`}
-          >
-            <Layers className="w-3.5 h-3.5" />
-            <span>All Trades ({trades.length})</span>
-          </button>
+        {/* Right: Timeframe Switcher with Static Locked Button Widths */}
+        <div className="flex items-center justify-between sm:justify-end gap-2.5">
+          <div className="flex items-center gap-1.5 text-xs font-mono text-zinc-500 shrink-0">
+            <Calendar className="w-3.5 h-3.5 text-cyan-400" />
+            <span className="hidden sm:inline">Period:</span>
+          </div>
+
+          <div className="flex items-center p-1 rounded-xl bg-white/[0.03] border border-white/[0.06] text-xs font-mono shrink-0">
+            {(['week', 'month', 'all'] as const).map(t => {
+              const label = t === 'week' ? 'This Week' : t === 'month' ? 'This Month' : 'All Time';
+              const isSelected = timeframe === t;
+              return (
+                <button
+                  key={t}
+                  onClick={() => setTimeframe(t)}
+                  className={`w-24 text-center py-1.5 rounded-lg font-bold transition-all shrink-0 ${
+                    isSelected 
+                      ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 shadow-sm' 
+                      : 'text-zinc-400 hover:text-white border border-transparent'
+                  }`}
+                >
+                  {label}
+                </button>
+              );
+            })}
+          </div>
         </div>
       </div>
 
-      {/* KPI Cards Row (Dynamically calculated based on Filter Mode) */}
+      {/* KPI Cards Row */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
         {/* Net Edge & Expectancy */}
         <div className="p-4 sm:p-5 rounded-2xl bg-[#090A10] border border-white/[0.06]">
@@ -236,7 +285,7 @@ export function PulseView({
         <div className="h-56 sm:h-72 w-full">
           {activeTrades.length === 0 ? (
             <div className="h-full w-full flex items-center justify-center text-xs font-mono text-zinc-600 border border-dashed border-white/[0.05] rounded-xl p-4 text-center">
-              No trades matching this filter.
+              No trades matching this period and filter.
             </div>
           ) : (
             <ResponsiveContainer width="100%" height="100%">
@@ -277,7 +326,7 @@ export function PulseView({
 
         {sortedRecentTrades.length === 0 ? (
           <div className="py-8 text-center text-xs font-mono text-zinc-600">
-            No trades found for this filter.
+            No trades found for this period.
           </div>
         ) : (
           <div className="divide-y divide-white/[0.04]">
