@@ -10,6 +10,8 @@ import {
   purgeCloudData,
   MASTER_CATEGORY_ORDER
 } from '@/lib/cloudSync';
+import { auth, loginWithGoogle, logoutUser } from '@/lib/firebaseClient';
+import { onAuthStateChanged, User } from 'firebase/auth';
 import { idbGet, idbSet, idbClear } from '@/lib/storage';
 import { NivarpLogo } from '@/components/ui/NivarpLogo';
 import { ChartInspector, ChartGalleryItem } from '@/components/modals/ChartInspector';
@@ -28,7 +30,6 @@ import {
   Settings as SettingsIcon, 
   UploadCloud, 
   Plus, 
-  Cloud, 
   CheckCircle2, 
   AlertCircle, 
   Info, 
@@ -47,6 +48,8 @@ interface ToastState {
 const cleanStr = (s?: string) => (s || '').toLowerCase().trim().replace(/\s+/g, ' ');
 
 export default function NivarpOS() {
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
+
   const [trades, setTrades] = useState<Trade[]>([]);
   const [collections, setCollections] = useState<PlaybookCollection[]>([]);
   const [categoryOrder, setCategoryOrder] = useState<string[]>(MASTER_CATEGORY_ORDER);
@@ -93,6 +96,40 @@ export default function NivarpOS() {
 
   const showToast = (message: string, type: 'success' | 'info' | 'error' = 'success') => {
     setToast({ message, type });
+  };
+
+  // Auth State Listener
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
+      setCurrentUser(user);
+      if (user) {
+        showToast(`Signed in: ${user.email}`, 'success');
+        const cloudData = await fetchMasterFromCloud(user.uid);
+        if (cloudData && (cloudData.trades.length > 0 || cloudData.collections.length > 0)) {
+          setTrades(cloudData.trades || []);
+          setCollections(cloudData.collections || []);
+          setStudySpecimens(cloudData.studySpecimens || []);
+          setCategoryOrder(cloudData.categoryOrder || MASTER_CATEGORY_ORDER);
+          if (cloudData.defaultRiskPerTrade) setDefaultRiskPerTrade(cloudData.defaultRiskPerTrade);
+        }
+      }
+    });
+
+    return () => unsubscribe();
+  }, []);
+
+  const handleGoogleLogin = async () => {
+    const user = await loginWithGoogle();
+    if (user) {
+      showToast("Signed in with Google successfully.", "success");
+    } else {
+      showToast("Google sign-in canceled.", "info");
+    }
+  };
+
+  const handleLogout = async () => {
+    await logoutUser();
+    showToast("Signed out. Ready for another account.", "info");
   };
 
   useEffect(() => {
@@ -156,7 +193,7 @@ export default function NivarpOS() {
     });
   }, [deduplicatedCollections, categoryOrder]);
 
-  // Initial Load: IndexedDB First, then Firebase Master Doc
+  // Initial Load: IndexedDB First, then Cloud
   useEffect(() => {
     let isMounted = true;
 
@@ -182,12 +219,12 @@ export default function NivarpOS() {
           setCategoryOrder(idbCatOrder.map(c => c.trim().toUpperCase()));
         }
 
-        const cloudData = await fetchMasterFromCloud();
-        if (isMounted && cloudData) {
-          if (cloudData.trades?.length) setTrades(cloudData.trades);
-          if (cloudData.collections?.length) setCollections(cloudData.collections);
-          if (cloudData.studySpecimens?.length) setStudySpecimens(cloudData.studySpecimens);
-          if (cloudData.categoryOrder?.length) setCategoryOrder(cloudData.categoryOrder);
+        const cloudData = await fetchMasterFromCloud(currentUser?.uid || 'master');
+        if (isMounted && cloudData && (cloudData.trades.length > 0 || cloudData.collections.length > 0)) {
+          setTrades(cloudData.trades);
+          setCollections(cloudData.collections);
+          setStudySpecimens(cloudData.studySpecimens);
+          setCategoryOrder(cloudData.categoryOrder);
         }
       } catch (err) {
         console.warn('Storage sync notice:', err);
@@ -200,13 +237,12 @@ export default function NivarpOS() {
 
     loadData();
     return () => { isMounted = false; };
-  }, []);
+  }, [currentUser]);
 
-  // Debounced Atomic Cloud Sync: 2-second buffer prevents Firebase write stream exhaustion
+  // Auto-Sync: Saves locally immediately, and batches 1 clean write to Firestore
   useEffect(() => {
     if (!isLoaded) return;
 
-    // Instant local save to browser IndexedDB
     idbSet(STORAGE_KEY, {
       trades, 
       collections: deduplicatedCollections, 
@@ -216,7 +252,6 @@ export default function NivarpOS() {
     idbSet(STUDY_STORAGE_KEY, studySpecimens);
     idbSet(CATEGORY_ORDER_KEY, categoryOrder);
 
-    // Wait 2 seconds of inactivity before writing 1 clean atomic payload to Firestore
     const timer = setTimeout(async () => {
       await syncMasterToCloud({
         trades,
@@ -224,11 +259,11 @@ export default function NivarpOS() {
         studySpecimens,
         categoryOrder,
         defaultRiskPerTrade
-      });
+      }, currentUser?.uid || 'master');
     }, 2000);
 
     return () => clearTimeout(timer);
-  }, [isLoaded, trades, deduplicatedCollections, categoryOrder, studySpecimens, defaultRiskPerTrade]);
+  }, [isLoaded, trades, deduplicatedCollections, categoryOrder, studySpecimens, defaultRiskPerTrade, currentUser]);
 
   const handleExportBackup = () => {
     try {
@@ -248,7 +283,7 @@ export default function NivarpOS() {
       document.body.appendChild(a);
       a.click();
       a.remove();
-      URL.revokeObjectURL(url);
+     URL.revokeObjectURL(url);;
       showToast("JSON backup downloaded successfully.", "success");
     } catch {
       showToast("Failed to create download backup.", "error");
@@ -293,7 +328,7 @@ export default function NivarpOS() {
           studySpecimens: restoredStudy,
           categoryOrder: restoredCats,
           defaultRiskPerTrade: d.defaultRiskPerTrade || 600
-        });
+        }, currentUser?.uid || 'master');
 
         showToast(`Restored & synced: ${restoredTrades.length} trades, ${restoredCols.length} setups.`, "success");
       } catch (err: any) {
@@ -305,7 +340,7 @@ export default function NivarpOS() {
   };
 
   const handleForceSync = async () => {
-    const res = await forcePushAllToCloud(trades, deduplicatedCollections, studySpecimens);
+    const res = await forcePushAllToCloud(trades, deduplicatedCollections, studySpecimens, currentUser?.uid || 'master');
     if (res.success) {
       showToast(`Cloud live: ${trades.length} trades, ${deduplicatedCollections.length} setups synced.`, "success");
     } else {
@@ -406,7 +441,7 @@ export default function NivarpOS() {
 
     await Promise.all([
       idbClear(),
-      purgeCloudData()
+      purgeCloudData(currentUser?.uid || 'master')
     ]);
 
     if (typeof window !== 'undefined') {
@@ -490,7 +525,7 @@ export default function NivarpOS() {
         </div>
       )}
 
-      {/* TOP HEADER */}
+      {/* CLEAN TOP HEADER: Zero Clutter */}
       <header className="border-b border-white/[0.06] bg-[#08090D]/90 backdrop-blur-xl sticky top-0 z-40 px-4 md:px-6 py-3 flex items-center justify-between">
         <div className="flex items-center gap-6">
           <NivarpLogo size="md" />
@@ -516,16 +551,8 @@ export default function NivarpOS() {
           </nav>
         </div>
 
+        {/* Right side: Clean Import Button */}
         <div className="flex items-center gap-2 md:gap-3">
-          <button
-            onClick={handleForceSync}
-            className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white/[0.03] hover:bg-white/[0.06] border border-white/[0.06] text-[10px] font-mono text-zinc-400 transition-colors"
-          >
-            <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 shadow-[0_0_8px_#10b981]" />
-            <Cloud className="w-3 h-3 text-emerald-400" />
-            <span className="hidden md:inline">CLOUD LIVE</span>
-          </button>
-
           <button 
             onClick={() => setIsCsvModalOpen(true)} 
             className="flex items-center gap-2 px-3 md:px-4 py-1.5 md:py-2 rounded-xl bg-emerald-500/10 border border-emerald-500/30 hover:bg-emerald-500/20 text-emerald-400 text-xs font-bold transition-all shadow-[0_0_20px_rgba(16,185,129,0.18)]"
@@ -622,6 +649,9 @@ export default function NivarpOS() {
         {activeTab === 'settings' && (
           <SettingsView
             defaultRisk={defaultRiskPerTrade}
+            currentUser={currentUser}
+            onGoogleLogin={handleGoogleLogin}
+            onLogout={handleLogout}
             onChangeDefaultRisk={(val: number) => {
               setDefaultRiskPerTrade(val);
               showToast(`1R Risk updated to ₹${val.toLocaleString('en-IN')}`, "success");
