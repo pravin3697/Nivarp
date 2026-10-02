@@ -26,6 +26,7 @@ export function PulseView({
   const [filterMode, setFilterMode] = useState<'rules-only' | 'all'>('rules-only');
   const [timeframe, setTimeframe] = useState<'week' | 'month' | 'all'>('all');
 
+  // Filtered trades: Rules-Based includes BOTH 'Rules Followed' AND 'SL Hunt / Slippage Hunt'
   const activeTrades = useMemo(() => {
     const now = new Date();
 
@@ -51,11 +52,20 @@ export function PulseView({
     });
 
     if (filterMode === 'rules-only') {
-      return timeFiltered.filter(t => t.behaviorTag === 'Rules Followed' || (!t.behaviorTag && t.rMultiple > 0));
+      return timeFiltered.filter(t => {
+        const tag = t.behaviorTag;
+        // Valid system trades: either followed or SL Hunt (natural variance), or untagged wins
+        return (
+          tag === 'Rules Followed' || 
+          tag === 'SL Hunt / Slippage Hunt' || 
+          (!tag && t.rMultiple > 0)
+        );
+      });
     }
     return timeFiltered;
   }, [trades, filterMode, timeframe]);
 
+  // Recalculated Pristine vs Realized Statistics
   const dynamicStats = useMemo(() => {
     const list = activeTrades;
     const total = list.length;
@@ -113,6 +123,7 @@ export function PulseView({
     };
   }, [activeTrades]);
 
+  // Dynamic Growth Trajectory Curve
   const dynamicGrowthCurve = useMemo(() => {
     const chronological = [...activeTrades].sort((a, b) => parseDateToTimestamp(a.tradeDate) - parseDateToTimestamp(b.tradeDate));
     let cumR = 0;
@@ -122,6 +133,7 @@ export function PulseView({
     });
   }, [activeTrades]);
 
+  // Sort trades: strictly newest on top
   const sortedRecentTrades = useMemo(() => {
     return [...activeTrades].sort((a, b) => {
       const timeA = parseDateToTimestamp(a.tradeDate);
@@ -269,7 +281,7 @@ export function PulseView({
           <h3 className="font-mono text-xs uppercase text-zinc-400 flex items-center gap-2">
             <span className={`h-2 w-2 rounded-full ${filterMode === 'rules-only' ? 'bg-emerald-400' : 'bg-cyan-400'}`} />
             <span>
-              {filterMode === 'rules-only' ? 'System Edge Trajectory (Pristine Rules Only)' : 'Realized Trajectory (All Trades)'}
+              {filterMode === 'rules-only' ? 'System Edge Trajectory (Rules Followed & SL Hunts)' : 'Realized Trajectory (All Trades)'}
             </span>
           </h3>
           <span className={`text-xs font-mono font-bold ${dynamicStats.netR >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
@@ -309,7 +321,7 @@ export function PulseView({
         </div>
       </div>
 
-      {/* Trade Entries (with Cleaned Setup Name) */}
+      {/* Trade Entries */}
       <div className="p-4 sm:p-6 rounded-2xl bg-[#090A10] border border-white/[0.06] space-y-3">
         <div className="flex items-center justify-between pb-1">
           <h3 className="font-mono text-xs uppercase text-zinc-400">
@@ -327,7 +339,6 @@ export function PulseView({
             {sortedRecentTrades.map(t => {
               const isGreen = t.rMultiple >= 0;
               const behaviorClass = getBehaviorBadge(t.behaviorTag);
-              // Cleaned setup name removes "1 - ", "2 - ", etc.
               const cleanSetup = displaySetupName(t.setupType);
 
               return (

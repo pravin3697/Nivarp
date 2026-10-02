@@ -1,8 +1,8 @@
 'use client';
 
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { Trade, PlaybookCollection, BehavioralTag } from '@/types/trade';
-import { parseDateToTimestamp, displaySetupName} from '@/lib/parser';
+import { parseDateToTimestamp, displaySetupName } from '@/lib/parser';
 import { 
   ResponsiveContainer, 
   AreaChart, 
@@ -22,15 +22,17 @@ import {
   Calendar, 
   Briefcase, 
   Flame, 
-  BarChart3,
-  ArrowUpRight,
-  ArrowDownRight,
-  ShieldCheck,
-  AlertTriangle,
-  ZapOff,
-  Skull,
-  Timer,
-  AlertOctagon
+  BarChart3, 
+  ArrowUpRight, 
+  ArrowDownRight, 
+  ShieldCheck, 
+  AlertTriangle, 
+  ZapOff, 
+  Skull, 
+  Timer, 
+  AlertOctagon,
+  Layers,
+  Sparkles
 } from 'lucide-react';
 
 interface MatrixViewProps {
@@ -39,7 +41,9 @@ interface MatrixViewProps {
 }
 
 export function MatrixView({ collections, trades }: MatrixViewProps) {
-  // 1. Behavioral Execution Analytics & Cost of Mistakes
+  const [setupViewMode, setSetupViewMode] = useState<'consolidated' | 'split'>('consolidated');
+
+  // 1. Behavioral Execution Analytics: True Psychological Mistakes vs Natural SL Hunts
   const behaviorAnalytics = useMemo(() => {
     const totalTrades = trades.length;
 
@@ -50,6 +54,7 @@ export function MatrixView({ collections, trades }: MatrixViewProps) {
       border: string;
       bg: string;
       icon: any;
+      isSystemRule: boolean; // TRUE for Rules Followed & SL Hunt (Valid execution)
       trades: number;
       wins: number;
       netR: number;
@@ -61,39 +66,43 @@ export function MatrixView({ collections, trades }: MatrixViewProps) {
         border: 'border-emerald-500/30',
         bg: 'bg-emerald-500/10',
         icon: ShieldCheck,
-        trades: 0,
-        wins: 0,
-        netR: 0
-      },
-      {
-        tag: 'No Confirmation Entry',
-        label: 'No Confirmation Entry',
-        color: 'text-amber-400',
-        border: 'border-amber-500/30',
-        bg: 'bg-amber-500/10',
-        icon: AlertTriangle,
+        isSystemRule: true,
         trades: 0,
         wins: 0,
         netR: 0
       },
       {
         tag: 'SL Hunt / Slippage Hunt',
-        label: 'SL Hunt / Slippage Hunt',
+        label: 'SL Hunt (Market Variance)',
         color: 'text-purple-400',
         border: 'border-purple-500/30',
         bg: 'bg-purple-500/10',
         icon: ZapOff,
+        isSystemRule: true, // Valid rule trade that suffered natural stop-out
+        trades: 0,
+        wins: 0,
+        netR: 0
+      },
+      {
+        tag: 'No Confirmation Entry',
+        label: 'No Confirmation (Impulse)',
+        color: 'text-amber-400',
+        border: 'border-amber-500/30',
+        bg: 'bg-amber-500/10',
+        icon: AlertTriangle,
+        isSystemRule: false, // True mistake
         trades: 0,
         wins: 0,
         netR: 0
       },
       {
         tag: 'Hallucinated Trade',
-        label: 'Hallucinated Trade',
+        label: 'Hallucinated (Revenge)',
         color: 'text-rose-400',
         border: 'border-rose-500/30',
         bg: 'bg-rose-500/10',
         icon: Skull,
+        isSystemRule: false, // True mistake
         trades: 0,
         wins: 0,
         netR: 0
@@ -101,8 +110,9 @@ export function MatrixView({ collections, trades }: MatrixViewProps) {
     ];
 
     let taggedCount = 0;
+    let disciplinedTrades = 0;
     let disciplinedR = 0;
-    let leakR = 0;
+    let mistakeR = 0;
     let brokenRuleCount = 0;
 
     trades.forEach(t => {
@@ -117,21 +127,23 @@ export function MatrixView({ collections, trades }: MatrixViewProps) {
         item.netR = Number((item.netR + t.rMultiple).toFixed(2));
       }
 
-      if (tag === 'Rules Followed') {
+      // 'Rules Followed' and 'SL Hunt' are disciplined trades
+      if (tag === 'Rules Followed' || tag === 'SL Hunt / Slippage Hunt') {
+        disciplinedTrades++;
         disciplinedR = Number((disciplinedR + t.rMultiple).toFixed(2));
       } else {
-        leakR = Number((leakR + t.rMultiple).toFixed(2));
+        // True unforced psychological errors: 'No Confirmation' + 'Hallucinated'
+        mistakeR = Number((mistakeR + t.rMultiple).toFixed(2));
         brokenRuleCount++;
       }
     });
 
     const complianceRate = taggedCount 
-      ? Math.round(((tags[0].trades) / taggedCount) * 100) 
-      : 0;
+      ? Math.round((disciplinedTrades / taggedCount) * 100) 
+      : 100;
 
-    // Exact cost penalty per mistake
     const avgCostPerMistake = brokenRuleCount 
-      ? Number((leakR / brokenRuleCount).toFixed(2)) 
+      ? Number((mistakeR / brokenRuleCount).toFixed(2)) 
       : 0;
 
     return {
@@ -139,7 +151,7 @@ export function MatrixView({ collections, trades }: MatrixViewProps) {
       taggedCount,
       complianceRate,
       disciplinedR,
-      leakR,
+      mistakeR,
       brokenRuleCount,
       avgCostPerMistake,
       untaggedCount: totalTrades - taggedCount
@@ -157,11 +169,7 @@ export function MatrixView({ collections, trades }: MatrixViewProps) {
       let durationMinutes = t.durationMinutes || 0;
 
       if (!durationMinutes) {
-        if (t.rMultiple <= 0) {
-          durationMinutes = 8;
-        } else {
-          durationMinutes = 35;
-        }
+        durationMinutes = t.rMultiple <= 0 ? 8 : 35;
       }
 
       const isWin = t.rMultiple > 0;
@@ -194,7 +202,7 @@ export function MatrixView({ collections, trades }: MatrixViewProps) {
     };
   }, [trades]);
 
-  // 3. Drawdown Depth Curve (Underwater Chart)
+  // 3. Drawdown Depth Curve
   const drawdownData = useMemo(() => {
     if (!trades.length) return { data: [], maxDrawdown: 0 };
     const sorted = [...trades].sort((a, b) => parseDateToTimestamp(a.tradeDate) - parseDateToTimestamp(b.tradeDate));
@@ -221,7 +229,7 @@ export function MatrixView({ collections, trades }: MatrixViewProps) {
     return { data, maxDrawdown: Number(maxDrawdown.toFixed(2)) };
   }, [trades]);
 
-  // 4. Time Edge (Indian Market Windows)
+  // 4. Time Edge
   const timeEdge = useMemo(() => {
     const timeSlots = [
       { label: '09:15 - 10:00 AM', filter: (h: number, m: number) => h === 9 || (h === 10 && m === 0) },
@@ -277,40 +285,148 @@ export function MatrixView({ collections, trades }: MatrixViewProps) {
     return slotStats.filter(s => s.trades > 0 || ['10:00 - 11:00 AM', '11:00 - 12:00 PM'].includes(s.slot));
   }, [trades]);
 
- // 5. Setup Edge Realization (Cleaned Name Display)
+  // 5. Setup Realization Edge: Focuses purely on Strategy Models
   const setupEdge = useMemo(() => {
-    const map = new Map<string, { total: number; wins: number; netR: number; category: string; cleanName: string }>();
+    const getBaseModelName = (name: string): string => {
+      const clean = displaySetupName(name);
+      return clean.replace(/^(failed|extended)\s+/i, '').trim();
+    };
 
-    collections.forEach(col => {
-      const clean = displaySetupName(col.name);
-      const key = clean.toLowerCase();
-      map.set(key, { total: 0, wins: 0, netR: 0, category: col.category, cleanName: clean });
-    });
+    // Filter out internal archive buckets from statistical matrix
+    const isArchiveBucket = (cat: string, name: string) => {
+      const cleanCat = (cat || '').toUpperCase();
+      const cleanName = (name || '').toLowerCase();
+      return (
+        cleanCat.includes('EXECUTION STOPPED') ||
+        cleanCat.includes('BAD ENTRY') ||
+        cleanName.includes('execution leak') ||
+        cleanName.includes('behavioral & early')
+      );
+    };
 
-    trades.forEach(t => {
-      const clean = displaySetupName(t.setupType);
-      const key = clean.toLowerCase();
-      const current = map.get(key) || { total: 0, wins: 0, netR: 0, category: 'UNASSIGNED', cleanName: clean };
-      current.total += 1;
-      if (t.rMultiple > 0) current.wins += 1;
-      current.netR += t.rMultiple;
-      map.set(key, current);
-    });
+    if (setupViewMode === 'consolidated') {
+      const modelMap = new Map<string, {
+        baseName: string;
+        category: string;
+        totalTrades: number;
+        wins: number;
+        netR: number;
+        primaryWins: number;
+        primaryTrades: number;
+        failedWins: number;
+        failedTrades: number;
+      }>();
 
-    return Array.from(map.values()).map(data => {
-      const wr = data.total ? Math.round((data.wins / data.total) * 100) : 0;
-      return {
-        name: data.cleanName,
-        category: data.category,
-        total: data.total,
-        wins: data.wins,
-        wr,
-        netR: Number(data.netR.toFixed(2))
-      };
-    }).sort((a, b) => b.netR - a.netR);
-  }, [collections, trades]);
+      collections.forEach(col => {
+        if (isArchiveBucket(col.category, col.name)) return;
 
-  // 6. Asset / Symbol Edge
+        const base = getBaseModelName(col.name);
+        const key = base.toLowerCase();
+        if (!modelMap.has(key)) {
+          modelMap.set(key, {
+            baseName: base,
+            category: col.category,
+            totalTrades: 0,
+            wins: 0,
+            netR: 0,
+            primaryWins: 0,
+            primaryTrades: 0,
+            failedWins: 0,
+            failedTrades: 0
+          });
+        }
+      });
+
+      trades.forEach(t => {
+        const raw = t.setupType || 'General Setup';
+        const clean = displaySetupName(raw);
+        if (isArchiveBucket(t.regime || '', clean)) return;
+
+        const base = getBaseModelName(raw);
+        const key = base.toLowerCase();
+
+        if (!modelMap.has(key)) return;
+
+        const current = modelMap.get(key)!;
+        const isFailedOrExtended = /^(failed|extended)\s+/i.test(clean);
+        const isWin = t.rMultiple > 0;
+
+        current.totalTrades += 1;
+        if (isWin) current.wins += 1;
+        current.netR += t.rMultiple;
+
+        if (isFailedOrExtended) {
+          current.failedTrades += 1;
+          if (isWin) current.failedWins += 1;
+        } else {
+          current.primaryTrades += 1;
+          if (isWin) current.primaryWins += 1;
+        }
+
+        modelMap.set(key, current);
+      });
+
+      return Array.from(modelMap.values()).map(d => {
+        const wr = d.totalTrades ? Math.round((d.wins / d.totalTrades) * 100) : 0;
+        return {
+          name: d.baseName,
+          category: d.category,
+          total: d.totalTrades,
+          wins: d.wins,
+          wr,
+          netR: Number(d.netR.toFixed(2)),
+          hasVariants: d.failedTrades > 0,
+          primaryTrades: d.primaryTrades,
+          primaryWins: d.primaryWins,
+          failedTrades: d.failedTrades,
+          failedWins: d.failedWins
+        };
+      }).sort((a, b) => b.netR - a.netR);
+
+    } else {
+      const map = new Map<string, { total: number; wins: number; netR: number; category: string; cleanName: string }>();
+
+      collections.forEach(col => {
+        if (isArchiveBucket(col.category, col.name)) return;
+        const clean = displaySetupName(col.name);
+        const key = clean.toLowerCase();
+        map.set(key, { total: 0, wins: 0, netR: 0, category: col.category, cleanName: clean });
+      });
+
+      trades.forEach(t => {
+        const clean = displaySetupName(t.setupType);
+        if (isArchiveBucket(t.regime || '', clean)) return;
+
+        const key = clean.toLowerCase();
+        if (!map.has(key)) return;
+
+        const current = map.get(key)!;
+        current.total += 1;
+        if (t.rMultiple > 0) current.wins += 1;
+        current.netR += t.rMultiple;
+        map.set(key, current);
+      });
+
+      return Array.from(map.values()).map(data => {
+        const wr = data.total ? Math.round((data.wins / data.total) * 100) : 0;
+        return {
+          name: data.cleanName,
+          category: data.category,
+          total: data.total,
+          wins: data.wins,
+          wr,
+          netR: Number(data.netR.toFixed(2)),
+          hasVariants: false,
+          primaryTrades: data.total,
+          primaryWins: data.wins,
+          failedTrades: 0,
+          failedWins: 0
+        };
+      }).sort((a, b) => b.netR - a.netR);
+    }
+  }, [collections, trades, setupViewMode]);
+
+  // 6. Asset Edge
   const assetEdge = useMemo(() => {
     const map = new Map<string, { total: number; wins: number; netR: number }>();
 
@@ -383,7 +499,7 @@ export function MatrixView({ collections, trades }: MatrixViewProps) {
             <Binary className="w-5 h-5 text-purple-400" />
             Quant Edge & Behavioral Matrix
           </h2>
-          <p className="text-xs text-zinc-400 mt-0.5">Statistical edge, holding time efficiency, and behavioral execution analysis.</p>
+          <p className="text-xs text-zinc-400 mt-0.5">Statistical edge, holding time efficiency, and consolidated setup probabilities.</p>
         </div>
         {behaviorAnalytics.untaggedCount > 0 && (
           <span className="text-[11px] font-mono px-2.5 py-1 rounded-lg bg-amber-500/10 text-amber-400 border border-amber-500/30">
@@ -392,7 +508,7 @@ export function MatrixView({ collections, trades }: MatrixViewProps) {
         )}
       </div>
 
-      {/* BEHAVIORAL EXECUTION AUDIT & RULES BROKEN INDICATOR */}
+      {/* BEHAVIORAL EXECUTION AUDIT */}
       <div className="p-4 sm:p-6 rounded-2xl bg-[#090A10] border border-white/[0.06] space-y-4">
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 pb-3 border-b border-white/[0.06]">
           <div className="flex items-center gap-2">
@@ -410,9 +526,9 @@ export function MatrixView({ collections, trades }: MatrixViewProps) {
             </div>
             <div className="h-4 w-[1px] bg-white/10" />
             <div className="flex items-center gap-1.5">
-              <span className="text-zinc-500">Rule Leakage Cost:</span>
-              <span className={`text-base font-black ${behaviorAnalytics.leakR <= 0 ? 'text-rose-400' : 'text-emerald-400'}`}>
-                {behaviorAnalytics.leakR >= 0 ? '+' : ''}{behaviorAnalytics.leakR}R
+              <span className="text-zinc-500">Unforced Mistake Cost:</span>
+              <span className={`text-base font-black ${behaviorAnalytics.mistakeR <= 0 ? 'text-rose-400' : 'text-emerald-400'}`}>
+                {behaviorAnalytics.mistakeR >= 0 ? '+' : ''}{behaviorAnalytics.mistakeR}R
               </span>
             </div>
           </div>
@@ -432,7 +548,9 @@ export function MatrixView({ collections, trades }: MatrixViewProps) {
               >
                 <div className="flex items-start justify-between">
                   <div className="space-y-0.5">
-                    <span className="text-[10px] font-mono text-zinc-400 uppercase tracking-wider block">Tag</span>
+                    <span className="text-[10px] font-mono text-zinc-400 uppercase tracking-wider block">
+                      {item.isSystemRule ? 'Rule Execution' : 'Psychological Error'}
+                    </span>
                     <span className={`text-xs font-bold ${item.color} flex items-center gap-1.5`}>
                       <Icon className="w-3.5 h-3.5 shrink-0" />
                       <span>{item.label}</span>
@@ -459,30 +577,30 @@ export function MatrixView({ collections, trades }: MatrixViewProps) {
           })}
         </div>
 
-        {/* NEW: RULES BROKEN PENALTY RADAR */}
+        {/* UNFORCED MISTAKE RADAR (Only penalizes No Confirmation + Hallucinated) */}
         <div className="p-3.5 rounded-xl bg-rose-950/20 border border-rose-500/30 flex flex-col sm:flex-row sm:items-center justify-between gap-3 font-mono text-xs">
           <div className="flex items-center gap-2.5">
             <AlertOctagon className="w-4 h-4 text-rose-400 shrink-0" />
             <div>
-              <span className="font-bold text-rose-300">Rules Broken Penalty Radar:</span>
+              <span className="font-bold text-rose-300">Unforced Error Penalty Radar:</span>
               <span className="text-zinc-400 ml-1.5">
-                {behaviorAnalytics.brokenRuleCount} out of {behaviorAnalytics.taggedCount} trades broke mechanical rules.
+                {behaviorAnalytics.brokenRuleCount} out of {behaviorAnalytics.taggedCount} trades were impulse/hallucinated mistakes.
               </span>
             </div>
           </div>
 
           <div className="flex items-center gap-4 text-right">
             <div>
-              <span className="text-[10px] text-zinc-500 block">Average Cost per Mistake</span>
+              <span className="text-[10px] text-zinc-500 block">Avg Cost per Mistake</span>
               <span className="text-sm font-black text-rose-400">
                 {behaviorAnalytics.avgCostPerMistake}R / trade
               </span>
             </div>
             <div className="h-6 w-[1px] bg-rose-500/20 hidden sm:block" />
             <div className="hidden sm:block text-left">
-              <span className="text-[10px] text-zinc-500 block">Capital Saved If Followed</span>
+              <span className="text-[10px] text-zinc-500 block">Capital Saved If Skipped</span>
               <span className="text-sm font-black text-emerald-400">
-                +{Math.abs(behaviorAnalytics.leakR)}R Saved
+                +{Math.abs(behaviorAnalytics.mistakeR)}R Saved
               </span>
             </div>
           </div>
@@ -616,9 +734,8 @@ export function MatrixView({ collections, trades }: MatrixViewProps) {
         </div>
       </div>
 
-      {/* Row 3: Underwater Drawdown Depth & Time Edge */}
+      {/* Row 3: Underwater Drawdown Depth & Real Time Edge */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6">
-        {/* Drawdown Depth Chart */}
         <div className="lg:col-span-2 p-4 sm:p-5 rounded-2xl bg-[#090A10] border border-white/[0.06] flex flex-col justify-between">
           <div className="flex items-center justify-between mb-3 sm:mb-4">
             <div className="flex items-center gap-2">
@@ -709,16 +826,50 @@ export function MatrixView({ collections, trades }: MatrixViewProps) {
         </div>
       </div>
 
-      {/* Row 4: Strategy Edge Realization & Asset Edge */}
+      {/* Row 4: SETUP REALIZATION EDGE */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6">
-        {/* Setup Edge Matrix */}
         <div className="lg:col-span-2 p-4 sm:p-5 rounded-2xl bg-[#090A10] border border-white/[0.06] space-y-3 sm:space-y-4">
-          <div className="flex items-center justify-between pb-2 border-b border-white/[0.04]">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-2 border-b border-white/[0.04] gap-2">
             <div className="flex items-center gap-2">
               <BarChart3 className="w-4 h-4 text-emerald-400" />
-              <h3 className="font-mono text-xs uppercase tracking-wider text-zinc-300">Setup Realization Edge</h3>
+              <div>
+                <h3 className="font-mono text-xs uppercase tracking-wider text-zinc-300">
+                  {setupViewMode === 'consolidated' ? 'Consolidated True Setup Probability' : 'Split Setup Variants'}
+                </h3>
+                <span className="text-[10px] font-mono text-zinc-500">
+                  {setupViewMode === 'consolidated' 
+                    ? 'Combines winning setups with their failed variants to reveal true win rate' 
+                    : 'Shows raw separate entries for each variant'}
+                </span>
+              </div>
             </div>
-            <span className="text-xs font-mono text-zinc-500">{setupEdge.length} Setups</span>
+
+            {/* Toggle: Consolidated vs Split */}
+            <div className="flex items-center p-0.5 rounded-lg bg-white/[0.03] border border-white/[0.06] text-[10px] font-mono shrink-0">
+              <button
+                onClick={() => setSetupViewMode('consolidated')}
+                className={`flex items-center gap-1 px-2.5 py-1 rounded-md font-bold transition-all ${
+                  setupViewMode === 'consolidated'
+                    ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40'
+                    : 'text-zinc-400 hover:text-white'
+                }`}
+                title="Combines primary setups with failed variants"
+              >
+                <Sparkles className="w-3 h-3 text-cyan-400" />
+                <span>True Edge (Combined)</span>
+              </button>
+              <button
+                onClick={() => setSetupViewMode('split')}
+                className={`flex items-center gap-1 px-2.5 py-1 rounded-md font-bold transition-all ${
+                  setupViewMode === 'split'
+                    ? 'bg-zinc-800 text-white shadow-sm'
+                    : 'text-zinc-400 hover:text-white'
+                }`}
+              >
+                <Layers className="w-3 h-3 text-zinc-400" />
+                <span>Split Variants</span>
+              </button>
+            </div>
           </div>
 
           {setupEdge.length === 0 ? (
@@ -733,15 +884,27 @@ export function MatrixView({ collections, trades }: MatrixViewProps) {
                   <div key={col.name} className="py-2.5 sm:py-3 flex items-center justify-between hover:bg-white/[0.01] px-1 sm:px-2 rounded-xl transition-all">
                     <div>
                       <div className="flex items-center gap-2">
-                        <span className="text-xs sm:text-sm font-bold text-white truncate max-w-[140px] sm:max-w-none">{col.name}</span>
+                        <span className="text-xs sm:text-sm font-bold text-white truncate max-w-[160px] sm:max-w-none">{col.name}</span>
                         <span className="text-[9px] sm:text-[10px] font-mono px-1.5 py-0.5 rounded bg-zinc-800/80 text-zinc-400 border border-white/[0.04]">
                           {col.category}
                         </span>
                       </div>
-                      <div className="text-[10px] sm:text-[11px] font-mono text-zinc-500 mt-0.5 flex items-center gap-2">
-                        <span>{col.total} Trades</span>
+                      
+                      <div className="text-[10px] sm:text-[11px] font-mono text-zinc-500 mt-1 flex flex-wrap items-center gap-2">
+                        <span>{col.total} Total Trades</span>
                         <span>•</span>
-                        <span className="text-zinc-400">{col.wr}% WR</span>
+                        <span className="text-zinc-300 font-bold">{col.wr}% Win Rate</span>
+
+                        {setupViewMode === 'consolidated' && col.hasVariants && (
+                          <div className="flex items-center gap-1.5 ml-1">
+                            <span className="text-[9px] px-1.5 py-0.2 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                              Primary: {col.primaryWins}W / {col.primaryTrades - col.primaryWins}L
+                            </span>
+                            <span className="text-[9px] px-1.5 py-0.2 rounded bg-rose-500/10 text-rose-400 border border-rose-500/20">
+                              Failed: {col.failedWins}W / {col.failedTrades - col.failedWins}L
+                            </span>
+                          </div>
+                        )}
                       </div>
                     </div>
 
@@ -752,7 +915,7 @@ export function MatrixView({ collections, trades }: MatrixViewProps) {
                           style={{ width: `${col.wr}%` }}
                         />
                       </div>
-                      <div className={`font-mono text-xs sm:text-sm font-bold min-w-[60px] text-right ${isGreen ? 'text-emerald-400' : 'text-rose-400'}`}>
+                      <div className={`font-mono text-xs sm:text-sm font-bold min-w-[65px] text-right ${isGreen ? 'text-emerald-400' : 'text-rose-400'}`}>
                         {isGreen ? '+' : ''}{col.netR.toFixed(2)}R
                       </div>
                     </div>
