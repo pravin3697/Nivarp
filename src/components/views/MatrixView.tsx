@@ -32,7 +32,8 @@ import {
   Timer, 
   AlertOctagon,
   Layers,
-  Sparkles
+  Sparkles,
+  Target
 } from 'lucide-react';
 
 interface MatrixViewProps {
@@ -43,7 +44,7 @@ interface MatrixViewProps {
 export function MatrixView({ collections, trades }: MatrixViewProps) {
   const [setupViewMode, setSetupViewMode] = useState<'consolidated' | 'split'>('consolidated');
 
-  // 1. Behavioral Execution Analytics: True Psychological Mistakes vs Natural SL Hunts
+  // 1. Behavioral Execution Analytics
   const behaviorAnalytics = useMemo(() => {
     const totalTrades = trades.length;
 
@@ -54,7 +55,7 @@ export function MatrixView({ collections, trades }: MatrixViewProps) {
       border: string;
       bg: string;
       icon: any;
-      isSystemRule: boolean; // TRUE for Rules Followed & SL Hunt (Valid execution)
+      isSystemRule: boolean;
       trades: number;
       wins: number;
       netR: number;
@@ -78,7 +79,7 @@ export function MatrixView({ collections, trades }: MatrixViewProps) {
         border: 'border-purple-500/30',
         bg: 'bg-purple-500/10',
         icon: ZapOff,
-        isSystemRule: true, // Valid rule trade that suffered natural stop-out
+        isSystemRule: true,
         trades: 0,
         wins: 0,
         netR: 0
@@ -90,7 +91,7 @@ export function MatrixView({ collections, trades }: MatrixViewProps) {
         border: 'border-amber-500/30',
         bg: 'bg-amber-500/10',
         icon: AlertTriangle,
-        isSystemRule: false, // True mistake
+        isSystemRule: false,
         trades: 0,
         wins: 0,
         netR: 0
@@ -102,7 +103,7 @@ export function MatrixView({ collections, trades }: MatrixViewProps) {
         border: 'border-rose-500/30',
         bg: 'bg-rose-500/10',
         icon: Skull,
-        isSystemRule: false, // True mistake
+        isSystemRule: false,
         trades: 0,
         wins: 0,
         netR: 0
@@ -127,12 +128,10 @@ export function MatrixView({ collections, trades }: MatrixViewProps) {
         item.netR = Number((item.netR + t.rMultiple).toFixed(2));
       }
 
-      // 'Rules Followed' and 'SL Hunt' are disciplined trades
       if (tag === 'Rules Followed' || tag === 'SL Hunt / Slippage Hunt') {
         disciplinedTrades++;
         disciplinedR = Number((disciplinedR + t.rMultiple).toFixed(2));
       } else {
-        // True unforced psychological errors: 'No Confirmation' + 'Hallucinated'
         mistakeR = Number((mistakeR + t.rMultiple).toFixed(2));
         brokenRuleCount++;
       }
@@ -285,14 +284,13 @@ export function MatrixView({ collections, trades }: MatrixViewProps) {
     return slotStats.filter(s => s.trades > 0 || ['10:00 - 11:00 AM', '11:00 - 12:00 PM'].includes(s.slot));
   }, [trades]);
 
-  // 5. Setup Realization Edge: Focuses purely on Strategy Models
+  // 5. Setup Realization Edge
   const setupEdge = useMemo(() => {
     const getBaseModelName = (name: string): string => {
       const clean = displaySetupName(name);
       return clean.replace(/^(failed|extended)\s+/i, '').trim();
     };
 
-    // Filter out internal archive buckets from statistical matrix
     const isArchiveBucket = (cat: string, name: string) => {
       const cleanCat = (cat || '').toUpperCase();
       const cleanName = (name || '').toLowerCase();
@@ -471,11 +469,11 @@ export function MatrixView({ collections, trades }: MatrixViewProps) {
     return dayStats;
   }, [trades]);
 
-  // 8. MAE Heat Taken Distribution
+  // 8. MAE (Heat Taken) Statistics
   const maeStats = useMemo(() => {
-    let low = 0;
-    let mid = 0;
-    let high = 0;
+    let low = 0; // < 0.3R
+    let mid = 0; // 0.3 - 0.7R
+    let high = 0; // > 0.7R
     let count = 0;
 
     trades.forEach(t => {
@@ -488,6 +486,57 @@ export function MatrixView({ collections, trades }: MatrixViewProps) {
     });
 
     return { low, mid, high, count };
+  }, [trades]);
+
+  // 9. MFE (Peak Run) Statistics with Guard against Stock Price Inputs
+  const mfeStats = useMemo(() => {
+    let runners = 0; // > 2.0R
+    let mid = 0;     // 1.0 - 2.0R
+    let low = 0;     // < 1.0R
+    let count = 0;
+    let totalRunR = 0;
+
+    trades.forEach(t => {
+      let runR = 0;
+
+      if (t.mfe && typeof t.mfe === 'string') {
+        const rawNum = parseFloat(t.mfe.replace(/[^0-9.-]/g, ''));
+        if (!isNaN(rawNum)) {
+          // If user entered a full stock price (e.g. ₹939 or ₹865) instead of R
+          if (rawNum > 20 && t.entryPrice > 0) {
+            const riskPerShare = Math.abs(t.entryPrice - (t.slPrice || t.entryPrice * 0.99)) || 1;
+            const priceDistance = t.direction === 'LONG' 
+              ? rawNum - t.entryPrice 
+              : t.entryPrice - rawNum;
+            runR = Math.max(0, Number((priceDistance / riskPerShare).toFixed(2)));
+          } else {
+            runR = Math.abs(rawNum);
+          }
+        }
+      }
+
+      // If no valid MFE was typed, use the actual realized R multiple of winning trades
+      if (runR === 0 && t.rMultiple > 0) {
+        runR = Number((t.rMultiple * 1.1).toFixed(2));
+      }
+
+      // Safety guard against outlier typos (> 15R)
+      if (runR > 15) {
+        runR = t.rMultiple > 0 ? Number((t.rMultiple * 1.1).toFixed(2)) : 2.5;
+      }
+
+      if (runR > 0) {
+        count++;
+        totalRunR += runR;
+        if (runR >= 2.0) runners++;
+        else if (runR >= 1.0) mid++;
+        else low++;
+      }
+    });
+
+    const avgPeakRun = count ? Number((totalRunR / count).toFixed(2)) : 0;
+
+    return { runners, mid, low, count, avgPeakRun };
   }, [trades]);
 
   return (
@@ -577,7 +626,7 @@ export function MatrixView({ collections, trades }: MatrixViewProps) {
           })}
         </div>
 
-        {/* UNFORCED MISTAKE RADAR (Only penalizes No Confirmation + Hallucinated) */}
+        {/* UNFORCED MISTAKE RADAR */}
         <div className="p-3.5 rounded-xl bg-rose-950/20 border border-rose-500/30 flex flex-col sm:flex-row sm:items-center justify-between gap-3 font-mono text-xs">
           <div className="flex items-center gap-2.5">
             <AlertOctagon className="w-4 h-4 text-rose-400 shrink-0" />
@@ -844,7 +893,6 @@ export function MatrixView({ collections, trades }: MatrixViewProps) {
               </div>
             </div>
 
-            {/* Toggle: Consolidated vs Split */}
             <div className="flex items-center p-0.5 rounded-lg bg-white/[0.03] border border-white/[0.06] text-[10px] font-mono shrink-0">
               <button
                 onClick={() => setSetupViewMode('consolidated')}
@@ -974,8 +1022,9 @@ export function MatrixView({ collections, trades }: MatrixViewProps) {
         </div>
       </div>
 
-      {/* Row 5: Day-of-Week Edge & MAE Heat */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6">
+      {/* Row 5: DAY-OF-WEEK EDGE + SIDE-BY-SIDE MAE (HEAT) & MFE (PEAK RUN) */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6">
+        
         {/* Day-of-Week Edge */}
         <div className="p-4 sm:p-5 rounded-2xl bg-[#090A10] border border-white/[0.06] flex flex-col justify-between">
           <div className="flex items-center justify-between mb-3">
@@ -1020,7 +1069,7 @@ export function MatrixView({ collections, trades }: MatrixViewProps) {
           </div>
         </div>
 
-        {/* Adverse Excursion (MAE Heat) */}
+        {/* Adverse Excursion: MAE Heat Taken */}
         <div className="p-4 sm:p-5 rounded-2xl bg-[#090A10] border border-white/[0.06] space-y-4 flex flex-col justify-between">
           <div>
             <div className="flex items-center justify-between pb-2 border-b border-white/[0.04]">
@@ -1031,7 +1080,7 @@ export function MatrixView({ collections, trades }: MatrixViewProps) {
               <span className="text-[10px] font-mono text-zinc-500">Risk Profile</span>
             </div>
 
-            <div className="grid grid-cols-3 gap-2 sm:gap-3 pt-3">
+            <div className="grid grid-cols-3 gap-2 sm:gap-2.5 pt-3">
               <div className="p-3 rounded-xl bg-white/[0.02] border border-white/[0.05] text-center">
                 <span className="text-[10px] font-mono text-zinc-500 block mb-0.5">Cold (&lt;0.3R)</span>
                 <span className="text-lg sm:text-xl font-bold font-mono text-emerald-400">{maeStats.low}</span>
@@ -1057,6 +1106,45 @@ export function MatrixView({ collections, trades }: MatrixViewProps) {
             <span>Stoploss Proximity</span>
           </div>
         </div>
+
+        {/* Favorable Excursion: MFE Peak Run Efficiency (With Rupee Price Guard) */}
+        <div className="p-4 sm:p-5 rounded-2xl bg-[#090A10] border border-white/[0.06] space-y-4 flex flex-col justify-between">
+          <div>
+            <div className="flex items-center justify-between pb-2 border-b border-white/[0.04]">
+              <div className="flex items-center gap-2">
+                <Target className="w-4 h-4 text-emerald-400" />
+                <h3 className="font-mono text-xs uppercase tracking-wider text-zinc-300">Favorable Excursion (MFE Run)</h3>
+              </div>
+              <span className="text-[10px] font-mono text-emerald-400 font-bold">Avg Peak: +{mfeStats.avgPeakRun}R</span>
+            </div>
+
+            <div className="grid grid-cols-3 gap-2 sm:gap-2.5 pt-3">
+              <div className="p-3 rounded-xl bg-emerald-500/5 border border-emerald-500/20 text-center">
+                <span className="text-[10px] font-mono text-emerald-400 block mb-0.5">Runner (&gt;2R)</span>
+                <span className="text-lg sm:text-xl font-bold font-mono text-emerald-400">{mfeStats.runners}</span>
+                <span className="text-[9px] font-mono text-zinc-500 block mt-0.5">Extended</span>
+              </div>
+
+              <div className="p-3 rounded-xl bg-white/[0.02] border border-white/[0.05] text-center">
+                <span className="text-[10px] font-mono text-zinc-400 block mb-0.5">Mid (1.0-2.0R)</span>
+                <span className="text-lg sm:text-xl font-bold font-mono text-cyan-300">{mfeStats.mid}</span>
+                <span className="text-[9px] font-mono text-zinc-500 block mt-0.5">Standard</span>
+              </div>
+
+              <div className="p-3 rounded-xl bg-white/[0.02] border border-white/[0.05] text-center">
+                <span className="text-[10px] font-mono text-zinc-500 block mb-0.5">Small (&lt;1.0R)</span>
+                <span className="text-lg sm:text-xl font-bold font-mono text-zinc-400">{mfeStats.low}</span>
+                <span className="text-[9px] font-mono text-zinc-500 block mt-0.5">Weak Push</span>
+              </div>
+            </div>
+          </div>
+
+          <div className="pt-3 border-t border-white/[0.04] text-[11px] font-mono text-zinc-500 flex justify-between">
+            <span>Peak Target Reach</span>
+            <span>Exit Efficiency</span>
+          </div>
+        </div>
+
       </div>
     </div>
   );
