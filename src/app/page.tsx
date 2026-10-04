@@ -98,6 +98,15 @@ export default function NivarpOS() {
     setToast({ message, type });
   };
 
+  // Instant scroll-to-top handler on tab switch to keep views completely independent
+  const handleTabChange = (tab: 'pulse' | 'codex' | 'matrix' | 'heatmap' | 'settings') => {
+    setActiveTab(tab);
+    setSelectedCollection(null);
+    if (typeof window !== 'undefined') {
+      window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
+    }
+  };
+
   // Auth State Listener
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
@@ -283,7 +292,7 @@ export default function NivarpOS() {
       document.body.appendChild(a);
       a.click();
       a.remove();
-     URL.revokeObjectURL(url);;
+      URL.revokeObjectURL(url);
       showToast("JSON backup downloaded successfully.", "success");
     } catch {
       showToast("Failed to create download backup.", "error");
@@ -535,7 +544,7 @@ export default function NivarpOS() {
             {(['pulse', 'codex', 'matrix', 'heatmap', 'settings'] as const).map(tab => (
               <button 
                 key={tab} 
-                onClick={() => { setActiveTab(tab); setSelectedCollection(null); }} 
+                onClick={() => handleTabChange(tab)} 
                 className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-medium capitalize transition-all ${
                   activeTab === tab ? 'bg-zinc-800 text-white shadow-sm' : 'text-zinc-400 hover:text-white'
                 }`}
@@ -571,7 +580,7 @@ export default function NivarpOS() {
           return (
             <button
               key={tab}
-              onClick={() => { setActiveTab(tab); setSelectedCollection(null); }}
+              onClick={() => handleTabChange(tab)}
               className={`flex flex-col items-center gap-1 py-1 px-2.5 rounded-xl transition-all ${
                 isActive ? 'text-white' : 'text-zinc-500 hover:text-zinc-300'
               }`}
