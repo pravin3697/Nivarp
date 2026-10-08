@@ -2,7 +2,7 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
 import { Trade, PlaybookCollection, ChartSpecimen } from '@/types/trade';
-import { parseKotakNeoCsv, parseDateToTimestamp } from '@/lib/parser';
+import { parseKotakNeoCsv, parseDateToTimestamp, cleanSecurityName } from '@/lib/parser';
 import { 
   syncMasterToCloud,
   fetchMasterFromCloud,
@@ -46,6 +46,14 @@ interface ToastState {
 }
 
 const cleanStr = (s?: string) => (s || '').toLowerCase().trim().replace(/\s+/g, ' ');
+
+// Ensure existing trades standardize TATA to TATAMOTORS on initial hydration
+const sanitizeTrades = (tradesList: Trade[]): Trade[] => {
+  return (tradesList || []).map(t => ({
+    ...t,
+    symbol: cleanSecurityName(t.symbol)
+  }));
+};
 
 export default function NivarpOS() {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
@@ -98,7 +106,6 @@ export default function NivarpOS() {
     setToast({ message, type });
   };
 
-  // Instant scroll-to-top handler on tab switch to keep views completely independent
   const handleTabChange = (tab: 'pulse' | 'codex' | 'matrix' | 'heatmap' | 'settings') => {
     setActiveTab(tab);
     setSelectedCollection(null);
@@ -115,7 +122,7 @@ export default function NivarpOS() {
         showToast(`Signed in: ${user.email}`, 'success');
         const cloudData = await fetchMasterFromCloud(user.uid);
         if (cloudData && (cloudData.trades.length > 0 || cloudData.collections.length > 0)) {
-          setTrades(cloudData.trades || []);
+          setTrades(sanitizeTrades(cloudData.trades || []));
           setCollections(cloudData.collections || []);
           setStudySpecimens(cloudData.studySpecimens || []);
           setCategoryOrder(cloudData.categoryOrder || MASTER_CATEGORY_ORDER);
@@ -215,7 +222,7 @@ export default function NivarpOS() {
         ]);
 
         if (idbMaster) {
-          if (idbMaster.trades?.length) setTrades(idbMaster.trades);
+          if (idbMaster.trades?.length) setTrades(sanitizeTrades(idbMaster.trades));
           if (idbMaster.collections?.length) setCollections(idbMaster.collections);
           if (idbMaster.defaultRiskPerTrade) setDefaultRiskPerTrade(idbMaster.defaultRiskPerTrade);
         }
@@ -230,7 +237,7 @@ export default function NivarpOS() {
 
         const cloudData = await fetchMasterFromCloud(currentUser?.uid || 'master');
         if (isMounted && cloudData && (cloudData.trades.length > 0 || cloudData.collections.length > 0)) {
-          setTrades(cloudData.trades);
+          setTrades(sanitizeTrades(cloudData.trades));
           setCollections(cloudData.collections);
           setStudySpecimens(cloudData.studySpecimens);
           setCategoryOrder(cloudData.categoryOrder);
@@ -248,7 +255,7 @@ export default function NivarpOS() {
     return () => { isMounted = false; };
   }, [currentUser]);
 
-  // Auto-Sync: Saves locally immediately, and batches 1 clean write to Firestore
+  // Auto-Sync
   useEffect(() => {
     if (!isLoaded) return;
 
@@ -306,7 +313,7 @@ export default function NivarpOS() {
     r.onload = async (ev) => {
       try {
         const d = JSON.parse(ev.target?.result as string);
-        const restoredTrades = Array.isArray(d.trades) ? d.trades : [];
+        const restoredTrades = sanitizeTrades(Array.isArray(d.trades) ? d.trades : []);
         const restoredCols = Array.isArray(d.collections) ? d.collections : [];
         const restoredCats = Array.isArray(d.categoryOrder) 
           ? d.categoryOrder.map((c: string) => c.trim().toUpperCase()) 
@@ -534,7 +541,7 @@ export default function NivarpOS() {
         </div>
       )}
 
-      {/* CLEAN TOP HEADER: Zero Clutter */}
+      {/* TOP HEADER */}
       <header className="border-b border-white/[0.06] bg-[#08090D]/90 backdrop-blur-xl sticky top-0 z-40 px-4 md:px-6 py-3 flex items-center justify-between">
         <div className="flex items-center gap-6">
           <NivarpLogo size="md" />
@@ -713,8 +720,9 @@ export default function NivarpOS() {
         isOpen={isDebriefModalOpen} trade={editingTrade} collections={playbookOrderedCollections}
         onClose={() => setIsDebriefModalOpen(false)}
         onSave={(updated) => { 
-          setTrades(prev => prev.map(t => t.id === updated.id ? updated : t)); 
-          showToast(`Debrief for ${updated.symbol} saved.`, "success");
+          const cleanUpdated = { ...updated, symbol: cleanSecurityName(updated.symbol) };
+          setTrades(prev => prev.map(t => t.id === cleanUpdated.id ? cleanUpdated : t)); 
+          showToast(`Debrief for ${cleanUpdated.symbol} saved.`, "success");
           setIsDebriefModalOpen(false); 
         }}
       />
@@ -729,10 +737,11 @@ export default function NivarpOS() {
 
       {/* ADD STUDY MODAL */}
       <AddStudyModal
-        isOpen={isAddStudyChartOpen} collectionName={selectedCollection?.name || ''} suggestedSymbols={Array.from(new Set(trades.map(t => t.symbol)))}
+        isOpen={isAddStudyChartOpen} collectionName={selectedCollection?.name || ''} suggestedSymbols={Array.from(new Set(trades.map(t => cleanSecurityName(t.symbol))))}
         onClose={() => setIsAddStudyChartOpen(false)}
         onSave={(symbol, url) => {
           if (!selectedCollection) return;
+          const cleanSym = cleanSecurityName(symbol.trim());
           const uniqueId = `s-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
 
           const newSpecimen: ChartSpecimen = {
@@ -740,7 +749,7 @@ export default function NivarpOS() {
             collectionId: selectedCollection.id,
             collectionName: selectedCollection.name.trim(),
             type: 'STUDY_SETUP',
-            title: `${symbol} (Study)`,
+            title: `${cleanSym} (Study)`,
             date: new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }),
             imageUrl: url.trim()
           };

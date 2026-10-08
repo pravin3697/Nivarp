@@ -1,32 +1,104 @@
 import { Trade, PlaybookCollection } from '@/types/trade';
 
+// Institutional security name sanitizer for Indian NSE/BSE equities
 export function cleanSecurityName(rawName: string): string {
   if (!rawName) return 'INSTRUMENT';
-  const cleaned = rawName
+  
+  const raw = rawName
     .replace(/^["']|["']$/g, '')
     .replace(/-EQ$/i, '')
     .replace(/\.NS$/i, '')
     .replace(/\.BO$/i, '')
-    .trim();
-  
-  const token = cleaned.split(/\s+/)[0].replace(/[^A-Z0-9&_-]/gi, '').toUpperCase();
-  return token || cleaned.toUpperCase();
+    .trim()
+    .toUpperCase();
+
+  // Standardize all Tata Motors / TATA variants into TATAMOTORS
+  if (
+    raw.includes('TATA MOTOR') || 
+    raw.includes('TATAMOTOR') || 
+    raw === 'TATA' || 
+    raw === 'TATAMTR'
+  ) {
+    return 'TATAMOTORS';
+  }
+
+  if (raw.startsWith('STATE BANK') || raw === 'SBI') {
+    return 'SBIN';
+  }
+  if (raw.startsWith('HDFC BANK')) {
+    return 'HDFCBANK';
+  }
+  if (raw.startsWith('ICICI BANK')) {
+    return 'ICICIBANK';
+  }
+  if (raw.startsWith('AXIS BANK')) {
+    return 'AXISBANK';
+  }
+  if (raw.startsWith('KOTAK MAH') || raw === 'KOTAK') {
+    return 'KOTAKBANK';
+  }
+  if (raw.startsWith('HINDALCO')) {
+    return 'HINDALCO';
+  }
+
+  // Remove whitespace and special characters
+  const cleanToken = raw.replace(/\s+/g, '').replace(/[^A-Z0-9&_-]/gi, '');
+  return cleanToken || raw;
 }
 
-// Strips leading numerical ordering tags like "1 - ", "2. ", "#3 " for pristine UI display
+// Strips "1 - ", "2 - ", "3 - "
 export function displaySetupName(name?: string): string {
   if (!name) return 'General Setup';
-  // Strips "1 - ", "1 -", "1. ", "- ", "1: ", "1) " cleanly
-  return name.replace(/^(\s*#?\d+\s*[-–—.:)]*\s*|^\s*[-–—.:)]+\s*)/, '').trim();
+  return name
+    .trim()
+    .replace(/^#?\d+\s*[-–—]\s*/, '')
+    .replace(/^#?\d+[\s.:)]+/, '')
+    .trim();
+}
+
+// Converts 24h military timestamps ("14:18:58") into 12h AM/PM ("02:18 PM")
+export function convertTo12Hour(timeStr: string): string {
+  if (!timeStr) return '';
+  const clean = timeStr.trim();
+  if (/am|pm/i.test(clean)) return clean;
+
+  const parts = clean.split(':');
+  if (parts.length >= 2) {
+    let hours = parseInt(parts[0], 10);
+    const mins = parts[1].padStart(2, '0');
+    if (isNaN(hours)) return clean;
+
+    const ampm = hours >= 12 ? 'PM' : 'AM';
+    hours = hours % 12;
+    if (hours === 0) hours = 12;
+    const hStr = String(hours).padStart(2, '0');
+    return `${hStr}:${mins} ${ampm}`;
+  }
+  return clean;
+}
+
+// Converts ranged 24h strings ("14:18:58 - 14:40:30") into ("02:18 PM - 02:40 PM")
+export function formatTo12HourRange(rangeStr?: string): string {
+  if (!rangeStr) return '';
+  if (rangeStr.includes('-')) {
+    const [start, end] = rangeStr.split('-').map(s => s.trim());
+    return `${convertTo12Hour(start)} - ${convertTo12Hour(end)}`;
+  }
+  return convertTo12Hour(rangeStr);
 }
 
 function parseTimeToMinutes(timeStr: string): number {
   if (!timeStr) return 0;
-  const parts = timeStr.trim().split(':');
-  if (parts.length >= 2) {
-    const hours = parseInt(parts[0], 10) || 0;
-    const mins = parseInt(parts[1], 10) || 0;
-    return hours * 60 + mins;
+  const clean = timeStr.trim();
+  const match = clean.match(/(\d+):(\d+)(?::\d+)?\s*(AM|PM)?/i);
+  if (match) {
+    let h = parseInt(match[1], 10);
+    const m = parseInt(match[2], 10) || 0;
+    const ampm = match[3] ? match[3].toUpperCase() : null;
+
+    if (ampm === 'PM' && h < 12) h += 12;
+    if (ampm === 'AM' && h === 12) h = 0;
+    return h * 60 + m;
   }
   return 0;
 }
@@ -43,7 +115,7 @@ export function parseKotakNeoCsv(
   const findIdx = (terms: string[]) => headers.findIndex(h => terms.some(t => h.includes(t)));
 
   const dateIdx = findIdx(['trade date']);
-  const timeIdx = findIdx(['trade time']);
+  const timeIdx = findIdx(['trade time', 'order time']);
   const secIdx = findIdx(['security name', 'symbol']);
   const typeIdx = findIdx(['transaction type', 'type']);
   const qtyIdx = findIdx(['quantity', 'qty']);
@@ -68,7 +140,7 @@ export function parseKotakNeoCsv(
     if (row.length <= 1) continue;
 
     const rawDate = dateIdx !== -1 ? row[dateIdx] : '';
-    const rawTime = timeIdx !== -1 ? row[timeIdx] : '00:00:00';
+    const rawTime = timeIdx !== -1 ? row[timeIdx] : '';
     const rawSec = secIdx !== -1 ? row[secIdx] : 'INSTRUMENT';
     const rawSide = typeIdx !== -1 && row[typeIdx].toUpperCase().includes('SELL') ? 'SELL' : 'BUY';
     const qty = qtyIdx !== -1 ? parseFloat(row[qtyIdx]) || 0 : 0;
@@ -109,12 +181,17 @@ export function parseKotakNeoCsv(
       const isLong = buy.time <= sell.time;
       const entryPrice = isLong ? buy.price : sell.price;
       const exitPrice = isLong ? sell.price : buy.price;
-      const entryTime = isLong ? buy.time : sell.time;
-      const exitTime = isLong ? sell.time : buy.time;
+      const entryTimeRaw = isLong ? buy.time : sell.time;
+      const exitTimeRaw = isLong ? sell.time : buy.time;
 
-      const entryMins = parseTimeToMinutes(entryTime);
-      const exitMins = parseTimeToMinutes(exitTime);
-      const durationMinutes = Math.max(1, Math.abs(exitMins - entryMins));
+      const entryMins = parseTimeToMinutes(entryTimeRaw);
+      const exitMins = parseTimeToMinutes(exitTimeRaw);
+      const durationMinutes = (entryMins && exitMins) ? Math.max(1, Math.abs(exitMins - entryMins)) : undefined;
+
+      // 12-Hour formatted execution time (e.g. "09:41 AM - 10:06 AM")
+      const formattedTimeRange = entryTimeRaw && exitTimeRaw 
+        ? `${convertTo12Hour(entryTimeRaw)} - ${convertTo12Hour(exitTimeRaw)}`
+        : '';
 
       const quantity = Math.min(buy.qty, sell.qty);
       const fees = Number((buy.charges + sell.charges).toFixed(2));
@@ -132,10 +209,10 @@ export function parseKotakNeoCsv(
       matchCounter++;
 
       matchedTrades.push({
-        id: `kotak-${Date.now()}-${Math.random()}`,
+        id: `kotak-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
         symbol: buy.symbol,
         tradeDate: buy.date,
-        tradeTime: `${entryTime} - ${exitTime}`,
+        tradeTime: formattedTimeRange,
         durationMinutes,
         direction: isLong ? 'LONG' : 'SHORT',
         quantity,

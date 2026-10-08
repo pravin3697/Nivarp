@@ -4,12 +4,13 @@ import React, { useState, useEffect } from 'react';
 import { Trade, PlaybookCollection, BehavioralTag } from '@/types/trade';
 import { CustomNumberInput, CustomSetupDropdown } from '@/components/ui/CustomControls';
 import { uploadScreenshotToCloud } from '@/lib/cloudSync';
-import { X, ImagePlus, Sparkles, Pencil, Clipboard, Check, Loader2 } from 'lucide-react';
+import { formatTo12HourRange } from '@/lib/parser';
+import { X, ImagePlus, Sparkles, Pencil, Clipboard, Check, Loader2, Clock } from 'lucide-react';
 
 export const BEHAVIORAL_TAGS: { label: BehavioralTag; color: string; border: string; bg: string }[] = [
   { label: 'Rules Followed', color: 'text-emerald-400', border: 'border-emerald-500/40', bg: 'bg-emerald-500/10' },
-  { label: 'No Confirmation Entry', color: 'text-amber-400', border: 'border-amber-500/40', bg: 'bg-amber-500/10' },
   { label: 'SL Hunt / Slippage Hunt', color: 'text-purple-400', border: 'border-purple-500/40', bg: 'bg-purple-500/10' },
+  { label: 'No Confirmation Entry', color: 'text-amber-400', border: 'border-amber-500/40', bg: 'bg-amber-500/10' },
   { label: 'Hallucinated Trade', color: 'text-rose-400', border: 'border-rose-500/40', bg: 'bg-rose-500/10' },
 ];
 
@@ -55,8 +56,7 @@ export function EditDebriefModal({
           } else {
             const reader = new FileReader();
             reader.onload = (event) => {
-              const b64 = event.target?.result as string;
-              setForm(prev => prev ? { ...prev, [targetField]: b64 } : null);
+              setForm(prev => prev ? { ...prev, [targetField]: event.target?.result as string } : null);
             };
             reader.readAsDataURL(file);
           }
@@ -76,9 +76,15 @@ export function EditDebriefModal({
     <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-end sm:items-center justify-center p-0 sm:p-4 overflow-y-auto">
       <div className="bg-[#090A10] border border-white/10 rounded-t-3xl sm:rounded-2xl max-w-2xl w-full p-4 sm:p-6 space-y-4 shadow-2xl max-h-[92vh] overflow-y-auto">
         <div className="flex items-center justify-between pb-3 border-b border-white/[0.06]">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2.5 flex-wrap">
             <span className="text-base font-black text-white">{form.symbol}</span>
             <span className="text-xs text-zinc-400 font-mono">({form.tradeDate})</span>
+            {form.tradeTime && (
+              <span className="flex items-center gap-1 px-2.5 py-0.5 rounded-lg bg-cyan-500/10 border border-cyan-500/25 text-[11px] font-mono text-cyan-300 font-bold">
+                <Clock className="w-3 h-3 text-cyan-400" />
+                <span>{formatTo12HourRange(form.tradeTime)}</span>
+              </span>
+            )}
           </div>
           <button onClick={onClose} className="text-zinc-500 hover:text-white p-1">
             <X className="w-5 h-5" />
@@ -86,6 +92,7 @@ export function EditDebriefModal({
         </div>
 
         <form onSubmit={(e) => { e.preventDefault(); onSave(form); }} className="space-y-4 text-xs font-mono">
+          {/* Behavioral Execution Tag Selector */}
           <div>
             <label className="text-zinc-400 block mb-1.5 flex items-center justify-between">
               <span>Behavioral Execution Tag</span>
@@ -122,7 +129,8 @@ export function EditDebriefModal({
             />
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 sm:gap-3 p-3 rounded-xl bg-white/[0.02] border border-white/[0.04]">
+          {/* SL, MAE, MFE, and Trade Execution Time Input */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3 p-3 rounded-xl bg-white/[0.02] border border-white/[0.04]">
             <div>
               <label className="text-zinc-400 block mb-1 text-[11px]">Stoploss Price (SL)</label>
               <CustomNumberInput
@@ -150,6 +158,16 @@ export function EditDebriefModal({
                 onChange={(e) => setForm({ ...form, mfe: e.target.value })}
                 placeholder="+2.0R"
                 className="w-full bg-zinc-900 border border-white/10 rounded-lg p-2 text-emerald-400 font-bold outline-none"
+              />
+            </div>
+            <div>
+              <label className="text-zinc-400 block mb-1 text-[11px]">Execution Time (12h)</label>
+              <input
+                type="text"
+                value={form.tradeTime || ''}
+                onChange={(e) => setForm({ ...form, tradeTime: e.target.value })}
+                placeholder="e.g. 02:18 PM - 02:40 PM"
+                className="w-full bg-zinc-900 border border-white/10 rounded-lg p-2 text-cyan-300 font-bold outline-none"
               />
             </div>
           </div>

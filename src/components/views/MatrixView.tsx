@@ -1,8 +1,8 @@
 'use client';
 
-import React, { useMemo, useState } from 'react';
+import React, { useMemo } from 'react';
 import { Trade, PlaybookCollection, BehavioralTag } from '@/types/trade';
-import { parseDateToTimestamp, displaySetupName } from '@/lib/parser';
+import { parseDateToTimestamp, displaySetupName, cleanSecurityName } from '@/lib/parser';
 import { 
   ResponsiveContainer, 
   AreaChart, 
@@ -31,9 +31,8 @@ import {
   Skull, 
   Timer, 
   AlertOctagon,
-  Layers,
-  Sparkles,
-  Target
+  Target,
+  ClockAlert
 } from 'lucide-react';
 
 interface MatrixViewProps {
@@ -42,11 +41,40 @@ interface MatrixViewProps {
 }
 
 export function MatrixView({ collections, trades }: MatrixViewProps) {
-  const [setupViewMode, setSetupViewMode] = useState<'consolidated' | 'split'>('consolidated');
+  // Normalize trades so any legacy 'TATA' symbol is automatically grouped under 'TATAMOTORS'
+  const normalizedTrades = useMemo(() => {
+    return trades.map(t => ({
+      ...t,
+      symbol: cleanSecurityName(t.symbol)
+    }));
+  }, [trades]);
+
+  // Helper to extract clean numeric R from MAE/MFE strings with Rupee price guard
+  const parseExcursionR = (val: string | undefined, trade: Trade, isMae: boolean): number => {
+    if (!val) {
+      if (isMae) return trade.rMultiple < 0 ? Math.min(1.0, Math.abs(trade.rMultiple)) : 0.3;
+      return trade.rMultiple > 0 ? Number((trade.rMultiple * 1.1).toFixed(2)) : 0;
+    }
+
+    const rawNum = parseFloat(String(val).replace(/[^0-9.-]/g, ''));
+    if (isNaN(rawNum)) return 0;
+
+    // Rupee price guard (if user typed stock price like ₹939 instead of R)
+    if (rawNum > 20 && trade.entryPrice > 0) {
+      const riskPerShare = Math.abs(trade.entryPrice - (trade.slPrice || trade.entryPrice * 0.99)) || 1;
+      const priceDistance = trade.direction === 'LONG'
+        ? (isMae ? trade.entryPrice - rawNum : rawNum - trade.entryPrice)
+        : (isMae ? rawNum - trade.entryPrice : trade.entryPrice - rawNum);
+      const computed = Number((priceDistance / riskPerShare).toFixed(2));
+      return Math.min(15, Math.max(0, computed));
+    }
+
+    return Math.min(15, Math.abs(rawNum));
+  };
 
   // 1. Behavioral Execution Analytics
   const behaviorAnalytics = useMemo(() => {
-    const totalTrades = trades.length;
+    const totalTrades = normalizedTrades.length;
 
     const tags: {
       tag: BehavioralTag;
@@ -116,7 +144,7 @@ export function MatrixView({ collections, trades }: MatrixViewProps) {
     let mistakeR = 0;
     let brokenRuleCount = 0;
 
-    trades.forEach(t => {
+    normalizedTrades.forEach(t => {
       const tag = t.behaviorTag;
       if (!tag) return;
 
@@ -155,16 +183,16 @@ export function MatrixView({ collections, trades }: MatrixViewProps) {
       avgCostPerMistake,
       untaggedCount: totalTrades - taggedCount
     };
-  }, [trades]);
+  }, [normalizedTrades]);
 
-  // 2. Accurate Holding Duration Calculation
+  // 2. Holding Duration
   const durationStats = useMemo(() => {
     let totalWinDuration = 0;
     let winCount = 0;
     let totalLossDuration = 0;
     let lossCount = 0;
 
-    const scatterData = trades.map(t => {
+    const scatterData = normalizedTrades.map(t => {
       let durationMinutes = t.durationMinutes || 0;
 
       if (!durationMinutes) {
@@ -191,7 +219,7 @@ export function MatrixView({ collections, trades }: MatrixViewProps) {
 
     const avgWinMin = winCount ? Math.round(totalWinDuration / winCount) : 0;
     const avgLossMin = lossCount ? Math.round(totalLossDuration / lossCount) : 0;
-    const overallAvgMin = trades.length ? Math.round((totalWinDuration + totalLossDuration) / trades.length) : 0;
+    const overallAvgMin = normalizedTrades.length ? Math.round((totalWinDuration + totalLossDuration) / normalizedTrades.length) : 0;
 
     return {
       scatterData,
@@ -199,12 +227,12 @@ export function MatrixView({ collections, trades }: MatrixViewProps) {
       avgLossMin,
       overallAvgMin
     };
-  }, [trades]);
+  }, [normalizedTrades]);
 
   // 3. Drawdown Depth Curve
   const drawdownData = useMemo(() => {
-    if (!trades.length) return { data: [], maxDrawdown: 0 };
-    const sorted = [...trades].sort((a, b) => parseDateToTimestamp(a.tradeDate) - parseDateToTimestamp(b.tradeDate));
+    if (!normalizedTrades.length) return { data: [], maxDrawdown: 0 };
+    const sorted = [...normalizedTrades].sort((a, b) => parseDateToTimestamp(a.tradeDate) - parseDateToTimestamp(b.tradeDate));
     
     let cumR = 0;
     let peakR = 0;
@@ -226,17 +254,17 @@ export function MatrixView({ collections, trades }: MatrixViewProps) {
     });
 
     return { data, maxDrawdown: Number(maxDrawdown.toFixed(2)) };
-  }, [trades]);
+  }, [normalizedTrades]);
 
-  // 4. Time Edge
-  const timeEdge = useMemo(() => {
+  // 4. Time Edge (Honors exact recorded time; alerts if time is missing rather than corrupting)
+  const timeEdgeAnalysis = useMemo(() => {
     const timeSlots = [
-      { label: '09:15 - 10:00 AM', filter: (h: number, m: number) => h === 9 || (h === 10 && m === 0) },
-      { label: '10:00 - 11:00 AM', filter: (h: number, m: number) => h === 10 && m > 0 },
-      { label: '11:00 - 12:00 PM', filter: (h: number, m: number) => h === 11 },
-      { label: '12:00 - 01:00 PM', filter: (h: number, m: number) => h === 12 },
-      { label: '01:00 - 02:00 PM', filter: (h: number, m: number) => h === 13 || (h === 1 && m <= 59) },
-      { label: '02:00 - 03:30 PM', filter: (h: number, m: number) => h >= 14 || h === 2 || h === 3 }
+      { label: '09:15 - 10:00 AM', startMin: 9 * 60 + 15, endMin: 10 * 60 - 1 },
+      { label: '10:00 - 11:00 AM', startMin: 10 * 60, endMin: 11 * 60 - 1 },
+      { label: '11:00 - 12:00 PM', startMin: 11 * 60, endMin: 12 * 60 - 1 },
+      { label: '12:00 - 01:00 PM', startMin: 12 * 60, endMin: 13 * 60 - 1 },
+      { label: '01:00 - 02:00 PM', startMin: 13 * 60, endMin: 14 * 60 - 1 },
+      { label: '02:00 - 03:30 PM', startMin: 14 * 60, endMin: 15 * 60 + 30 }
     ];
 
     const slotStats = timeSlots.map(s => ({
@@ -246,13 +274,13 @@ export function MatrixView({ collections, trades }: MatrixViewProps) {
       netR: 0
     }));
 
-    trades.forEach((t, idx) => {
-      let hour = 10;
-      let minute = 15;
+    let missingTimeCount = 0;
 
+    normalizedTrades.forEach((t) => {
       const rawTime = t.tradeTime || (t as any).time;
+      let minuteOfDay = -1;
 
-      if (rawTime && typeof rawTime === 'string') {
+      if (rawTime && typeof rawTime === 'string' && rawTime.trim() !== '') {
         const firstTime = rawTime.includes('-') ? rawTime.split('-')[0].trim() : rawTime.trim();
         const match = firstTime.match(/(\d+):(\d+)(?::\d+)?\s*(AM|PM)?/i);
 
@@ -264,27 +292,31 @@ export function MatrixView({ collections, trades }: MatrixViewProps) {
           if (ampm === 'PM' && h < 12) h += 12;
           if (ampm === 'AM' && h === 12) h = 0;
 
-          hour = h;
-          minute = m;
+          minuteOfDay = h * 60 + m;
         }
-      } else {
-        const sampleHours = [9, 10, 11, 12, 13, 14];
-        hour = sampleHours[idx % sampleHours.length];
-        minute = 30;
       }
 
-      const matchIdx = timeSlots.findIndex(s => s.filter(hour, minute));
-      const target = matchIdx !== -1 ? slotStats[matchIdx] : slotStats[1];
+      // If time is missing or unparseable, do NOT inject a false timestamp into a slot
+      if (minuteOfDay < 0) {
+        missingTimeCount++;
+        return;
+      }
 
-      target.trades += 1;
-      if (t.rMultiple > 0) target.wins += 1;
-      target.netR = Number((target.netR + t.rMultiple).toFixed(2));
+      const matchIdx = timeSlots.findIndex(s => minuteOfDay >= s.startMin && minuteOfDay <= s.endMin);
+      if (matchIdx !== -1) {
+        slotStats[matchIdx].trades += 1;
+        if (t.rMultiple > 0) slotStats[matchIdx].wins += 1;
+        slotStats[matchIdx].netR = Number((slotStats[matchIdx].netR + t.rMultiple).toFixed(2));
+      }
     });
 
-    return slotStats.filter(s => s.trades > 0 || ['10:00 - 11:00 AM', '11:00 - 12:00 PM'].includes(s.slot));
-  }, [trades]);
+    return {
+      slots: slotStats,
+      missingTimeCount
+    };
+  }, [normalizedTrades]);
 
-  // 5. Setup Realization Edge
+  // 5. Consolidated Setup Realization Edge (Consolidated permanently)
   const setupEdge = useMemo(() => {
     const getBaseModelName = (name: string): string => {
       const clean = displaySetupName(name);
@@ -302,134 +334,116 @@ export function MatrixView({ collections, trades }: MatrixViewProps) {
       );
     };
 
-    if (setupViewMode === 'consolidated') {
-      const modelMap = new Map<string, {
-        baseName: string;
-        category: string;
-        totalTrades: number;
-        wins: number;
-        netR: number;
-        primaryWins: number;
-        primaryTrades: number;
-        failedWins: number;
-        failedTrades: number;
-      }>();
+    const modelMap = new Map<string, {
+      baseName: string;
+      category: string;
+      totalTrades: number;
+      wins: number;
+      netR: number;
+      primaryWins: number;
+      primaryTrades: number;
+      failedWins: number;
+      failedTrades: number;
+      totalMaeR: number;
+      maeCount: number;
+      totalMfeR: number;
+      mfeCount: number;
+    }>();
 
-      collections.forEach(col => {
-        if (isArchiveBucket(col.category, col.name)) return;
+    collections.forEach(col => {
+      if (isArchiveBucket(col.category, col.name)) return;
 
-        const base = getBaseModelName(col.name);
-        const key = base.toLowerCase();
-        if (!modelMap.has(key)) {
-          modelMap.set(key, {
-            baseName: base,
-            category: col.category,
-            totalTrades: 0,
-            wins: 0,
-            netR: 0,
-            primaryWins: 0,
-            primaryTrades: 0,
-            failedWins: 0,
-            failedTrades: 0
-          });
-        }
-      });
-
-      trades.forEach(t => {
-        const raw = t.setupType || 'General Setup';
-        const clean = displaySetupName(raw);
-        if (isArchiveBucket(t.regime || '', clean)) return;
-
-        const base = getBaseModelName(raw);
-        const key = base.toLowerCase();
-
-        if (!modelMap.has(key)) return;
-
-        const current = modelMap.get(key)!;
-        const isFailedOrExtended = /^(failed|extended)\s+/i.test(clean);
-        const isWin = t.rMultiple > 0;
-
-        current.totalTrades += 1;
-        if (isWin) current.wins += 1;
-        current.netR += t.rMultiple;
-
-        if (isFailedOrExtended) {
-          current.failedTrades += 1;
-          if (isWin) current.failedWins += 1;
-        } else {
-          current.primaryTrades += 1;
-          if (isWin) current.primaryWins += 1;
-        }
-
-        modelMap.set(key, current);
-      });
-
-      return Array.from(modelMap.values()).map(d => {
-        const wr = d.totalTrades ? Math.round((d.wins / d.totalTrades) * 100) : 0;
-        return {
-          name: d.baseName,
-          category: d.category,
-          total: d.totalTrades,
-          wins: d.wins,
-          wr,
-          netR: Number(d.netR.toFixed(2)),
-          hasVariants: d.failedTrades > 0,
-          primaryTrades: d.primaryTrades,
-          primaryWins: d.primaryWins,
-          failedTrades: d.failedTrades,
-          failedWins: d.failedWins
-        };
-      }).sort((a, b) => b.netR - a.netR);
-
-    } else {
-      const map = new Map<string, { total: number; wins: number; netR: number; category: string; cleanName: string }>();
-
-      collections.forEach(col => {
-        if (isArchiveBucket(col.category, col.name)) return;
-        const clean = displaySetupName(col.name);
-        const key = clean.toLowerCase();
-        map.set(key, { total: 0, wins: 0, netR: 0, category: col.category, cleanName: clean });
-      });
-
-      trades.forEach(t => {
-        const clean = displaySetupName(t.setupType);
-        if (isArchiveBucket(t.regime || '', clean)) return;
-
-        const key = clean.toLowerCase();
-        if (!map.has(key)) return;
-
-        const current = map.get(key)!;
-        current.total += 1;
-        if (t.rMultiple > 0) current.wins += 1;
-        current.netR += t.rMultiple;
-        map.set(key, current);
-      });
-
-      return Array.from(map.values()).map(data => {
-        const wr = data.total ? Math.round((data.wins / data.total) * 100) : 0;
-        return {
-          name: data.cleanName,
-          category: data.category,
-          total: data.total,
-          wins: data.wins,
-          wr,
-          netR: Number(data.netR.toFixed(2)),
-          hasVariants: false,
-          primaryTrades: data.total,
-          primaryWins: data.wins,
+      const base = getBaseModelName(col.name);
+      const key = base.toLowerCase();
+      if (!modelMap.has(key)) {
+        modelMap.set(key, {
+          baseName: base,
+          category: col.category,
+          totalTrades: 0,
+          wins: 0,
+          netR: 0,
+          primaryWins: 0,
+          primaryTrades: 0,
+          failedWins: 0,
           failedTrades: 0,
-          failedWins: 0
-        };
-      }).sort((a, b) => b.netR - a.netR);
-    }
-  }, [collections, trades, setupViewMode]);
+          totalMaeR: 0,
+          maeCount: 0,
+          totalMfeR: 0,
+          mfeCount: 0
+        });
+      }
+    });
 
-  // 6. Asset Edge
+    normalizedTrades.forEach(t => {
+      const raw = t.setupType || 'General Setup';
+      const clean = displaySetupName(raw);
+      if (isArchiveBucket(t.regime || '', clean)) return;
+
+      const base = getBaseModelName(raw);
+      const key = base.toLowerCase();
+
+      if (!modelMap.has(key)) return;
+
+      const current = modelMap.get(key)!;
+      const isFailedOrExtended = /^(failed|extended)\s+/i.test(clean);
+      const isWin = t.rMultiple > 0;
+
+      current.totalTrades += 1;
+      if (isWin) current.wins += 1;
+      current.netR += t.rMultiple;
+
+      if (isFailedOrExtended) {
+        current.failedTrades += 1;
+        if (isWin) current.failedWins += 1;
+      } else {
+        current.primaryTrades += 1;
+        if (isWin) current.primaryWins += 1;
+      }
+
+      const tradeMae = parseExcursionR(t.mae, t, true);
+      if (tradeMae > 0) {
+        current.totalMaeR += tradeMae;
+        current.maeCount += 1;
+      }
+
+      const tradeMfe = parseExcursionR(t.mfe, t, false);
+      if (tradeMfe > 0) {
+        current.totalMfeR += tradeMfe;
+        current.mfeCount += 1;
+      }
+
+      modelMap.set(key, current);
+    });
+
+    return Array.from(modelMap.values()).map(d => {
+      const wr = d.totalTrades ? Math.round((d.wins / d.totalTrades) * 100) : 0;
+      const avgMae = d.maeCount ? Number((d.totalMaeR / d.maeCount).toFixed(2)) : 0;
+      const avgMfe = d.mfeCount ? Number((d.totalMfeR / d.mfeCount).toFixed(2)) : 0;
+
+      return {
+        name: d.baseName,
+        category: d.category,
+        total: d.totalTrades,
+        wins: d.wins,
+        wr,
+        netR: Number(d.netR.toFixed(2)),
+        hasVariants: d.failedTrades > 0,
+        primaryTrades: d.primaryTrades,
+        primaryWins: d.primaryWins,
+        failedTrades: d.failedTrades,
+        failedWins: d.failedWins,
+        avgMae,
+        avgMfe
+      };
+    }).sort((a, b) => b.netR - a.netR);
+  }, [collections, normalizedTrades]);
+
+  // 6. Asset Edge (Cleaned and strictly unique)
   const assetEdge = useMemo(() => {
     const map = new Map<string, { total: number; wins: number; netR: number }>();
 
-    trades.forEach(t => {
-      const sym = t.symbol.toUpperCase();
+    normalizedTrades.forEach(t => {
+      const sym = cleanSecurityName(t.symbol);
       const curr = map.get(sym) || { total: 0, wins: 0, netR: 0 };
       curr.total += 1;
       if (t.rMultiple > 0) curr.wins += 1;
@@ -446,14 +460,14 @@ export function MatrixView({ collections, trades }: MatrixViewProps) {
         netR: data.netR
       }))
       .sort((a, b) => b.netR - a.netR);
-  }, [trades]);
+  }, [normalizedTrades]);
 
   // 7. Day of Week Edge
   const dayEdge = useMemo(() => {
     const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
     const dayStats = days.map(d => ({ day: d, trades: 0, wins: 0, netR: 0 }));
 
-    trades.forEach(t => {
+    normalizedTrades.forEach(t => {
       const ts = parseDateToTimestamp(t.tradeDate);
       if (!ts) return;
       const date = new Date(ts);
@@ -467,64 +481,38 @@ export function MatrixView({ collections, trades }: MatrixViewProps) {
     });
 
     return dayStats;
-  }, [trades]);
+  }, [normalizedTrades]);
 
-  // 8. MAE (Heat Taken) Statistics
+  // 8. MAE Statistics
   const maeStats = useMemo(() => {
-    let low = 0; // < 0.3R
-    let mid = 0; // 0.3 - 0.7R
-    let high = 0; // > 0.7R
+    let low = 0;
+    let mid = 0;
+    let high = 0;
     let count = 0;
 
-    trades.forEach(t => {
-      if (!t.mae) return;
-      const num = Math.abs(parseFloat(t.mae.replace(/[^0-9.-]/g, '')) || 0);
-      if (num < 0.3) low++;
-      else if (num <= 0.7) mid++;
-      else high++;
-      count++;
+    normalizedTrades.forEach(t => {
+      const heat = parseExcursionR(t.mae, t, true);
+      if (heat > 0) {
+        count++;
+        if (heat < 0.3) low++;
+        else if (heat <= 0.7) mid++;
+        else high++;
+      }
     });
 
     return { low, mid, high, count };
-  }, [trades]);
+  }, [normalizedTrades]);
 
-  // 9. MFE (Peak Run) Statistics with Guard against Stock Price Inputs
+  // 9. MFE Statistics
   const mfeStats = useMemo(() => {
-    let runners = 0; // > 2.0R
-    let mid = 0;     // 1.0 - 2.0R
-    let low = 0;     // < 1.0R
+    let runners = 0;
+    let mid = 0;
+    let low = 0;
     let count = 0;
     let totalRunR = 0;
 
-    trades.forEach(t => {
-      let runR = 0;
-
-      if (t.mfe && typeof t.mfe === 'string') {
-        const rawNum = parseFloat(t.mfe.replace(/[^0-9.-]/g, ''));
-        if (!isNaN(rawNum)) {
-          // If user entered a full stock price (e.g. ₹939 or ₹865) instead of R
-          if (rawNum > 20 && t.entryPrice > 0) {
-            const riskPerShare = Math.abs(t.entryPrice - (t.slPrice || t.entryPrice * 0.99)) || 1;
-            const priceDistance = t.direction === 'LONG' 
-              ? rawNum - t.entryPrice 
-              : t.entryPrice - rawNum;
-            runR = Math.max(0, Number((priceDistance / riskPerShare).toFixed(2)));
-          } else {
-            runR = Math.abs(rawNum);
-          }
-        }
-      }
-
-      // If no valid MFE was typed, use the actual realized R multiple of winning trades
-      if (runR === 0 && t.rMultiple > 0) {
-        runR = Number((t.rMultiple * 1.1).toFixed(2));
-      }
-
-      // Safety guard against outlier typos (> 15R)
-      if (runR > 15) {
-        runR = t.rMultiple > 0 ? Number((t.rMultiple * 1.1).toFixed(2)) : 2.5;
-      }
-
+    normalizedTrades.forEach(t => {
+      const runR = parseExcursionR(t.mfe, t, false);
       if (runR > 0) {
         count++;
         totalRunR += runR;
@@ -535,9 +523,8 @@ export function MatrixView({ collections, trades }: MatrixViewProps) {
     });
 
     const avgPeakRun = count ? Number((totalRunR / count).toFixed(2)) : 0;
-
     return { runners, mid, low, count, avgPeakRun };
-  }, [trades]);
+  }, [normalizedTrades]);
 
   return (
     <div className="space-y-5 sm:space-y-6">
@@ -548,7 +535,7 @@ export function MatrixView({ collections, trades }: MatrixViewProps) {
             <Binary className="w-5 h-5 text-purple-400" />
             Quant Edge & Behavioral Matrix
           </h2>
-          <p className="text-xs text-zinc-400 mt-0.5">Statistical edge, holding time efficiency, and consolidated setup probabilities.</p>
+          <p className="text-xs text-zinc-400 mt-0.5">Statistical edge, holding time efficiency, and per-setup MAE/MFE profiles.</p>
         </div>
         {behaviorAnalytics.untaggedCount > 0 && (
           <span className="text-[11px] font-mono px-2.5 py-1 rounded-lg bg-amber-500/10 text-amber-400 border border-amber-500/30">
@@ -838,10 +825,18 @@ export function MatrixView({ collections, trades }: MatrixViewProps) {
             <span className="text-[10px] font-mono text-zinc-500">Market Windows</span>
           </div>
 
+          {/* Alert if trades are missing time rather than corrupting time distribution */}
+          {timeEdgeAnalysis.missingTimeCount > 0 && (
+            <div className="mb-2 p-2 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-300 text-[10px] font-mono flex items-center gap-1.5">
+              <ClockAlert className="w-3.5 h-3.5 shrink-0 text-amber-400" />
+              <span>{timeEdgeAnalysis.missingTimeCount} trade(s) have no timestamp. Update them via Edit Debrief.</span>
+            </div>
+          )}
+
           <div className="space-y-3 flex-1 flex flex-col justify-around">
-            {timeEdge.map(t => {
+            {timeEdgeAnalysis.slots.map(t => {
               const isProfit = t.netR >= 0;
-              const maxAbs = Math.max(...timeEdge.map(item => Math.abs(item.netR)), 1);
+              const maxAbs = Math.max(...timeEdgeAnalysis.slots.map(item => Math.abs(item.netR)), 1);
               const barWidth = Math.min(Math.round((Math.abs(t.netR) / maxAbs) * 100), 100);
               const wr = t.trades ? Math.round((t.wins / t.trades) * 100) : 0;
 
@@ -875,7 +870,7 @@ export function MatrixView({ collections, trades }: MatrixViewProps) {
         </div>
       </div>
 
-      {/* Row 4: SETUP REALIZATION EDGE */}
+      {/* Row 4: SETUP REALIZATION EDGE (CONSOLIDATED PROBABILITY & EXCURSION) */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6">
         <div className="lg:col-span-2 p-4 sm:p-5 rounded-2xl bg-[#090A10] border border-white/[0.06] space-y-3 sm:space-y-4">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-2 border-b border-white/[0.04] gap-2">
@@ -883,40 +878,12 @@ export function MatrixView({ collections, trades }: MatrixViewProps) {
               <BarChart3 className="w-4 h-4 text-emerald-400" />
               <div>
                 <h3 className="font-mono text-xs uppercase tracking-wider text-zinc-300">
-                  {setupViewMode === 'consolidated' ? 'Consolidated True Setup Probability' : 'Split Setup Variants'}
+                  Consolidated True Setup Probability & Excursion
                 </h3>
                 <span className="text-[10px] font-mono text-zinc-500">
-                  {setupViewMode === 'consolidated' 
-                    ? 'Combines winning setups with their failed variants to reveal true win rate' 
-                    : 'Shows raw separate entries for each variant'}
+                  Shows combined win rate, average MFE peak expansion, and average MAE heat per setup
                 </span>
               </div>
-            </div>
-
-            <div className="flex items-center p-0.5 rounded-lg bg-white/[0.03] border border-white/[0.06] text-[10px] font-mono shrink-0">
-              <button
-                onClick={() => setSetupViewMode('consolidated')}
-                className={`flex items-center gap-1 px-2.5 py-1 rounded-md font-bold transition-all ${
-                  setupViewMode === 'consolidated'
-                    ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40'
-                    : 'text-zinc-400 hover:text-white'
-                }`}
-                title="Combines primary setups with failed variants"
-              >
-                <Sparkles className="w-3 h-3 text-cyan-400" />
-                <span>True Edge (Combined)</span>
-              </button>
-              <button
-                onClick={() => setSetupViewMode('split')}
-                className={`flex items-center gap-1 px-2.5 py-1 rounded-md font-bold transition-all ${
-                  setupViewMode === 'split'
-                    ? 'bg-zinc-800 text-white shadow-sm'
-                    : 'text-zinc-400 hover:text-white'
-                }`}
-              >
-                <Layers className="w-3 h-3 text-zinc-400" />
-                <span>Split Variants</span>
-              </button>
             </div>
           </div>
 
@@ -929,10 +896,10 @@ export function MatrixView({ collections, trades }: MatrixViewProps) {
               {setupEdge.map(col => {
                 const isGreen = col.netR >= 0;
                 return (
-                  <div key={col.name} className="py-2.5 sm:py-3 flex items-center justify-between hover:bg-white/[0.01] px-1 sm:px-2 rounded-xl transition-all">
-                    <div>
+                  <div key={col.name} className="py-3 flex flex-col sm:flex-row sm:items-center justify-between hover:bg-white/[0.01] px-1 sm:px-2 rounded-xl transition-all gap-2">
+                    <div className="flex-1">
                       <div className="flex items-center gap-2">
-                        <span className="text-xs sm:text-sm font-bold text-white truncate max-w-[160px] sm:max-w-none">{col.name}</span>
+                        <span className="text-xs sm:text-sm font-bold text-white truncate max-w-[170px] sm:max-w-none">{col.name}</span>
                         <span className="text-[9px] sm:text-[10px] font-mono px-1.5 py-0.5 rounded bg-zinc-800/80 text-zinc-400 border border-white/[0.04]">
                           {col.category}
                         </span>
@@ -943,7 +910,7 @@ export function MatrixView({ collections, trades }: MatrixViewProps) {
                         <span>•</span>
                         <span className="text-zinc-300 font-bold">{col.wr}% Win Rate</span>
 
-                        {setupViewMode === 'consolidated' && col.hasVariants && (
+                        {col.hasVariants && (
                           <div className="flex items-center gap-1.5 ml-1">
                             <span className="text-[9px] px-1.5 py-0.2 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
                               Primary: {col.primaryWins}W / {col.primaryTrades - col.primaryWins}L
@@ -956,13 +923,27 @@ export function MatrixView({ collections, trades }: MatrixViewProps) {
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-3">
-                      <div className="w-16 sm:w-24 bg-white/[0.04] h-2 rounded-full overflow-hidden hidden sm:block">
+                    {/* Dedicated Per-Setup MAE / MFE Metrics Box */}
+                    <div className="flex items-center gap-4 font-mono text-xs">
+                      <div className="flex items-center gap-2">
+                        <div className="px-2 py-1 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-right">
+                          <span className="text-[9px] text-zinc-500 block uppercase">Avg MFE</span>
+                          <span className="text-[11px] font-bold text-emerald-400">+{col.avgMfe}R</span>
+                        </div>
+
+                        <div className="px-2 py-1 rounded-lg bg-rose-500/10 border border-rose-500/20 text-right">
+                          <span className="text-[9px] text-zinc-500 block uppercase">Avg MAE</span>
+                          <span className="text-[11px] font-bold text-rose-400">-{col.avgMae}R</span>
+                        </div>
+                      </div>
+
+                      <div className="w-16 bg-white/[0.04] h-2 rounded-full overflow-hidden hidden sm:block">
                         <div
                           className={`h-full rounded-full ${col.wr >= 50 ? 'bg-emerald-400' : 'bg-rose-400'}`}
                           style={{ width: `${col.wr}%` }}
                         />
                       </div>
+
                       <div className={`font-mono text-xs sm:text-sm font-bold min-w-[65px] text-right ${isGreen ? 'text-emerald-400' : 'text-rose-400'}`}>
                         {isGreen ? '+' : ''}{col.netR.toFixed(2)}R
                       </div>
@@ -1022,9 +1003,8 @@ export function MatrixView({ collections, trades }: MatrixViewProps) {
         </div>
       </div>
 
-      {/* Row 5: DAY-OF-WEEK EDGE + SIDE-BY-SIDE MAE (HEAT) & MFE (PEAK RUN) */}
+      {/* Row 5: DAY-OF-WEEK EDGE + SIDE-BY-SIDE MAE & MFE */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6">
-        
         {/* Day-of-Week Edge */}
         <div className="p-4 sm:p-5 rounded-2xl bg-[#090A10] border border-white/[0.06] flex flex-col justify-between">
           <div className="flex items-center justify-between mb-3">
@@ -1107,7 +1087,7 @@ export function MatrixView({ collections, trades }: MatrixViewProps) {
           </div>
         </div>
 
-        {/* Favorable Excursion: MFE Peak Run Efficiency (With Rupee Price Guard) */}
+        {/* Favorable Excursion: MFE Peak Run */}
         <div className="p-4 sm:p-5 rounded-2xl bg-[#090A10] border border-white/[0.06] space-y-4 flex flex-col justify-between">
           <div>
             <div className="flex items-center justify-between pb-2 border-b border-white/[0.04]">
