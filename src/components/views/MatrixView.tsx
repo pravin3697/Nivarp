@@ -21,7 +21,6 @@ import {
   Clock, 
   Calendar, 
   Briefcase, 
-  Flame, 
   BarChart3, 
   ArrowUpRight, 
   ArrowDownRight, 
@@ -31,8 +30,8 @@ import {
   Skull, 
   Timer, 
   AlertOctagon,
-  Target,
-  ClockAlert
+  ClockAlert,
+  Flame
 } from 'lucide-react';
 
 interface MatrixViewProps {
@@ -70,6 +69,31 @@ export function MatrixView({ collections, trades }: MatrixViewProps) {
     }
 
     return Math.min(15, Math.abs(rawNum));
+  };
+
+  // Helper to convert trade timestamp into standard intraday time window
+  const getTradeTimeSlot = (tradeTime?: string): string | null => {
+    if (!tradeTime || typeof tradeTime !== 'string' || tradeTime.trim() === '') return null;
+    const firstTime = tradeTime.includes('-') ? tradeTime.split('-')[0].trim() : tradeTime.trim();
+    const match = firstTime.match(/(\d+):(\d+)(?::\d+)?\s*(AM|PM)?/i);
+    if (!match) return null;
+
+    let h = parseInt(match[1], 10);
+    const m = parseInt(match[2], 10) || 0;
+    const ampm = match[3] ? match[3].toUpperCase() : null;
+
+    if (ampm === 'PM' && h < 12) h += 12;
+    if (ampm === 'AM' && h === 12) h = 0;
+
+    const minuteOfDay = h * 60 + m;
+
+    if (minuteOfDay >= 9 * 60 + 15 && minuteOfDay < 10 * 60) return '09:15 - 10:00 AM';
+    if (minuteOfDay >= 10 * 60 && minuteOfDay < 11 * 60) return '10:00 - 11:00 AM';
+    if (minuteOfDay >= 11 * 60 && minuteOfDay < 12 * 60) return '11:00 - 12:00 PM';
+    if (minuteOfDay >= 12 * 60 && minuteOfDay < 13 * 60) return '12:00 - 01:00 PM';
+    if (minuteOfDay >= 13 * 60 && minuteOfDay < 14 * 60) return '01:00 - 02:00 PM';
+    if (minuteOfDay >= 14 * 60 && minuteOfDay <= 15 * 60 + 30) return '02:00 - 03:30 PM';
+    return null;
   };
 
   // 1. Behavioral Execution Analytics
@@ -185,7 +209,171 @@ export function MatrixView({ collections, trades }: MatrixViewProps) {
     };
   }, [normalizedTrades]);
 
-  // 2. Holding Duration
+  // 2. Consolidated Setup Realization Edge with Per-Setup Peak & Worst Time Windows
+  const setupEdge = useMemo(() => {
+    const getBaseModelName = (name: string): string => {
+      const clean = displaySetupName(name);
+      return clean.replace(/^(failed|extended)\s+/i, '').trim();
+    };
+
+    const isArchiveBucket = (cat: string, name: string) => {
+      const cleanCat = (cat || '').toUpperCase();
+      const cleanName = (name || '').toLowerCase();
+      return (
+        cleanCat.includes('EXECUTION STOPPED') ||
+        cleanCat.includes('BAD ENTRY') ||
+        cleanName.includes('execution leak') ||
+        cleanName.includes('behavioral & early')
+      );
+    };
+
+    const modelMap = new Map<string, {
+      baseName: string;
+      category: string;
+      totalTrades: number;
+      wins: number;
+      netR: number;
+      primaryWins: number;
+      primaryTrades: number;
+      failedWins: number;
+      failedTrades: number;
+      totalMaeR: number;
+      maeCount: number;
+      totalMfeR: number;
+      mfeCount: number;
+      timeSlotsMap: Map<string, { trades: number; netR: number }>;
+    }>();
+
+    collections.forEach(col => {
+      if (isArchiveBucket(col.category, col.name)) return;
+
+      const base = getBaseModelName(col.name);
+      const key = base.toLowerCase();
+      if (!modelMap.has(key)) {
+        modelMap.set(key, {
+          baseName: base,
+          category: col.category,
+          totalTrades: 0,
+          wins: 0,
+          netR: 0,
+          primaryWins: 0,
+          primaryTrades: 0,
+          failedWins: 0,
+          failedTrades: 0,
+          totalMaeR: 0,
+          maeCount: 0,
+          totalMfeR: 0,
+          mfeCount: 0,
+          timeSlotsMap: new Map()
+        });
+      }
+    });
+
+    normalizedTrades.forEach(t => {
+      const raw = t.setupType || 'General Setup';
+      const clean = displaySetupName(raw);
+      if (isArchiveBucket(t.regime || '', clean)) return;
+
+      const base = getBaseModelName(raw);
+      const key = base.toLowerCase();
+
+      if (!modelMap.has(key)) return;
+
+      const current = modelMap.get(key)!;
+      const isFailedOrExtended = /^(failed|extended)\s+/i.test(clean);
+      const isWin = t.rMultiple > 0;
+
+      current.totalTrades += 1;
+      if (isWin) current.wins += 1;
+      current.netR += t.rMultiple;
+
+      if (isFailedOrExtended) {
+        current.failedTrades += 1;
+        if (isWin) current.failedWins += 1;
+      } else {
+        current.primaryTrades += 1;
+        if (isWin) current.primaryWins += 1;
+      }
+
+      const tradeMae = parseExcursionR(t.mae, t, true);
+      if (tradeMae > 0) {
+        current.totalMaeR += tradeMae;
+        current.maeCount += 1;
+      }
+
+      const tradeMfe = parseExcursionR(t.mfe, t, false);
+      if (tradeMfe > 0) {
+        current.totalMfeR += tradeMfe;
+        current.mfeCount += 1;
+      }
+
+      // Record per-setup time execution slot
+      const slot = getTradeTimeSlot(t.tradeTime);
+      if (slot) {
+        const slotData = current.timeSlotsMap.get(slot) || { trades: 0, netR: 0 };
+        slotData.trades += 1;
+        slotData.netR = Number((slotData.netR + t.rMultiple).toFixed(2));
+        current.timeSlotsMap.set(slot, slotData);
+      }
+
+      modelMap.set(key, current);
+    });
+
+    return Array.from(modelMap.values()).map(d => {
+      const wr = d.totalTrades ? Math.round((d.wins / d.totalTrades) * 100) : 0;
+      const avgMae = d.maeCount ? Number((d.totalMaeR / d.maeCount).toFixed(2)) : 0;
+      const avgMfe = d.mfeCount ? Number((d.totalMfeR / d.mfeCount).toFixed(2)) : 0;
+
+      let bestSlot = '—';
+      let bestSlotNetR = -Infinity;
+      let worstSlot = '—';
+      let worstSlotNetR = Infinity;
+
+      if (d.timeSlotsMap.size > 0) {
+        d.timeSlotsMap.forEach((val, slotName) => {
+          if (val.netR > bestSlotNetR) {
+            bestSlotNetR = val.netR;
+            bestSlot = slotName;
+          }
+          if (val.netR < worstSlotNetR) {
+            worstSlotNetR = val.netR;
+            worstSlot = slotName;
+          }
+        });
+      }
+
+      // If best and worst point to the exact same slot with single record, show clear status
+      if (d.timeSlotsMap.size <= 1) {
+        if (bestSlotNetR >= 0) {
+          worstSlot = 'None (Clean)';
+        } else {
+          bestSlot = 'None';
+        }
+      }
+
+      return {
+        name: d.baseName,
+        category: d.category,
+        total: d.totalTrades,
+        wins: d.wins,
+        wr,
+        netR: Number(d.netR.toFixed(2)),
+        hasVariants: d.failedTrades > 0,
+        primaryTrades: d.primaryTrades,
+        primaryWins: d.primaryWins,
+        failedTrades: d.failedTrades,
+        failedWins: d.failedWins,
+        avgMae,
+        avgMfe,
+        bestTimeSlot: bestSlot,
+        bestTimeNetR: bestSlotNetR !== -Infinity ? bestSlotNetR : 0,
+        worstTimeSlot: worstSlot,
+        worstTimeNetR: worstSlotNetR !== Infinity ? worstSlotNetR : 0
+      };
+    }).sort((a, b) => b.netR - a.netR);
+  }, [collections, normalizedTrades]);
+
+  // 3. Holding Duration
   const durationStats = useMemo(() => {
     let totalWinDuration = 0;
     let winCount = 0;
@@ -229,7 +417,7 @@ export function MatrixView({ collections, trades }: MatrixViewProps) {
     };
   }, [normalizedTrades]);
 
-  // 3. Drawdown Depth Curve
+  // 4. Drawdown Depth Curve
   const drawdownData = useMemo(() => {
     if (!normalizedTrades.length) return { data: [], maxDrawdown: 0 };
     const sorted = [...normalizedTrades].sort((a, b) => parseDateToTimestamp(a.tradeDate) - parseDateToTimestamp(b.tradeDate));
@@ -256,7 +444,7 @@ export function MatrixView({ collections, trades }: MatrixViewProps) {
     return { data, maxDrawdown: Number(maxDrawdown.toFixed(2)) };
   }, [normalizedTrades]);
 
-  // 4. Time Edge (Honors exact recorded time; alerts if time is missing rather than corrupting)
+  // 5. Global Time Edge
   const timeEdgeAnalysis = useMemo(() => {
     const timeSlots = [
       { label: '09:15 - 10:00 AM', startMin: 9 * 60 + 15, endMin: 10 * 60 - 1 },
@@ -296,7 +484,6 @@ export function MatrixView({ collections, trades }: MatrixViewProps) {
         }
       }
 
-      // If time is missing or unparseable, do NOT inject a false timestamp into a slot
       if (minuteOfDay < 0) {
         missingTimeCount++;
         return;
@@ -316,129 +503,7 @@ export function MatrixView({ collections, trades }: MatrixViewProps) {
     };
   }, [normalizedTrades]);
 
-  // 5. Consolidated Setup Realization Edge (Consolidated permanently)
-  const setupEdge = useMemo(() => {
-    const getBaseModelName = (name: string): string => {
-      const clean = displaySetupName(name);
-      return clean.replace(/^(failed|extended)\s+/i, '').trim();
-    };
-
-    const isArchiveBucket = (cat: string, name: string) => {
-      const cleanCat = (cat || '').toUpperCase();
-      const cleanName = (name || '').toLowerCase();
-      return (
-        cleanCat.includes('EXECUTION STOPPED') ||
-        cleanCat.includes('BAD ENTRY') ||
-        cleanName.includes('execution leak') ||
-        cleanName.includes('behavioral & early')
-      );
-    };
-
-    const modelMap = new Map<string, {
-      baseName: string;
-      category: string;
-      totalTrades: number;
-      wins: number;
-      netR: number;
-      primaryWins: number;
-      primaryTrades: number;
-      failedWins: number;
-      failedTrades: number;
-      totalMaeR: number;
-      maeCount: number;
-      totalMfeR: number;
-      mfeCount: number;
-    }>();
-
-    collections.forEach(col => {
-      if (isArchiveBucket(col.category, col.name)) return;
-
-      const base = getBaseModelName(col.name);
-      const key = base.toLowerCase();
-      if (!modelMap.has(key)) {
-        modelMap.set(key, {
-          baseName: base,
-          category: col.category,
-          totalTrades: 0,
-          wins: 0,
-          netR: 0,
-          primaryWins: 0,
-          primaryTrades: 0,
-          failedWins: 0,
-          failedTrades: 0,
-          totalMaeR: 0,
-          maeCount: 0,
-          totalMfeR: 0,
-          mfeCount: 0
-        });
-      }
-    });
-
-    normalizedTrades.forEach(t => {
-      const raw = t.setupType || 'General Setup';
-      const clean = displaySetupName(raw);
-      if (isArchiveBucket(t.regime || '', clean)) return;
-
-      const base = getBaseModelName(raw);
-      const key = base.toLowerCase();
-
-      if (!modelMap.has(key)) return;
-
-      const current = modelMap.get(key)!;
-      const isFailedOrExtended = /^(failed|extended)\s+/i.test(clean);
-      const isWin = t.rMultiple > 0;
-
-      current.totalTrades += 1;
-      if (isWin) current.wins += 1;
-      current.netR += t.rMultiple;
-
-      if (isFailedOrExtended) {
-        current.failedTrades += 1;
-        if (isWin) current.failedWins += 1;
-      } else {
-        current.primaryTrades += 1;
-        if (isWin) current.primaryWins += 1;
-      }
-
-      const tradeMae = parseExcursionR(t.mae, t, true);
-      if (tradeMae > 0) {
-        current.totalMaeR += tradeMae;
-        current.maeCount += 1;
-      }
-
-      const tradeMfe = parseExcursionR(t.mfe, t, false);
-      if (tradeMfe > 0) {
-        current.totalMfeR += tradeMfe;
-        current.mfeCount += 1;
-      }
-
-      modelMap.set(key, current);
-    });
-
-    return Array.from(modelMap.values()).map(d => {
-      const wr = d.totalTrades ? Math.round((d.wins / d.totalTrades) * 100) : 0;
-      const avgMae = d.maeCount ? Number((d.totalMaeR / d.maeCount).toFixed(2)) : 0;
-      const avgMfe = d.mfeCount ? Number((d.totalMfeR / d.mfeCount).toFixed(2)) : 0;
-
-      return {
-        name: d.baseName,
-        category: d.category,
-        total: d.totalTrades,
-        wins: d.wins,
-        wr,
-        netR: Number(d.netR.toFixed(2)),
-        hasVariants: d.failedTrades > 0,
-        primaryTrades: d.primaryTrades,
-        primaryWins: d.primaryWins,
-        failedTrades: d.failedTrades,
-        failedWins: d.failedWins,
-        avgMae,
-        avgMfe
-      };
-    }).sort((a, b) => b.netR - a.netR);
-  }, [collections, normalizedTrades]);
-
-  // 6. Asset Edge (Cleaned and strictly unique)
+  // 6. Asset Edge
   const assetEdge = useMemo(() => {
     const map = new Map<string, { total: number; wins: number; netR: number }>();
 
@@ -483,49 +548,6 @@ export function MatrixView({ collections, trades }: MatrixViewProps) {
     return dayStats;
   }, [normalizedTrades]);
 
-  // 8. MAE Statistics
-  const maeStats = useMemo(() => {
-    let low = 0;
-    let mid = 0;
-    let high = 0;
-    let count = 0;
-
-    normalizedTrades.forEach(t => {
-      const heat = parseExcursionR(t.mae, t, true);
-      if (heat > 0) {
-        count++;
-        if (heat < 0.3) low++;
-        else if (heat <= 0.7) mid++;
-        else high++;
-      }
-    });
-
-    return { low, mid, high, count };
-  }, [normalizedTrades]);
-
-  // 9. MFE Statistics
-  const mfeStats = useMemo(() => {
-    let runners = 0;
-    let mid = 0;
-    let low = 0;
-    let count = 0;
-    let totalRunR = 0;
-
-    normalizedTrades.forEach(t => {
-      const runR = parseExcursionR(t.mfe, t, false);
-      if (runR > 0) {
-        count++;
-        totalRunR += runR;
-        if (runR >= 2.0) runners++;
-        else if (runR >= 1.0) mid++;
-        else low++;
-      }
-    });
-
-    const avgPeakRun = count ? Number((totalRunR / count).toFixed(2)) : 0;
-    return { runners, mid, low, count, avgPeakRun };
-  }, [normalizedTrades]);
-
   return (
     <div className="space-y-5 sm:space-y-6">
       {/* Top Banner */}
@@ -535,7 +557,7 @@ export function MatrixView({ collections, trades }: MatrixViewProps) {
             <Binary className="w-5 h-5 text-purple-400" />
             Quant Edge & Behavioral Matrix
           </h2>
-          <p className="text-xs text-zinc-400 mt-0.5">Statistical edge, holding time efficiency, and per-setup MAE/MFE profiles.</p>
+          <p className="text-xs text-zinc-400 mt-0.5">Statistical setup models, per-setup peak/worst windows, and holding efficiency.</p>
         </div>
         {behaviorAnalytics.untaggedCount > 0 && (
           <span className="text-[11px] font-mono px-2.5 py-1 rounded-lg bg-amber-500/10 text-amber-400 border border-amber-500/30">
@@ -544,7 +566,7 @@ export function MatrixView({ collections, trades }: MatrixViewProps) {
         )}
       </div>
 
-      {/* BEHAVIORAL EXECUTION AUDIT */}
+      {/* 1. BEHAVIORAL EXECUTION AUDIT */}
       <div className="p-4 sm:p-6 rounded-2xl bg-[#090A10] border border-white/[0.06] space-y-4">
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 pb-3 border-b border-white/[0.06]">
           <div className="flex items-center gap-2">
@@ -643,7 +665,119 @@ export function MatrixView({ collections, trades }: MatrixViewProps) {
         </div>
       </div>
 
-      {/* DURATION VS PROFITABILITY MATRIX */}
+      {/* 2. EXPANDED FULL-WIDTH CONTAINER DIRECTLY BELOW BEHAVIORAL: CONSOLIDATED TRUE SETUP PROBABILITY, EXCURSION & DUAL TIME WINDOWS */}
+      <div className="w-full p-4 sm:p-6 rounded-2xl bg-[#090A10] border border-white/[0.06] space-y-4 shadow-lg">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-3 border-b border-white/[0.06] gap-2">
+          <div className="flex items-center gap-2.5">
+            <BarChart3 className="w-5 h-5 text-emerald-400" />
+            <div>
+              <h3 className="font-mono text-sm uppercase tracking-wider text-white font-bold">
+                Consolidated True Setup Probability, Excursion & Time Edge Matrix
+              </h3>
+              <p className="text-[11px] font-mono text-zinc-400">
+                Full blueprint: win rate, primary vs failed variants, peak edge window, leakage/worst time, runner MFE, and adverse MAE.
+              </p>
+            </div>
+          </div>
+          <span className="text-[11px] font-mono px-2.5 py-1 rounded-lg bg-cyan-500/10 text-cyan-400 border border-cyan-500/30">
+            {setupEdge.length} Playbook Models Tracked
+          </span>
+        </div>
+
+        {setupEdge.length === 0 ? (
+          <div className="py-12 text-center text-xs font-mono text-zinc-600">
+            No playbook setups logged yet.
+          </div>
+        ) : (
+          <div className="divide-y divide-white/[0.04]">
+            {setupEdge.map(col => {
+              const isGreen = col.netR >= 0;
+              return (
+                <div key={col.name} className="py-3.5 flex flex-col xl:flex-row xl:items-center justify-between hover:bg-white/[0.015] px-2 sm:px-3 rounded-xl transition-all gap-3">
+                  {/* Setup Title, Category, and Volume Details */}
+                  <div className="flex-1 min-w-[260px]">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-sm font-bold text-white">{col.name}</span>
+                      <span className="text-[9px] sm:text-[10px] font-mono px-2 py-0.5 rounded bg-zinc-800/80 text-zinc-400 border border-white/[0.04]">
+                        {col.category}
+                      </span>
+                    </div>
+                    
+                    <div className="text-[11px] font-mono text-zinc-500 mt-1 flex flex-wrap items-center gap-2">
+                      <span>{col.total} Total Trades</span>
+                      <span>•</span>
+                      <span className="text-zinc-300 font-bold">{col.wr}% Win Rate</span>
+
+                      {col.hasVariants && (
+                        <div className="flex items-center gap-1.5 ml-1">
+                          <span className="text-[9px] px-1.5 py-0.2 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                            Primary: {col.primaryWins}W / {col.primaryTrades - col.primaryWins}L
+                          </span>
+                          <span className="text-[9px] px-1.5 py-0.2 rounded bg-rose-500/10 text-rose-400 border border-rose-500/20">
+                            Failed: {col.failedWins}W / {col.failedTrades - col.failedWins}L
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Quantitative Metric Badges: Peak Window, Worst Window, MFE, MAE, Win Bar, Net R */}
+                  <div className="flex flex-wrap items-center gap-2.5 sm:gap-3.5 font-mono text-xs">
+                    {/* Setup-Specific Peak Time Edge Window */}
+                    <div className="px-2.5 py-1 rounded-xl bg-cyan-500/10 border border-cyan-500/25 flex flex-col items-start min-w-[125px]">
+                      <span className="text-[9px] text-zinc-500 uppercase flex items-center gap-1 font-bold">
+                        <Clock className="w-2.5 h-2.5 text-cyan-400" />
+                        <span>Peak Edge Time</span>
+                      </span>
+                      <span className="text-[11px] font-bold text-cyan-300 truncate max-w-[130px]">
+                        {col.bestTimeSlot}
+                      </span>
+                    </div>
+
+                    {/* Setup-Specific Worst / Leakage Time Window */}
+                    <div className="px-2.5 py-1 rounded-xl bg-amber-500/10 border border-amber-500/25 flex flex-col items-start min-w-[125px]">
+                      <span className="text-[9px] text-zinc-500 uppercase flex items-center gap-1 font-bold">
+                        <Flame className="w-2.5 h-2.5 text-amber-400" />
+                        <span>Worst Time</span>
+                      </span>
+                      <span className="text-[11px] font-bold text-amber-300 truncate max-w-[130px]">
+                        {col.worstTimeSlot}
+                      </span>
+                    </div>
+
+                    {/* Average MFE (Peak Excursion) */}
+                    <div className="px-2.5 py-1 rounded-xl bg-emerald-500/10 border border-emerald-500/25 text-right min-w-[70px]">
+                      <span className="text-[9px] text-zinc-500 block uppercase font-bold">Avg MFE</span>
+                      <span className="text-[11px] font-black text-emerald-400">+{col.avgMfe}R</span>
+                    </div>
+
+                    {/* Average MAE (Adverse Excursion) */}
+                    <div className="px-2.5 py-1 rounded-xl bg-rose-500/10 border border-rose-500/25 text-right min-w-[70px]">
+                      <span className="text-[9px] text-zinc-500 block uppercase font-bold">Avg MAE</span>
+                      <span className="text-[11px] font-black text-rose-400">-{col.avgMae}R</span>
+                    </div>
+
+                    {/* Win Rate Progress Indicator */}
+                    <div className="w-16 bg-white/[0.04] h-2 rounded-full overflow-hidden hidden md:block">
+                      <div
+                        className={`h-full rounded-full ${col.wr >= 50 ? 'bg-emerald-400' : 'bg-rose-400'}`}
+                        style={{ width: `${col.wr}%` }}
+                      />
+                    </div>
+
+                    {/* Net Realized Return */}
+                    <div className={`font-mono text-sm sm:text-base font-black min-w-[75px] text-right ${isGreen ? 'text-emerald-400' : 'text-rose-400'}`}>
+                      {isGreen ? '+' : ''}{col.netR.toFixed(2)}R
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* 3. DURATION VS PROFITABILITY MATRIX & HOLDING EFFICIENCY */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6">
         <div className="lg:col-span-2 p-4 sm:p-5 rounded-2xl bg-[#090A10] border border-white/[0.06] flex flex-col justify-between space-y-3">
           <div className="flex items-center justify-between">
@@ -770,7 +904,7 @@ export function MatrixView({ collections, trades }: MatrixViewProps) {
         </div>
       </div>
 
-      {/* Row 3: Underwater Drawdown Depth & Real Time Edge */}
+      {/* 4. UNDERWATER DRAWDOWN & GLOBAL TIME EDGE */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6">
         <div className="lg:col-span-2 p-4 sm:p-5 rounded-2xl bg-[#090A10] border border-white/[0.06] flex flex-col justify-between">
           <div className="flex items-center justify-between mb-3 sm:mb-4">
@@ -815,17 +949,16 @@ export function MatrixView({ collections, trades }: MatrixViewProps) {
           </div>
         </div>
 
-        {/* Real Time Edge */}
+        {/* Global Time Edge */}
         <div className="p-4 sm:p-5 rounded-2xl bg-[#090A10] border border-white/[0.06] flex flex-col justify-between">
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-2">
               <Clock className="w-4 h-4 text-emerald-400" />
-              <h3 className="font-mono text-xs uppercase tracking-wider text-zinc-300">Time Edge</h3>
+              <h3 className="font-mono text-xs uppercase tracking-wider text-zinc-300">Global Time Edge</h3>
             </div>
-            <span className="text-[10px] font-mono text-zinc-500">Market Windows</span>
+            <span className="text-[10px] font-mono text-zinc-500">All Market Windows</span>
           </div>
 
-          {/* Alert if trades are missing time rather than corrupting time distribution */}
           {timeEdgeAnalysis.missingTimeCount > 0 && (
             <div className="mb-2 p-2 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-300 text-[10px] font-mono flex items-center gap-1.5">
               <ClockAlert className="w-3.5 h-3.5 shrink-0 text-amber-400" />
@@ -864,95 +997,56 @@ export function MatrixView({ collections, trades }: MatrixViewProps) {
           </div>
 
           <div className="mt-3 pt-3 border-t border-white/[0.04] text-[11px] font-mono text-zinc-500 flex justify-between">
-            <span>Intraday Execution</span>
-            <span>Alpha Window</span>
+            <span>Intraday Windows</span>
+            <span>Global Market Windows</span>
           </div>
         </div>
       </div>
 
-      {/* Row 4: SETUP REALIZATION EDGE (CONSOLIDATED PROBABILITY & EXCURSION) */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6">
-        <div className="lg:col-span-2 p-4 sm:p-5 rounded-2xl bg-[#090A10] border border-white/[0.06] space-y-3 sm:space-y-4">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-2 border-b border-white/[0.04] gap-2">
+      {/* 5. DAY-OF-WEEK EDGE & ASSET EDGE */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
+        {/* Day-of-Week Edge */}
+        <div className="p-4 sm:p-5 rounded-2xl bg-[#090A10] border border-white/[0.06] flex flex-col justify-between">
+          <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-2">
-              <BarChart3 className="w-4 h-4 text-emerald-400" />
-              <div>
-                <h3 className="font-mono text-xs uppercase tracking-wider text-zinc-300">
-                  Consolidated True Setup Probability & Excursion
-                </h3>
-                <span className="text-[10px] font-mono text-zinc-500">
-                  Shows combined win rate, average MFE peak expansion, and average MAE heat per setup
-                </span>
-              </div>
+              <Calendar className="w-4 h-4 text-cyan-400" />
+              <h3 className="font-mono text-xs uppercase tracking-wider text-zinc-300">Day-of-Week Edge</h3>
             </div>
+            <span className="text-[10px] font-mono text-zinc-500">Weekly Cycle</span>
           </div>
 
-          {setupEdge.length === 0 ? (
-            <div className="py-8 text-center text-xs font-mono text-zinc-600">
-              No playbook setups logged yet.
-            </div>
-          ) : (
-            <div className="divide-y divide-white/[0.04]">
-              {setupEdge.map(col => {
-                const isGreen = col.netR >= 0;
-                return (
-                  <div key={col.name} className="py-3 flex flex-col sm:flex-row sm:items-center justify-between hover:bg-white/[0.01] px-1 sm:px-2 rounded-xl transition-all gap-2">
-                    <div className="flex-1">
-                      <div className="flex items-center gap-2">
-                        <span className="text-xs sm:text-sm font-bold text-white truncate max-w-[170px] sm:max-w-none">{col.name}</span>
-                        <span className="text-[9px] sm:text-[10px] font-mono px-1.5 py-0.5 rounded bg-zinc-800/80 text-zinc-400 border border-white/[0.04]">
-                          {col.category}
-                        </span>
-                      </div>
-                      
-                      <div className="text-[10px] sm:text-[11px] font-mono text-zinc-500 mt-1 flex flex-wrap items-center gap-2">
-                        <span>{col.total} Total Trades</span>
-                        <span>•</span>
-                        <span className="text-zinc-300 font-bold">{col.wr}% Win Rate</span>
+          <div className="space-y-3 flex-1 flex flex-col justify-around">
+            {dayEdge.map(d => {
+              const isProfit = d.netR >= 0;
+              const maxAbs = Math.max(...dayEdge.map(item => Math.abs(item.netR)), 1);
+              const barWidth = Math.min(Math.round((Math.abs(d.netR) / maxAbs) * 100), 100);
 
-                        {col.hasVariants && (
-                          <div className="flex items-center gap-1.5 ml-1">
-                            <span className="text-[9px] px-1.5 py-0.2 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                              Primary: {col.primaryWins}W / {col.primaryTrades - col.primaryWins}L
-                            </span>
-                            <span className="text-[9px] px-1.5 py-0.2 rounded bg-rose-500/10 text-rose-400 border border-rose-500/20">
-                              Failed: {col.failedWins}W / {col.failedTrades - col.failedWins}L
-                            </span>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Dedicated Per-Setup MAE / MFE Metrics Box */}
-                    <div className="flex items-center gap-4 font-mono text-xs">
-                      <div className="flex items-center gap-2">
-                        <div className="px-2 py-1 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-right">
-                          <span className="text-[9px] text-zinc-500 block uppercase">Avg MFE</span>
-                          <span className="text-[11px] font-bold text-emerald-400">+{col.avgMfe}R</span>
-                        </div>
-
-                        <div className="px-2 py-1 rounded-lg bg-rose-500/10 border border-rose-500/20 text-right">
-                          <span className="text-[9px] text-zinc-500 block uppercase">Avg MAE</span>
-                          <span className="text-[11px] font-bold text-rose-400">-{col.avgMae}R</span>
-                        </div>
-                      </div>
-
-                      <div className="w-16 bg-white/[0.04] h-2 rounded-full overflow-hidden hidden sm:block">
-                        <div
-                          className={`h-full rounded-full ${col.wr >= 50 ? 'bg-emerald-400' : 'bg-rose-400'}`}
-                          style={{ width: `${col.wr}%` }}
-                        />
-                      </div>
-
-                      <div className={`font-mono text-xs sm:text-sm font-bold min-w-[65px] text-right ${isGreen ? 'text-emerald-400' : 'text-rose-400'}`}>
-                        {isGreen ? '+' : ''}{col.netR.toFixed(2)}R
-                      </div>
+              return (
+                <div key={d.day} className="space-y-1">
+                  <div className="flex items-center justify-between text-xs font-mono">
+                    <span className="text-zinc-300 text-[11px] sm:text-xs">{d.day}</span>
+                    <div className="flex items-center gap-2 sm:gap-3">
+                      <span className="text-zinc-500 text-[10px]">{d.trades} Trades</span>
+                      <span className={`font-bold ${isProfit ? 'text-emerald-400' : 'text-rose-400'}`}>
+                        {isProfit ? '+' : ''}{d.netR.toFixed(2)}R
+                      </span>
                     </div>
                   </div>
-                );
-              })}
-            </div>
-          )}
+                  <div className="w-full bg-white/[0.03] h-1.5 rounded-full overflow-hidden">
+                    <div
+                      className={`h-full rounded-full transition-all duration-500 ${isProfit ? 'bg-emerald-400' : 'bg-rose-500'}`}
+                      style={{ width: `${barWidth}%` }}
+                    />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          <div className="mt-3 pt-3 border-t border-white/[0.04] text-[11px] font-mono text-zinc-500 flex justify-between">
+            <span>Trading Schedule</span>
+            <span>Intraweek Performance</span>
+          </div>
         </div>
 
         {/* Asset Edge */}
@@ -1001,130 +1095,6 @@ export function MatrixView({ collections, trades }: MatrixViewProps) {
             <span>Yield Origin</span>
           </div>
         </div>
-      </div>
-
-      {/* Row 5: DAY-OF-WEEK EDGE + SIDE-BY-SIDE MAE & MFE */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6">
-        {/* Day-of-Week Edge */}
-        <div className="p-4 sm:p-5 rounded-2xl bg-[#090A10] border border-white/[0.06] flex flex-col justify-between">
-          <div className="flex items-center justify-between mb-3">
-            <div className="flex items-center gap-2">
-              <Calendar className="w-4 h-4 text-cyan-400" />
-              <h3 className="font-mono text-xs uppercase tracking-wider text-zinc-300">Day-of-Week Edge</h3>
-            </div>
-            <span className="text-[10px] font-mono text-zinc-500">Weekly Cycle</span>
-          </div>
-
-          <div className="space-y-3 flex-1 flex flex-col justify-around">
-            {dayEdge.map(d => {
-              const isProfit = d.netR >= 0;
-              const maxAbs = Math.max(...dayEdge.map(item => Math.abs(item.netR)), 1);
-              const barWidth = Math.min(Math.round((Math.abs(d.netR) / maxAbs) * 100), 100);
-
-              return (
-                <div key={d.day} className="space-y-1">
-                  <div className="flex items-center justify-between text-xs font-mono">
-                    <span className="text-zinc-300 text-[11px] sm:text-xs">{d.day}</span>
-                    <div className="flex items-center gap-2 sm:gap-3">
-                      <span className="text-zinc-500 text-[10px]">{d.trades} Trades</span>
-                      <span className={`font-bold ${isProfit ? 'text-emerald-400' : 'text-rose-400'}`}>
-                        {isProfit ? '+' : ''}{d.netR.toFixed(2)}R
-                      </span>
-                    </div>
-                  </div>
-                  <div className="w-full bg-white/[0.03] h-1.5 rounded-full overflow-hidden">
-                    <div
-                      className={`h-full rounded-full transition-all duration-500 ${isProfit ? 'bg-emerald-400' : 'bg-rose-500'}`}
-                      style={{ width: `${barWidth}%` }}
-                    />
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-
-          <div className="mt-3 pt-3 border-t border-white/[0.04] text-[11px] font-mono text-zinc-500 flex justify-between">
-            <span>Trading Schedule</span>
-            <span>Intraweek Performance</span>
-          </div>
-        </div>
-
-        {/* Adverse Excursion: MAE Heat Taken */}
-        <div className="p-4 sm:p-5 rounded-2xl bg-[#090A10] border border-white/[0.06] space-y-4 flex flex-col justify-between">
-          <div>
-            <div className="flex items-center justify-between pb-2 border-b border-white/[0.04]">
-              <div className="flex items-center gap-2">
-                <Flame className="w-4 h-4 text-amber-400" />
-                <h3 className="font-mono text-xs uppercase tracking-wider text-zinc-300">Adverse Excursion (MAE Heat)</h3>
-              </div>
-              <span className="text-[10px] font-mono text-zinc-500">Risk Profile</span>
-            </div>
-
-            <div className="grid grid-cols-3 gap-2 sm:gap-2.5 pt-3">
-              <div className="p-3 rounded-xl bg-white/[0.02] border border-white/[0.05] text-center">
-                <span className="text-[10px] font-mono text-zinc-500 block mb-0.5">Cold (&lt;0.3R)</span>
-                <span className="text-lg sm:text-xl font-bold font-mono text-emerald-400">{maeStats.low}</span>
-                <span className="text-[9px] font-mono text-zinc-500 block mt-0.5">Minimal</span>
-              </div>
-
-              <div className="p-3 rounded-xl bg-white/[0.02] border border-white/[0.05] text-center">
-                <span className="text-[10px] font-mono text-zinc-500 block mb-0.5">Warm (0.3-0.7R)</span>
-                <span className="text-lg sm:text-xl font-bold font-mono text-amber-400">{maeStats.mid}</span>
-                <span className="text-[9px] font-mono text-zinc-500 block mt-0.5">Normal</span>
-              </div>
-
-              <div className="p-3 rounded-xl bg-white/[0.02] border border-white/[0.05] text-center">
-                <span className="text-[10px] font-mono text-zinc-500 block mb-0.5">Hot (&gt;0.7R)</span>
-                <span className="text-lg sm:text-xl font-bold font-mono text-rose-400">{maeStats.high}</span>
-                <span className="text-[9px] font-mono text-zinc-500 block mt-0.5">Near SL</span>
-              </div>
-            </div>
-          </div>
-
-          <div className="pt-3 border-t border-white/[0.04] text-[11px] font-mono text-zinc-500 flex justify-between">
-            <span>Heat Taken</span>
-            <span>Stoploss Proximity</span>
-          </div>
-        </div>
-
-        {/* Favorable Excursion: MFE Peak Run */}
-        <div className="p-4 sm:p-5 rounded-2xl bg-[#090A10] border border-white/[0.06] space-y-4 flex flex-col justify-between">
-          <div>
-            <div className="flex items-center justify-between pb-2 border-b border-white/[0.04]">
-              <div className="flex items-center gap-2">
-                <Target className="w-4 h-4 text-emerald-400" />
-                <h3 className="font-mono text-xs uppercase tracking-wider text-zinc-300">Favorable Excursion (MFE Run)</h3>
-              </div>
-              <span className="text-[10px] font-mono text-emerald-400 font-bold">Avg Peak: +{mfeStats.avgPeakRun}R</span>
-            </div>
-
-            <div className="grid grid-cols-3 gap-2 sm:gap-2.5 pt-3">
-              <div className="p-3 rounded-xl bg-emerald-500/5 border border-emerald-500/20 text-center">
-                <span className="text-[10px] font-mono text-emerald-400 block mb-0.5">Runner (&gt;2R)</span>
-                <span className="text-lg sm:text-xl font-bold font-mono text-emerald-400">{mfeStats.runners}</span>
-                <span className="text-[9px] font-mono text-zinc-500 block mt-0.5">Extended</span>
-              </div>
-
-              <div className="p-3 rounded-xl bg-white/[0.02] border border-white/[0.05] text-center">
-                <span className="text-[10px] font-mono text-zinc-400 block mb-0.5">Mid (1.0-2.0R)</span>
-                <span className="text-lg sm:text-xl font-bold font-mono text-cyan-300">{mfeStats.mid}</span>
-                <span className="text-[9px] font-mono text-zinc-500 block mt-0.5">Standard</span>
-              </div>
-
-              <div className="p-3 rounded-xl bg-white/[0.02] border border-white/[0.05] text-center">
-                <span className="text-[10px] font-mono text-zinc-500 block mb-0.5">Small (&lt;1.0R)</span>
-                <span className="text-lg sm:text-xl font-bold font-mono text-zinc-400">{mfeStats.low}</span>
-                <span className="text-[9px] font-mono text-zinc-500 block mt-0.5">Weak Push</span>
-              </div>
-            </div>
-          </div>
-
-          <div className="pt-3 border-t border-white/[0.04] text-[11px] font-mono text-zinc-500 flex justify-between">
-            <span>Peak Target Reach</span>
-            <span>Exit Efficiency</span>
-          </div>
-        </div>
-
       </div>
     </div>
   );
