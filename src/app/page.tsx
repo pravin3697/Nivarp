@@ -660,7 +660,21 @@ export default function NivarpOS() {
             })}
           />
         )}
-        {activeTab === 'matrix' && <MatrixView collections={deduplicatedCollections} trades={trades} />}
+        {activeTab === 'matrix' && (
+          <MatrixView 
+            collections={deduplicatedCollections} 
+            trades={trades} 
+            onOpenInspector={(url: string, title: string, htfUrl?: string, ltfUrl?: string) => setInspectorChart({ 
+              isOpen: true, 
+              url, 
+              title, 
+              htf: htfUrl || '', 
+              ltf: ltfUrl || '',
+              items: [],
+              initialIndex: 0
+            })}
+          />
+        )}
         {activeTab === 'heatmap' && <HeatmapView trades={trades} />}
         {activeTab === 'settings' && (
           <SettingsView

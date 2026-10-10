@@ -211,16 +211,6 @@ export function EditDebriefModal({
             </div>
           </div>
 
-          <div>
-            <label className="text-zinc-400 block mb-1">Debrief & Notes</label>
-            <textarea
-              value={form.notes || ''}
-              onChange={(e) => setForm({ ...form, notes: e.target.value })}
-              placeholder="Execution review, psychological triggers, takeaways..."
-              className="w-full bg-zinc-900 border border-white/10 rounded-xl p-2.5 text-white outline-none h-20"
-            />
-          </div>
-
           <div className="flex items-center justify-end gap-3 pt-3 border-t border-white/[0.06]">
             <button
               type="button"
@@ -233,7 +223,7 @@ export function EditDebriefModal({
               type="submit"
               className="px-5 py-2 rounded-lg bg-emerald-500 text-black font-bold hover:bg-emerald-400 shadow-lg"
             >
-              Save Debrief
+              Save Changes
             </button>
           </div>
         </form>

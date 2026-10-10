@@ -29,17 +29,19 @@ import {
   ZapOff, 
   Skull, 
   Timer, 
-  AlertOctagon,
-  ClockAlert,
-  Flame
+  AlertOctagon, 
+  ClockAlert, 
+  Flame,
+  Maximize2
 } from 'lucide-react';
 
 interface MatrixViewProps {
   collections: PlaybookCollection[];
   trades: Trade[];
+  onOpenInspector?: (url: string, title: string, htfUrl?: string, ltfUrl?: string) => void;
 }
 
-export function MatrixView({ collections, trades }: MatrixViewProps) {
+export function MatrixView({ collections, trades, onOpenInspector }: MatrixViewProps) {
   // Normalize trades so any legacy 'TATA' symbol is automatically grouped under 'TATAMOTORS'
   const normalizedTrades = useMemo(() => {
     return trades.map(t => ({
@@ -307,7 +309,6 @@ export function MatrixView({ collections, trades }: MatrixViewProps) {
         current.mfeCount += 1;
       }
 
-      // Record per-setup time execution slot
       const slot = getTradeTimeSlot(t.tradeTime);
       if (slot) {
         const slotData = current.timeSlotsMap.get(slot) || { trades: 0, netR: 0 };
@@ -342,7 +343,6 @@ export function MatrixView({ collections, trades }: MatrixViewProps) {
         });
       }
 
-      // If best and worst point to the exact same slot with single record, show clear status
       if (d.timeSlotsMap.size <= 1) {
         if (bestSlotNetR >= 0) {
           worstSlot = 'None (Clean)';
@@ -397,11 +397,13 @@ export function MatrixView({ collections, trades }: MatrixViewProps) {
       }
 
       return {
+        trade: t,
         symbol: t.symbol,
         date: t.tradeDate,
         duration: durationMinutes,
         r: t.rMultiple,
-        isWin
+        isWin,
+        hasChart: !!(t.image2 || t.image1)
       };
     });
 
@@ -548,6 +550,21 @@ export function MatrixView({ collections, trades }: MatrixViewProps) {
     return dayStats;
   }, [normalizedTrades]);
 
+  // Handler to open chart from dot click or tooltip button
+  const handleScatterPointClick = (pointData: any) => {
+    if (!onOpenInspector || !pointData) return;
+    const t: Trade = pointData.trade;
+    const chartUrl = t.image2 || t.image1;
+    if (chartUrl) {
+      onOpenInspector(
+        chartUrl, 
+        `${t.symbol} — Execution (LTF)`, 
+        t.image1, 
+        t.image2
+      );
+    }
+  };
+
   return (
     <div className="space-y-5 sm:space-y-6">
       {/* Top Banner */}
@@ -665,7 +682,7 @@ export function MatrixView({ collections, trades }: MatrixViewProps) {
         </div>
       </div>
 
-      {/* 2. EXPANDED FULL-WIDTH CONTAINER DIRECTLY BELOW BEHAVIORAL: CONSOLIDATED TRUE SETUP PROBABILITY, EXCURSION & DUAL TIME WINDOWS */}
+      {/* 2. CONSOLIDATED SETUP PROBABILITY, EXCURSION & DUAL TIME WINDOWS */}
       <div className="w-full p-4 sm:p-6 rounded-2xl bg-[#090A10] border border-white/[0.06] space-y-4 shadow-lg">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-3 border-b border-white/[0.06] gap-2">
           <div className="flex items-center gap-2.5">
@@ -777,7 +794,7 @@ export function MatrixView({ collections, trades }: MatrixViewProps) {
         )}
       </div>
 
-      {/* 3. DURATION VS PROFITABILITY MATRIX & HOLDING EFFICIENCY */}
+      {/* 3. DURATION VS PROFITABILITY MATRIX & HOLDING EFFICIENCY (STABLE NON-JITTERING DOTS) */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6">
         <div className="lg:col-span-2 p-4 sm:p-5 rounded-2xl bg-[#090A10] border border-white/[0.06] flex flex-col justify-between space-y-3">
           <div className="flex items-center justify-between">
@@ -785,7 +802,7 @@ export function MatrixView({ collections, trades }: MatrixViewProps) {
               <Timer className="w-4 h-4 text-cyan-400" />
               <div>
                 <h3 className="font-mono text-xs uppercase tracking-wider text-zinc-300">Duration vs. Profitability Matrix</h3>
-                <p className="text-[10px] text-zinc-500">Trade holding time (Minutes) vs. Realized R Return</p>
+                <p className="text-[10px] text-zinc-500">Click any dot directly to inspect trade execution chart (LTF)</p>
               </div>
             </div>
             <div className="flex items-center gap-3 font-mono text-[11px]">
@@ -820,19 +837,41 @@ export function MatrixView({ collections, trades }: MatrixViewProps) {
                   fontSize={10} 
                   tickLine={false} 
                 />
-                <ZAxis range={[55, 55]} />
+                <ZAxis range={[70, 70]} />
                 <Tooltip 
                   cursor={{ strokeDasharray: '3 3', stroke: 'rgba(255,255,255,0.2)' }}
+                  isAnimationActive={false}
                   content={({ payload }) => {
                     if (!payload || !payload.length) return null;
                     const d = payload[0].payload;
+                    const t: Trade = d.trade;
+                    const hasImage = !!(t.image2 || t.image1);
+
                     return (
-                      <div className="p-2.5 rounded-xl bg-[#0C0D14] border border-white/20 font-mono text-xs shadow-xl space-y-1">
-                        <div className="font-bold text-white">{d.symbol} ({d.date})</div>
-                        <div className="text-zinc-400">Duration: <strong className="text-cyan-300">{d.duration} mins</strong></div>
-                        <div className={`font-black ${d.r >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-                          Result: {d.r >= 0 ? '+' : ''}{d.r}R
+                      <div className="p-3 rounded-xl bg-[#0C0D14]/95 border border-white/20 font-mono text-xs shadow-2xl space-y-2 pointer-events-auto backdrop-blur-md">
+                        <div>
+                          <div className="font-bold text-white flex items-center justify-between gap-3">
+                            <span>{d.symbol}</span>
+                            <span className="text-[10px] text-zinc-400">{d.date}</span>
+                          </div>
+                          <div className="text-zinc-400 text-[11px] mt-0.5">
+                            Duration: <strong className="text-cyan-300">{d.duration} mins</strong>
+                          </div>
+                          <div className={`font-black ${d.r >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                            Result: {d.r >= 0 ? '+' : ''}{d.r}R
+                          </div>
                         </div>
+
+                        {hasImage && (
+                          <button
+                            type="button"
+                            onClick={() => handleScatterPointClick(d)}
+                            className="w-full mt-1 px-2.5 py-1.5 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 text-[10px] font-bold flex items-center justify-center gap-1.5 transition-colors cursor-pointer shadow-sm"
+                          >
+                            <Maximize2 className="w-3 h-3 text-emerald-400" />
+                            <span>Inspect LTF Chart</span>
+                          </button>
+                        )}
                       </div>
                     );
                   }}
@@ -842,11 +881,17 @@ export function MatrixView({ collections, trades }: MatrixViewProps) {
                   data={durationStats.scatterData.filter(d => d.isWin)} 
                   fill="#10b981" 
                   stroke="#059669"
+                  isAnimationActive={false}
+                  className="cursor-pointer hover:stroke-white hover:stroke-[2.5px] transition-colors"
+                  onClick={handleScatterPointClick}
                 />
                 <Scatter 
                   data={durationStats.scatterData.filter(d => !d.isWin)} 
                   fill="#f43f5e" 
                   stroke="#e11d48"
+                  isAnimationActive={false}
+                  className="cursor-pointer hover:stroke-white hover:stroke-[2.5px] transition-colors"
+                  onClick={handleScatterPointClick}
                 />
               </ScatterChart>
             </ResponsiveContainer>
