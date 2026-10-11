@@ -1,10 +1,22 @@
 'use client';
 
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useRef, useEffect } from 'react';
 import { Trade } from '@/types/trade';
 import { parseDateToTimestamp, displaySetupName } from '@/lib/parser';
 import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip } from 'recharts';
-import { Activity, Target, Layers, ShieldAlert, Maximize2, Pencil, ShieldCheck, Filter, Calendar } from 'lucide-react';
+import { 
+  Activity, 
+  Target, 
+  Layers, 
+  ShieldAlert, 
+  Maximize2, 
+  Pencil, 
+  ShieldCheck, 
+  Clock, 
+  ChevronDown,
+  Check,
+  X
+} from 'lucide-react';
 
 interface PulseViewProps {
   trades: Trade[];
@@ -16,6 +28,36 @@ interface PulseViewProps {
   onOpenCsvModal: () => void;
 }
 
+const TIME_WINDOWS = [
+  { label: 'All Time Slots', value: 'all', startMin: 0, endMin: 1440 },
+  { label: '09:15 - 10:00 AM', value: '09:15 - 10:00 AM', startMin: 9 * 60 + 15, endMin: 10 * 60 - 1 },
+  { label: '10:00 - 11:00 AM', value: '10:00 - 11:00 AM', startMin: 10 * 60, endMin: 11 * 60 - 1 },
+  { label: '11:00 - 12:00 PM', value: '11:00 - 12:00 PM', startMin: 11 * 60, endMin: 12 * 60 - 1 },
+  { label: '12:00 - 01:00 PM', value: '12:00 - 01:00 PM', startMin: 12 * 60, endMin: 13 * 60 - 1 },
+  { label: '01:00 - 02:00 PM', value: '01:00 - 02:00 PM', startMin: 13 * 60, endMin: 14 * 60 - 1 },
+  { label: '02:00 - 03:30 PM', value: '02:00 - 03:30 PM', startMin: 14 * 60, endMin: 15 * 60 + 30 },
+];
+
+function extractEntryMinuteOfDay(rawTime?: string): number {
+  if (!rawTime || typeof rawTime !== 'string' || rawTime.trim() === '') return -1;
+  const entryPart = rawTime.includes('-') ? rawTime.split('-')[0].trim() : rawTime.trim();
+
+  const match = entryPart.match(/(\d{1,2})\s*:\s*(\d{2})(?:\s*:\s*\d{2})?\s*(AM|PM)?/i);
+  if (!match) return -1;
+
+  let hours = parseInt(match[1], 10);
+  const minutes = parseInt(match[2], 10);
+  const ampm = match[3] ? match[3].toUpperCase() : null;
+
+  if (ampm === 'PM' && hours < 12) {
+    hours += 12;
+  } else if (ampm === 'AM' && hours === 12) {
+    hours = 0;
+  }
+
+  return hours * 60 + minutes;
+}
+
 export function PulseView({
   trades,
   stats: globalStats,
@@ -25,49 +67,60 @@ export function PulseView({
 }: PulseViewProps) {
   const [filterMode, setFilterMode] = useState<'rules-only' | 'all'>('rules-only');
   const [timeframe, setTimeframe] = useState<'week' | 'month' | 'all'>('all');
+  const [listTimeSlot, setListTimeSlot] = useState<string>('all');
+  const [isTimeDropdownOpen, setIsTimeDropdownOpen] = useState(false);
 
-  // Filtered trades: Rules-Based includes BOTH 'Rules Followed' AND 'SL Hunt / Slippage Hunt'
-  const activeTrades = useMemo(() => {
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  // Close dropdown on outside click
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+        setIsTimeDropdownOpen(false);
+      }
+    }
+    if (isTimeDropdownOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [isTimeDropdownOpen]);
+
+  // Dashboard-level trades: filtered strictly by Rules and Calendar Period
+  const dashboardTrades = useMemo(() => {
     const now = new Date();
 
-    const timeFiltered = trades.filter(t => {
+    return trades.filter(t => {
       const ts = parseDateToTimestamp(t.tradeDate);
-      if (!ts) return true;
-      const d = new Date(ts);
-
-      if (timeframe === 'week') {
-        const currentDay = now.getDay();
-        const diffToMonday = currentDay === 0 ? 6 : currentDay - 1;
-        const monday = new Date(now);
-        monday.setDate(now.getDate() - diffToMonday);
-        monday.setHours(0, 0, 0, 0);
-        return d >= monday;
+      if (ts) {
+        const d = new Date(ts);
+        if (timeframe === 'week') {
+          const currentDay = now.getDay();
+          const diffToMonday = currentDay === 0 ? 6 : currentDay - 1;
+          const monday = new Date(now);
+          monday.setDate(now.getDate() - diffToMonday);
+          monday.setHours(0, 0, 0, 0);
+          if (d < monday) return false;
+        } else if (timeframe === 'month') {
+          if (d.getMonth() !== now.getMonth() || d.getFullYear() !== now.getFullYear()) return false;
+        }
       }
 
-      if (timeframe === 'month') {
-        return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
-      }
-
-      return true;
-    });
-
-    if (filterMode === 'rules-only') {
-      return timeFiltered.filter(t => {
+      if (filterMode === 'rules-only') {
         const tag = t.behaviorTag;
-        // Valid system trades: either followed or SL Hunt (natural variance), or untagged wins
         return (
           tag === 'Rules Followed' || 
           tag === 'SL Hunt / Slippage Hunt' || 
           (!tag && t.rMultiple > 0)
         );
-      });
-    }
-    return timeFiltered;
+      }
+
+      return true;
+    });
   }, [trades, filterMode, timeframe]);
 
-  // Recalculated Pristine vs Realized Statistics
+  // Overall Dashboard Stats
   const dynamicStats = useMemo(() => {
-    const list = activeTrades;
+    const list = dashboardTrades;
     const total = list.length;
     if (!total) {
       return { 
@@ -121,26 +174,39 @@ export function PulseView({
       avgLoss,
       expectancy
     };
-  }, [activeTrades]);
+  }, [dashboardTrades]);
 
-  // Dynamic Growth Trajectory Curve
+  // Dashboard Growth Trajectory Curve
   const dynamicGrowthCurve = useMemo(() => {
-    const chronological = [...activeTrades].sort((a, b) => parseDateToTimestamp(a.tradeDate) - parseDateToTimestamp(b.tradeDate));
+    const chronological = [...dashboardTrades].sort((a, b) => parseDateToTimestamp(a.tradeDate) - parseDateToTimestamp(b.tradeDate));
     let cumR = 0;
     return chronological.map((t, idx) => {
       cumR += t.rMultiple;
       return { point: `#${idx + 1}`, r: Number(cumR.toFixed(2)) };
     });
-  }, [activeTrades]);
+  }, [dashboardTrades]);
 
-  // Sort trades: strictly newest on top
+  // Logged trades list: isolates ONLY the list for review
   const sortedRecentTrades = useMemo(() => {
-    return [...activeTrades].sort((a, b) => {
+    const targetSlot = TIME_WINDOWS.find(w => w.value === listTimeSlot);
+
+    const filteredList = dashboardTrades.filter(t => {
+      if (listTimeSlot === 'all' || !targetSlot) return true;
+      const entryMin = extractEntryMinuteOfDay(t.tradeTime);
+      if (entryMin === -1) return false;
+      return entryMin >= targetSlot.startMin && entryMin <= targetSlot.endMin;
+    });
+
+    return [...filteredList].sort((a, b) => {
       const timeA = parseDateToTimestamp(a.tradeDate);
       const timeB = parseDateToTimestamp(b.tradeDate);
       return timeB - timeA;
     });
-  }, [activeTrades]);
+  }, [dashboardTrades, listTimeSlot]);
+
+  const activeTimeLabel = useMemo(() => {
+    return TIME_WINDOWS.find(w => w.value === listTimeSlot)?.label || 'All Time Slots';
+  }, [listTimeSlot]);
 
   const formatR = (rVal: number) => {
     return `${rVal >= 0 ? '+' : ''}${rVal.toFixed(2)}R`;
@@ -156,7 +222,7 @@ export function PulseView({
 
   return (
     <div className="space-y-5 sm:space-y-6">
-      {/* Top Filter Bar */}
+      {/* Top Filter Bar (Controls Dashboard Metrics) */}
       <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 p-3 rounded-2xl bg-[#090A10] border border-white/[0.06] select-none">
         
         {/* Left: Discipline Mode Toggle */}
@@ -164,7 +230,7 @@ export function PulseView({
           <div className="flex items-center p-1 rounded-xl bg-white/[0.03] border border-white/[0.06] text-xs font-mono">
             <button
               onClick={() => setFilterMode('rules-only')}
-              className={`flex items-center justify-center gap-1.5 px-3.5 py-1.5 rounded-lg font-bold transition-all w-36 text-center ${
+              className={`flex items-center justify-center gap-1.5 px-3.5 py-1.5 rounded-lg font-bold transition-all w-32 sm:w-36 text-center ${
                 filterMode === 'rules-only'
                   ? 'bg-emerald-500 text-black shadow-md'
                   : 'text-zinc-400 hover:text-white'
@@ -175,7 +241,7 @@ export function PulseView({
             </button>
             <button
               onClick={() => setFilterMode('all')}
-              className={`flex items-center justify-center gap-1.5 px-3.5 py-1.5 rounded-lg font-bold transition-all w-36 text-center ${
+              className={`flex items-center justify-center gap-1.5 px-3.5 py-1.5 rounded-lg font-bold transition-all w-32 sm:w-36 text-center ${
                 filterMode === 'all'
                   ? 'bg-zinc-800 text-white shadow-md'
                   : 'text-zinc-400 hover:text-white'
@@ -187,22 +253,17 @@ export function PulseView({
           </div>
         </div>
 
-        {/* Right: Timeframe Switcher */}
+        {/* Right: Period Switcher */}
         <div className="flex items-center justify-between sm:justify-end gap-2.5">
-          <div className="flex items-center gap-1.5 text-xs font-mono text-zinc-500 shrink-0">
-            <Calendar className="w-3.5 h-3.5 text-cyan-400" />
-            <span className="hidden sm:inline">Period:</span>
-          </div>
-
           <div className="flex items-center p-1 rounded-xl bg-white/[0.03] border border-white/[0.06] text-xs font-mono shrink-0">
             {(['week', 'month', 'all'] as const).map(t => {
-              const label = t === 'week' ? 'This Week' : t === 'month' ? 'This Month' : 'All Time';
+              const label = t === 'week' ? 'Week' : t === 'month' ? 'Month' : 'All';
               const isSelected = timeframe === t;
               return (
                 <button
                   key={t}
                   onClick={() => setTimeframe(t)}
-                  className={`w-24 text-center py-1.5 rounded-lg font-bold transition-all shrink-0 ${
+                  className={`w-16 sm:w-20 text-center py-1.5 rounded-lg font-bold transition-all shrink-0 ${
                     isSelected 
                       ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 shadow-sm' 
                       : 'text-zinc-400 hover:text-white border border-transparent'
@@ -289,9 +350,9 @@ export function PulseView({
           </span>
         </div>
         <div className="h-56 sm:h-72 w-full">
-          {activeTrades.length === 0 ? (
+          {dashboardTrades.length === 0 ? (
             <div className="h-full w-full flex items-center justify-center text-xs font-mono text-zinc-600 border border-dashed border-white/[0.05] rounded-xl p-4 text-center">
-              No trades matching this period and filter.
+              No trades matching this period.
             </div>
           ) : (
             <ResponsiveContainer width="100%" height="100%">
@@ -321,18 +382,86 @@ export function PulseView({
         </div>
       </div>
 
-      {/* Trade Entries */}
+      {/* Logged Trade Entries with Cybernetic Custom Dropdown */}
       <div className="p-4 sm:p-6 rounded-2xl bg-[#090A10] border border-white/[0.06] space-y-3">
-        <div className="flex items-center justify-between pb-1">
-          <h3 className="font-mono text-xs uppercase text-zinc-400">
-            {filterMode === 'rules-only' ? 'Rules-Based Executions' : 'All Trade Executions'} (Newest First)
-          </h3>
-          <span className="text-[11px] font-mono text-zinc-500">{sortedRecentTrades.length} Trades</span>
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-2 border-b border-white/[0.06] gap-2.5">
+          <div>
+            <h3 className="font-mono text-xs uppercase text-zinc-300 font-bold">
+              {filterMode === 'rules-only' ? 'Rules-Based Executions' : 'All Trade Executions'} (Newest First)
+            </h3>
+            <span className="text-[11px] font-mono text-zinc-500">
+              Showing {sortedRecentTrades.length} of {dashboardTrades.length} Trades
+            </span>
+          </div>
+
+          {/* Cybernetic Custom Dropdown UI */}
+          <div className="relative self-start sm:self-auto" ref={dropdownRef}>
+            <div className="flex items-center gap-1 bg-white/[0.03] hover:bg-white/[0.05] border border-white/10 hover:border-cyan-500/40 rounded-xl p-1 transition-all">
+              <button
+                type="button"
+                onClick={() => setIsTimeDropdownOpen(prev => !prev)}
+                className="flex items-center gap-2 px-2.5 py-1 text-xs font-mono font-bold text-white transition-colors"
+              >
+                <Clock className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
+                <span className="tracking-wide text-zinc-200">{activeTimeLabel}</span>
+                <ChevronDown className={`w-3.5 h-3.5 text-zinc-400 transition-transform duration-200 ${isTimeDropdownOpen ? 'rotate-180 text-cyan-400' : ''}`} />
+              </button>
+
+              {listTimeSlot !== 'all' && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setListTimeSlot('all');
+                  }}
+                  className="p-1 rounded-lg text-zinc-400 hover:text-white hover:bg-white/10 transition-colors"
+                  title="Reset to all times"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              )}
+            </div>
+
+            {/* Floating Dropdown Menu Panel */}
+            {isTimeDropdownOpen && (
+              <div className="absolute right-0 top-full mt-1.5 z-50 w-56 bg-[#0B0D14]/95 border border-white/15 rounded-2xl shadow-[0_16px_40px_rgba(0,0,0,0.85)] backdrop-blur-2xl py-1.5 font-mono text-xs divide-y divide-white/[0.05] animate-in fade-in zoom-in-95 duration-100">
+                <div className="p-1 space-y-0.5">
+                  {TIME_WINDOWS.map(w => {
+                    const isSelected = listTimeSlot === w.value;
+                    return (
+                      <button
+                        key={w.value}
+                        type="button"
+                        onClick={() => {
+                          setListTimeSlot(w.value);
+                          setIsTimeDropdownOpen(false);
+                        }}
+                        className={`w-full px-3 py-2 rounded-xl flex items-center justify-between text-left transition-all ${
+                          isSelected
+                            ? 'bg-cyan-500/15 text-cyan-300 font-bold border border-cyan-500/30'
+                            : 'text-zinc-300 hover:text-white hover:bg-white/[0.06]'
+                        }`}
+                      >
+                        <span>{w.label}</span>
+                        {isSelected && <Check className="w-3.5 h-3.5 text-cyan-400 shrink-0" />}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
         </div>
 
         {sortedRecentTrades.length === 0 ? (
-          <div className="py-8 text-center text-xs font-mono text-zinc-600">
-            No trades found for this period.
+          <div className="py-12 text-center text-xs font-mono text-zinc-500 space-y-2">
+            <p>No trades executed during <span className="text-cyan-400 font-bold">{activeTimeLabel}</span>.</p>
+            <button
+              onClick={() => setListTimeSlot('all')}
+              className="text-cyan-400 underline hover:text-white font-bold"
+            >
+              Reset to all times
+            </button>
           </div>
         ) : (
           <div className="divide-y divide-white/[0.04]">
@@ -350,9 +479,10 @@ export function PulseView({
                       {t.direction}
                     </span>
                     <div>
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2 flex-wrap">
                         <span className="text-sm font-bold text-white">{t.symbol}</span>
                         <span className="text-[11px] text-zinc-500 font-mono">({t.tradeDate})</span>
+
                         {t.behaviorTag && (
                           <span className={`px-1.5 py-0.2 rounded border text-[9px] font-mono font-bold ${behaviorClass}`}>
                             {t.behaviorTag}
