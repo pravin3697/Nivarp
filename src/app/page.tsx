@@ -47,7 +47,7 @@ interface ToastState {
 
 const cleanStr = (s?: string) => (s || '').toLowerCase().trim().replace(/\s+/g, ' ');
 
-// Ensure existing trades standardize TATA to TATAMOTORS on initial hydration
+// Ensure existing trades standardize DLF, TATA, and SBIN on initial hydration
 const sanitizeTrades = (tradesList: Trade[]): Trade[] => {
   return (tradesList || []).map(t => ({
     ...t,

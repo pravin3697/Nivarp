@@ -12,7 +12,17 @@ export function cleanSecurityName(rawName: string): string {
     .trim()
     .toUpperCase();
 
-  // Standardize all Tata Motors / TATA variants into TATAMOTORS
+  // Standardize DLF variants
+  if (
+    raw === 'DLF' || 
+    raw.startsWith('DLF') || 
+    raw.includes('DLF LTD') || 
+    raw.includes('DLF LIMITED')
+  ) {
+    return 'DLF';
+  }
+
+  // Standardize Tata Motors / TATA variants into TATAMOTORS
   if (
     raw.includes('TATA MOTOR') || 
     raw.includes('TATAMOTOR') || 
@@ -22,6 +32,7 @@ export function cleanSecurityName(rawName: string): string {
     return 'TATAMOTORS';
   }
 
+  // Standardize SBI / State Bank
   if (raw.includes('STATE BANK') || raw.includes('SBI') || raw === 'SBIN') {
     return 'SBIN';
   }
@@ -187,28 +198,22 @@ export function parseKotakNeoCsv(
         entryFills.push(exec);
         openQty += exec.qty;
       } else if (exec.side === openSide) {
-        // Additional fill on entry side
         entryFills.push(exec);
         openQty += exec.qty;
       } else {
-        // Opposite side (exit fill)
         exitFills.push(exec);
         closedQty += exec.qty;
 
-        // If entire position is closed (e.g. bracket order fill completes)
         if (closedQty >= openQty) {
           const isLong = openSide === 'BUY';
           const totalQty = openQty;
 
-          // Volume-weighted average entry price
           const totalEntryCost = entryFills.reduce((acc, f) => acc + (f.price * f.qty), 0);
           const avgEntryPrice = Number((totalEntryCost / totalQty).toFixed(2));
 
-          // Volume-weighted average exit price
           const totalExitCost = exitFills.reduce((acc, f) => acc + (f.price * f.qty), 0);
           const avgExitPrice = Number((totalExitCost / closedQty).toFixed(2));
 
-          // Aggregated charges across all partial fills
           const totalFees = Number(
             (entryFills.reduce((acc, f) => acc + f.charges, 0) + exitFills.reduce((acc, f) => acc + f.charges, 0)).toFixed(2)
           );
@@ -236,7 +241,7 @@ export function parseKotakNeoCsv(
 
           matchedTrades.push({
             id: `kotak-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
-            symbol: entryFills[0].symbol,
+            symbol: cleanSecurityName(entryFills[0].symbol),
             tradeDate: entryFills[0].date,
             tradeTime: formattedTimeRange,
             durationMinutes,
@@ -260,7 +265,6 @@ export function parseKotakNeoCsv(
             notes: ''
           });
 
-          // Reset buffers for next trade in same symbol
           openSide = null;
           entryFills = [];
           exitFills = [];
