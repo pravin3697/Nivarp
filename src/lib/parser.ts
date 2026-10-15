@@ -22,7 +22,7 @@ export function cleanSecurityName(rawName: string): string {
     return 'TATAMOTORS';
   }
 
-  if (raw.startsWith('STATE BANK') || raw === 'SBI') {
+  if (raw.includes('STATE BANK') || raw.includes('SBI') || raw === 'SBIN') {
     return 'SBIN';
   }
   if (raw.startsWith('HDFC BANK')) {
@@ -170,69 +170,104 @@ export function parseKotakNeoCsv(
   });
 
   let matchCounter = 0;
+
   grouped.forEach((execList) => {
-    const buys = execList.filter(e => e.side === 'BUY').sort((a, b) => a.time.localeCompare(b.time));
-    const sells = execList.filter(e => e.side === 'SELL').sort((a, b) => a.time.localeCompare(b.time));
+    // Sort chronologically
+    execList.sort((a, b) => a.time.localeCompare(b.time));
 
-    while (buys.length > 0 && sells.length > 0) {
-      const buy = buys.shift()!;
-      const sell = sells.shift()!;
+    let openSide: 'BUY' | 'SELL' | null = null;
+    let entryFills: RawExecution[] = [];
+    let exitFills: RawExecution[] = [];
+    let openQty = 0;
+    let closedQty = 0;
 
-      const isLong = buy.time <= sell.time;
-      const entryPrice = isLong ? buy.price : sell.price;
-      const exitPrice = isLong ? sell.price : buy.price;
-      const entryTimeRaw = isLong ? buy.time : sell.time;
-      const exitTimeRaw = isLong ? sell.time : buy.time;
+    for (const exec of execList) {
+      if (openSide === null) {
+        openSide = exec.side;
+        entryFills.push(exec);
+        openQty += exec.qty;
+      } else if (exec.side === openSide) {
+        // Additional fill on entry side
+        entryFills.push(exec);
+        openQty += exec.qty;
+      } else {
+        // Opposite side (exit fill)
+        exitFills.push(exec);
+        closedQty += exec.qty;
 
-      const entryMins = parseTimeToMinutes(entryTimeRaw);
-      const exitMins = parseTimeToMinutes(exitTimeRaw);
-      const durationMinutes = (entryMins && exitMins) ? Math.max(1, Math.abs(exitMins - entryMins)) : undefined;
+        // If entire position is closed (e.g. bracket order fill completes)
+        if (closedQty >= openQty) {
+          const isLong = openSide === 'BUY';
+          const totalQty = openQty;
 
-      // 12-Hour formatted execution time (e.g. "09:41 AM - 10:06 AM")
-      const formattedTimeRange = entryTimeRaw && exitTimeRaw 
-        ? `${convertTo12Hour(entryTimeRaw)} - ${convertTo12Hour(exitTimeRaw)}`
-        : '';
+          // Volume-weighted average entry price
+          const totalEntryCost = entryFills.reduce((acc, f) => acc + (f.price * f.qty), 0);
+          const avgEntryPrice = Number((totalEntryCost / totalQty).toFixed(2));
 
-      const quantity = Math.min(buy.qty, sell.qty);
-      const fees = Number((buy.charges + sell.charges).toFixed(2));
+          // Volume-weighted average exit price
+          const totalExitCost = exitFills.reduce((acc, f) => acc + (f.price * f.qty), 0);
+          const avgExitPrice = Number((totalExitCost / closedQty).toFixed(2));
 
-      const grossPnl = isLong 
-        ? (exitPrice - entryPrice) * quantity 
-        : (entryPrice - exitPrice) * quantity;
+          // Aggregated charges across all partial fills
+          const totalFees = Number(
+            (entryFills.reduce((acc, f) => acc + f.charges, 0) + exitFills.reduce((acc, f) => acc + f.charges, 0)).toFixed(2)
+          );
 
-      const netPnl = Number((grossPnl - fees).toFixed(2));
-      const rMultiple = defaultRisk > 0 ? Number((netPnl / defaultRisk).toFixed(2)) : 0;
+          const entryTimeEarliest = entryFills[0].time;
+          const exitTimeLatest = exitFills[exitFills.length - 1].time;
 
-      const assignedSetup = collections.length > 0 
-        ? collections[matchCounter % collections.length].name 
-        : 'General Setup';
-      matchCounter++;
+          const entryMins = parseTimeToMinutes(entryTimeEarliest);
+          const exitMins = parseTimeToMinutes(exitTimeLatest);
+          const durationMinutes = (entryMins && exitMins) ? Math.max(1, Math.abs(exitMins - entryMins)) : undefined;
 
-      matchedTrades.push({
-        id: `kotak-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
-        symbol: buy.symbol,
-        tradeDate: buy.date,
-        tradeTime: formattedTimeRange,
-        durationMinutes,
-        direction: isLong ? 'LONG' : 'SHORT',
-        quantity,
-        entryPrice,
-        exitPrice,
-        slPrice: isLong 
-          ? Number((entryPrice - (defaultRisk / quantity)).toFixed(2)) 
-          : Number((entryPrice + (defaultRisk / quantity)).toFixed(2)),
-        netPnl,
-        fees,
-        rMultiple,
-        regime: isLong ? 'Bullish' : 'Bearish',
-        setupType: assignedSetup,
-        behaviorTag: 'Rules Followed',
-        mae: '',
-        mfe: '',
-        image1: '',
-        image2: '',
-        notes: ''
-      });
+          const formattedTimeRange = `${convertTo12Hour(entryTimeEarliest)} - ${convertTo12Hour(exitTimeLatest)}`;
+
+          const grossPnl = isLong 
+            ? (avgExitPrice - avgEntryPrice) * totalQty 
+            : (avgEntryPrice - avgExitPrice) * totalQty;
+
+          const netPnl = Number((grossPnl - totalFees).toFixed(2));
+          const rMultiple = defaultRisk > 0 ? Number((netPnl / defaultRisk).toFixed(2)) : 0;
+
+          const assignedSetup = collections.length > 0 
+            ? collections[matchCounter % collections.length].name 
+            : 'General Setup';
+          matchCounter++;
+
+          matchedTrades.push({
+            id: `kotak-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+            symbol: entryFills[0].symbol,
+            tradeDate: entryFills[0].date,
+            tradeTime: formattedTimeRange,
+            durationMinutes,
+            direction: isLong ? 'LONG' : 'SHORT',
+            quantity: totalQty,
+            entryPrice: avgEntryPrice,
+            exitPrice: avgExitPrice,
+            slPrice: isLong 
+              ? Number((avgEntryPrice - (defaultRisk / totalQty)).toFixed(2)) 
+              : Number((avgEntryPrice + (defaultRisk / totalQty)).toFixed(2)),
+            netPnl,
+            fees: totalFees,
+            rMultiple,
+            regime: isLong ? 'Bullish' : 'Bearish',
+            setupType: assignedSetup,
+            behaviorTag: 'Rules Followed',
+            mae: '',
+            mfe: '',
+            image1: '',
+            image2: '',
+            notes: ''
+          });
+
+          // Reset buffers for next trade in same symbol
+          openSide = null;
+          entryFills = [];
+          exitFills = [];
+          openQty = 0;
+          closedQty = 0;
+        }
+      }
     }
   });
 
