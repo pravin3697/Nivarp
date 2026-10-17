@@ -493,7 +493,6 @@ export function PulseView({
                         <span className="text-cyan-400 font-semibold">{cleanSetup}</span>
                         <span>•</span>
                         <span>₹{t.entryPrice} → ₹{t.exitPrice}</span>
-                        {t.slPrice && <span className="text-rose-400/80 font-mono">• SL: ₹{t.slPrice}</span>}
                       </div>
                     </div>
                   </div>

@@ -99,7 +99,7 @@ export function SettingsView({
         </div>
       </div>
 
-      {/* 1R Risk Benchmark */}
+      {/* 1R Capital Benchmark Card */}
       <div className="p-4 sm:p-6 rounded-2xl bg-[#090A10] border border-white/[0.06] space-y-4">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div className="flex items-center gap-3">
@@ -109,7 +109,7 @@ export function SettingsView({
             <div>
               <h3 className="font-bold text-sm text-white">1R Capital Benchmark</h3>
               <p className="text-xs text-zinc-500">
-                Denominator used to normalize Kotak Neo net P&L into R-multiples across your journal.
+                Risk denominator used to convert Kotak Neo net ₹ P&L (after brokerage and taxes) into R-multiples across your journal.
               </p>
             </div>
           </div>

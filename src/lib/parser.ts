@@ -122,7 +122,7 @@ export function parseKotakNeoCsv(
   const lines = csvText.split(/\r?\n/).filter(l => l.trim() !== '');
   if (lines.length < 2) return [];
 
-  const headers = lines[0].split(',').map(h => h.trim().toLowerCase().replace(/['"﻿]/g, ''));
+  const headers = lines[0].split(',').map(h => h.trim().toLowerCase().replace(/['"]/g, ''));
   const findIdx = (terms: string[]) => headers.findIndex(h => terms.some(t => h.includes(t)));
 
   const dateIdx = findIdx(['trade date']);
@@ -183,7 +183,7 @@ export function parseKotakNeoCsv(
   let matchCounter = 0;
 
   grouped.forEach((execList) => {
-    // Sort chronologically
+    // Sort strictly chronologically by exact execution time
     execList.sort((a, b) => a.time.localeCompare(b.time));
 
     let openSide: 'BUY' | 'SELL' | null = null;
@@ -194,13 +194,16 @@ export function parseKotakNeoCsv(
 
     for (const exec of execList) {
       if (openSide === null) {
+        // First order in time defines position side (BUY = Long, SELL = Short)
         openSide = exec.side;
         entryFills.push(exec);
         openQty += exec.qty;
       } else if (exec.side === openSide) {
+        // Additional fills on position entry
         entryFills.push(exec);
         openQty += exec.qty;
       } else {
+        // Exit fills
         exitFills.push(exec);
         closedQty += exec.qty;
 
@@ -208,12 +211,14 @@ export function parseKotakNeoCsv(
           const isLong = openSide === 'BUY';
           const totalQty = openQty;
 
+          // Volume-weighted execution prices
           const totalEntryCost = entryFills.reduce((acc, f) => acc + (f.price * f.qty), 0);
           const avgEntryPrice = Number((totalEntryCost / totalQty).toFixed(2));
 
           const totalExitCost = exitFills.reduce((acc, f) => acc + (f.price * f.qty), 0);
           const avgExitPrice = Number((totalExitCost / closedQty).toFixed(2));
 
+          // Actual brokerage + taxes deducted by Kotak
           const totalFees = Number(
             (entryFills.reduce((acc, f) => acc + f.charges, 0) + exitFills.reduce((acc, f) => acc + f.charges, 0)).toFixed(2)
           );
@@ -227,12 +232,17 @@ export function parseKotakNeoCsv(
 
           const formattedTimeRange = `${convertTo12Hour(entryTimeEarliest)} - ${convertTo12Hour(exitTimeLatest)}`;
 
+          // Real Raw Gross P&L
           const grossPnl = isLong 
             ? (avgExitPrice - avgEntryPrice) * totalQty 
             : (avgEntryPrice - avgExitPrice) * totalQty;
 
+          // Real Net P&L (Directly matching Kotak statement after all taxes & brokerage)
           const netPnl = Number((grossPnl - totalFees).toFixed(2));
-          const rMultiple = defaultRisk > 0 ? Number((netPnl / defaultRisk).toFixed(2)) : 0;
+
+          // Normalized R Multiple: 1R is strictly a visual unit = netPnl / defaultRisk
+          const effectiveRisk = defaultRisk > 0 ? defaultRisk : 600;
+          const rMultiple = Number((netPnl / effectiveRisk).toFixed(2));
 
           const assignedSetup = collections.length > 0 
             ? collections[matchCounter % collections.length].name 
@@ -249,9 +259,8 @@ export function parseKotakNeoCsv(
             quantity: totalQty,
             entryPrice: avgEntryPrice,
             exitPrice: avgExitPrice,
-            slPrice: isLong 
-              ? Number((avgEntryPrice - (defaultRisk / totalQty)).toFixed(2)) 
-              : Number((avgEntryPrice + (defaultRisk / totalQty)).toFixed(2)),
+            // SL price defaults to an initial placeholder of 0 until user fills debrief
+            slPrice: undefined,
             netPnl,
             fees: totalFees,
             rMultiple,

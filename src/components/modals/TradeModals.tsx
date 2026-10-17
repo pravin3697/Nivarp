@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { Trade, PlaybookCollection, BehavioralTag } from '@/types/trade';
-import { CustomNumberInput, CustomSetupDropdown } from '@/components/ui/CustomControls';
+import { CustomSetupDropdown } from '@/components/ui/CustomControls';
 import { uploadScreenshotToCloud } from '@/lib/cloudSync';
 import { formatTo12HourRange } from '@/lib/parser';
 import { X, ImagePlus, Sparkles, Pencil, Clipboard, Check, Loader2, Clock } from 'lucide-react';
@@ -129,17 +129,8 @@ export function EditDebriefModal({
             />
           </div>
 
-          {/* SL, MAE, MFE, and Trade Execution Time Input */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3 p-3 rounded-xl bg-white/[0.02] border border-white/[0.04]">
-            <div>
-              <label className="text-zinc-400 block mb-1 text-[11px]">Stoploss Price (SL)</label>
-              <CustomNumberInput
-                value={form.slPrice || ''}
-                onChange={(val) => setForm({ ...form, slPrice: val })}
-                step={0.05}
-                textColor="text-rose-400"
-              />
-            </div>
+          {/* Clean 3-Column Grid: MAE, MFE, and Execution Time */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 sm:gap-3 p-3 rounded-xl bg-white/[0.02] border border-white/[0.04]">
             <div>
               <label className="text-zinc-400 block mb-1 text-[11px]">MAE (Max Heat)</label>
               <input

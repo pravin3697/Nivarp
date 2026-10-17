@@ -492,32 +492,54 @@ export default function NivarpOS() {
     });
   }, [trades]);
 
+  // COMBINED SPECIMENS STRICTLY ORDERED NEWEST FIRST (LATEST ON TOP, OLDEST ON BOTTOM)
   const activeCollectionSpecimens = useMemo(() => {
     if (!selectedCollection) return [];
     const specs: ChartSpecimen[] = [];
     const targetColId = selectedCollection.id;
     const targetNameClean = cleanStr(selectedCollection.name);
 
-    trades.filter(t => cleanStr(t.setupType) === targetNameClean).forEach(t => {
-      const ltf = t.image2 || t.image1;
-      if (ltf) specs.push({ 
-        id: `ltf-${t.id}`, 
-        collectionId: targetColId,
-        collectionName: t.setupType, 
-        type: 'LIVE_TRADE', 
-        title: `${t.symbol} — Execution (LTF)`, 
-        date: t.tradeDate, 
-        imageUrl: ltf, 
-        rMultiple: t.rMultiple 
+    // 1. Live Trades mapped to specimens with exact epoch timestamp
+    trades
+      .filter(t => cleanStr(t.setupType) === targetNameClean)
+      .forEach(t => {
+        const ltf = t.image2 || t.image1;
+        if (ltf) {
+          const tradeEpoch = parseDateToTimestamp(t.tradeDate) || 0;
+          specs.push({ 
+            id: `ltf-${t.id}`, 
+            collectionId: targetColId,
+            collectionName: t.setupType, 
+            type: 'LIVE_TRADE', 
+            title: `${t.symbol} — Execution (LTF)`, 
+            date: t.tradeDate, 
+            imageUrl: ltf, 
+            rMultiple: t.rMultiple,
+            createdAt: tradeEpoch
+          });
+        }
       });
+
+    // 2. Study Specimens mapped with timestamp
+    studySpecimens
+      .filter(s => {
+        if (s.collectionId && targetColId && s.collectionId === targetColId) return true;
+        return cleanStr(s.collectionName) === targetNameClean;
+      })
+      .forEach(s => {
+        const parsedEpoch = s.createdAt || parseDateToTimestamp(s.date) || 0;
+        specs.push({
+          ...s,
+          createdAt: parsedEpoch
+        });
+      });
+
+    // 3. Strictly sort all specimens: Latest (newest) on top, oldest at the bottom
+    return specs.sort((a, b) => {
+      const timeA = a.createdAt || 0;
+      const timeB = b.createdAt || 0;
+      return timeB - timeA;
     });
-
-    studySpecimens.filter(s => {
-      if (s.collectionId && targetColId && s.collectionId === targetColId) return true;
-      return cleanStr(s.collectionName) === targetNameClean;
-    }).forEach(s => specs.push(s));
-
-    return specs;
   }, [selectedCollection, trades, studySpecimens]);
 
   return (
@@ -765,7 +787,8 @@ export default function NivarpOS() {
             type: 'STUDY_SETUP',
             title: `${cleanSym} (Study)`,
             date: new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }),
-            imageUrl: url.trim()
+            imageUrl: url.trim(),
+            createdAt: Date.now()
           };
 
           setStudySpecimens(prev => {

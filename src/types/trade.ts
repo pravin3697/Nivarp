@@ -45,4 +45,5 @@ export interface ChartSpecimen {
   imageUrl: string;
   rMultiple?: number;
   direction?: 'LONG' | 'SHORT';
+  createdAt?: number; // Exact epoch timestamp for chronological ordering
 }
