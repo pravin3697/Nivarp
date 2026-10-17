@@ -1,11 +1,11 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { Trade, PlaybookCollection, BehavioralTag } from '@/types/trade';
+import { Trade, PlaybookCollection, BehavioralTag, SetupVariantTag, ChartSpecimen } from '@/types/trade';
 import { CustomSetupDropdown } from '@/components/ui/CustomControls';
 import { uploadScreenshotToCloud } from '@/lib/cloudSync';
 import { formatTo12HourRange } from '@/lib/parser';
-import { X, ImagePlus, Sparkles, Pencil, Clipboard, Check, Loader2, Clock } from 'lucide-react';
+import { X, ImagePlus, Sparkles, Pencil, Clipboard, Check, Loader2, Clock, ShieldCheck, Zap } from 'lucide-react';
 
 export const BEHAVIORAL_TAGS: { label: BehavioralTag; color: string; border: string; bg: string }[] = [
   { label: 'Rules Followed', color: 'text-emerald-400', border: 'border-emerald-500/40', bg: 'bg-emerald-500/10' },
@@ -340,11 +340,14 @@ export function AddStudyModal({
   collectionName: string;
   suggestedSymbols: string[];
   onClose: () => void;
-  onSave: (symbol: string, url: string) => void;
+  onSave: (symbol: string, url: string, subtype?: SetupVariantTag) => void;
 }) {
   const [symbol, setSymbol] = useState('');
   const [url, setUrl] = useState('');
+  const [subtype, setSubtype] = useState<SetupVariantTag>('General');
   const [isUploading, setIsUploading] = useState(false);
+
+  const isBearToBull = /bearish\s+to\s+bullish|bull\s+to\s+bear/i.test(collectionName || '');
 
   useEffect(() => {
     if (!isOpen) return;
@@ -389,10 +392,65 @@ export function AddStudyModal({
       <div className="bg-[#090A10] border border-white/10 rounded-t-3xl sm:rounded-2xl max-w-md w-full p-5 sm:p-6 space-y-4 shadow-2xl max-h-[90vh] overflow-y-auto">
         <h3 className="text-base font-bold text-white flex items-center gap-2">
           <ImagePlus className="w-4 h-4 text-amber-400" />
-          Add Study Chart to "{collectionName}"
+          Add Specimen to "{collectionName}"
         </h3>
         
-        <form onSubmit={(e) => { e.preventDefault(); onSave(symbol.trim(), url.trim()); setSymbol(''); setUrl(''); }} className="space-y-4 text-xs font-mono">
+        <form onSubmit={(e) => { 
+          e.preventDefault(); 
+          onSave(symbol.trim(), url.trim(), isBearToBull ? subtype : 'General'); 
+          setSymbol(''); 
+          setUrl(''); 
+          setSubtype('General'); 
+        }} className="space-y-4 text-xs font-mono">
+          
+          {isBearToBull && (
+            <div>
+              <label className="text-zinc-400 block mb-1.5 flex items-center justify-between">
+                <span>Model Trigger Variant</span>
+                <span className="text-[10px] text-zinc-500">Pick zone behavior</span>
+              </label>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => setSubtype('Resistance')}
+                  className={`p-2 rounded-xl border text-xs font-bold text-left transition-all flex items-center justify-between ${
+                    subtype === 'Resistance'
+                      ? 'bg-cyan-500/20 text-cyan-300 border-cyan-500/50 ring-1 ring-cyan-500/30'
+                      : 'bg-white/[0.02] border-white/10 text-zinc-400 hover:text-white hover:border-white/20'
+                  }`}
+                >
+                  <div className="flex items-center gap-2">
+                    <ShieldCheck className="w-3.5 h-3.5 text-cyan-400" />
+                    <div>
+                      <span className="block font-bold">Resistance</span>
+                      <span className="text-[9px] text-zinc-500 font-normal">Mainzone entry</span>
+                    </div>
+                  </div>
+                  {subtype === 'Resistance' && <Check className="w-3 h-3 text-cyan-400" />}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setSubtype('No Resistance')}
+                  className={`p-2 rounded-xl border text-xs font-bold text-left transition-all flex items-center justify-between ${
+                    subtype === 'No Resistance'
+                      ? 'bg-purple-500/20 text-purple-300 border-purple-500/50 ring-1 ring-purple-500/30'
+                      : 'bg-white/[0.02] border-white/10 text-zinc-400 hover:text-white hover:border-white/20'
+                  }`}
+                >
+                  <div className="flex items-center gap-2">
+                    <Zap className="w-3.5 h-3.5 text-purple-400" />
+                    <div>
+                      <span className="block font-bold">No Resistance</span>
+                      <span className="text-[9px] text-zinc-500 font-normal">Liquidity zone sweep</span>
+                    </div>
+                  </div>
+                  {subtype === 'No Resistance' && <Check className="w-3 h-3 text-purple-400" />}
+                </button>
+              </div>
+            </div>
+          )}
+
           <div>
             <label className="text-zinc-400 block mb-1">Symbol / Asset</label>
             <input 
@@ -501,6 +559,164 @@ export function AddStudyModal({
               className="px-5 py-2 rounded-lg bg-amber-400 text-black font-bold hover:bg-amber-300 transition-colors disabled:opacity-40"
             >
               Save Specimen
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+// EDIT EXISTING SPECIMEN DIALOG (ADD / EDIT TAGS ON EXISTING CHARTS)
+export function EditStudyModal({
+  isOpen,
+  specimen,
+  collectionName,
+  onClose,
+  onSave
+}: {
+  isOpen: boolean;
+  specimen: ChartSpecimen | null;
+  collectionName: string;
+  onClose: () => void;
+  onSave: (updated: ChartSpecimen) => void;
+}) {
+  const [title, setTitle] = useState('');
+  const [url, setUrl] = useState('');
+  const [subtype, setSubtype] = useState<SetupVariantTag>('General');
+
+  const isBearToBull = /bearish\s+to\s+bullish|bull\s+to\s+bear/i.test(collectionName || '');
+
+  useEffect(() => {
+    if (specimen) {
+      setTitle(specimen.title);
+      setUrl(specimen.imageUrl);
+      setSubtype(specimen.subtype || 'General');
+    }
+  }, [specimen]);
+
+  if (!isOpen || !specimen) return null;
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4">
+      <div className="bg-[#090A10] border border-white/10 rounded-t-3xl sm:rounded-2xl max-w-md w-full p-5 sm:p-6 space-y-4 shadow-2xl max-h-[90vh] overflow-y-auto">
+        <div className="flex items-center justify-between pb-3 border-b border-white/[0.06]">
+          <h3 className="text-base font-bold text-white flex items-center gap-2">
+            <Pencil className="w-4 h-4 text-cyan-400" />
+            Edit Chart & Tags
+          </h3>
+          <button onClick={onClose} className="text-zinc-500 hover:text-white">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        <form onSubmit={(e) => {
+          e.preventDefault();
+          onSave({
+            ...specimen,
+            title: title.trim(),
+            imageUrl: url.trim(),
+            subtype: isBearToBull ? subtype : 'General'
+          });
+        }} className="space-y-4 text-xs font-mono">
+          
+          {/* Subtype Model Tag Selection: ONLY shown for Bearish to Bullish setup */}
+          {isBearToBull && (
+            <div>
+              <label className="text-zinc-400 block mb-1.5 flex items-center justify-between">
+                <span>Model Trigger Variant Tag</span>
+                <span className="text-[10px] text-zinc-500">Pick zone behavior</span>
+              </label>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => setSubtype('Resistance')}
+                  className={`p-2.5 rounded-xl border text-xs font-bold text-left transition-all flex items-center justify-between ${
+                    subtype === 'Resistance'
+                      ? 'bg-cyan-500/20 text-cyan-300 border-cyan-500/50 ring-1 ring-cyan-500/30'
+                      : 'bg-white/[0.02] border-white/10 text-zinc-400 hover:text-white hover:border-white/20'
+                  }`}
+                >
+                  <div className="flex items-center gap-2">
+                    <ShieldCheck className="w-3.5 h-3.5 text-cyan-400" />
+                    <div>
+                      <span className="block font-bold">Resistance</span>
+                      <span className="text-[9px] text-zinc-500 font-normal">Mainzone entry</span>
+                    </div>
+                  </div>
+                  {subtype === 'Resistance' && <Check className="w-3 h-3 text-cyan-400" />}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setSubtype('No Resistance')}
+                  className={`p-2.5 rounded-xl border text-xs font-bold text-left transition-all flex items-center justify-between ${
+                    subtype === 'No Resistance'
+                      ? 'bg-purple-500/20 text-purple-300 border-purple-500/50 ring-1 ring-purple-500/30'
+                      : 'bg-white/[0.02] border-white/10 text-zinc-400 hover:text-white hover:border-white/20'
+                  }`}
+                >
+                  <div className="flex items-center gap-2">
+                    <Zap className="w-3.5 h-3.5 text-purple-400" />
+                    <div>
+                      <span className="block font-bold">No Resistance</span>
+                      <span className="text-[9px] text-zinc-500 font-normal">Liquidity zone sweep</span>
+                    </div>
+                  </div>
+                  {subtype === 'No Resistance' && <Check className="w-3 h-3 text-purple-400" />}
+                </button>
+              </div>
+
+              {subtype !== 'General' && (
+                <button
+                  type="button"
+                  onClick={() => setSubtype('General')}
+                  className="mt-2 text-[10px] text-zinc-500 hover:text-rose-400 underline block"
+                >
+                  Remove tag (reset to general)
+                </button>
+              )}
+            </div>
+          )}
+
+          <div>
+            <label className="text-zinc-400 block mb-1">Chart Title</label>
+            <input 
+              type="text" 
+              value={title} 
+              onChange={e => setTitle(e.target.value)} 
+              className="w-full bg-zinc-900 border border-white/10 rounded-lg p-2.5 text-white outline-none"
+              required 
+            />
+          </div>
+
+          <div>
+            <label className="text-zinc-400 block mb-1">Image URL</label>
+            <input 
+              type="text" 
+              value={url} 
+              onChange={e => setUrl(e.target.value)} 
+              className="w-full bg-zinc-900 border border-white/10 rounded-lg p-2.5 text-white outline-none"
+              required 
+            />
+            {url && (
+              <img src={url} alt="Preview" className="h-24 mt-2 rounded-lg object-contain bg-black/40 border border-white/10 mx-auto" />
+            )}
+          </div>
+
+          <div className="flex items-center justify-end gap-3 pt-2">
+            <button 
+              type="button" 
+              onClick={onClose}
+              className="px-4 py-2 rounded-lg bg-zinc-800 text-zinc-400"
+            >
+              Cancel
+            </button>
+            <button 
+              type="submit" 
+              className="px-5 py-2 rounded-lg bg-cyan-500 text-black font-bold hover:bg-cyan-400 transition-colors"
+            >
+              Update Specimen
             </button>
           </div>
         </form>

@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useMemo, useEffect } from 'react';
-import { Trade, PlaybookCollection, ChartSpecimen } from '@/types/trade';
+import { Trade, PlaybookCollection, ChartSpecimen, SetupVariantTag } from '@/types/trade';
 import { parseKotakNeoCsv, parseDateToTimestamp, cleanSecurityName } from '@/lib/parser';
 import { 
   syncMasterToCloud,
@@ -16,7 +16,7 @@ import { idbGet, idbSet, idbClear } from '@/lib/storage';
 import { NivarpLogo } from '@/components/ui/NivarpLogo';
 import { ChartInspector, ChartGalleryItem } from '@/components/modals/ChartInspector';
 import { CsvImportStudio } from '@/components/modals/CsvImportStudio';
-import { EditDebriefModal, EditCollectionModal, AddStudyModal } from '@/components/modals/TradeModals';
+import { EditDebriefModal, EditCollectionModal, AddStudyModal, EditStudyModal } from '@/components/modals/TradeModals';
 import { PulseView } from '@/components/views/PulseView';
 import { CodexView, sortSetupsSmartly } from '@/components/views/CodexView';
 import { MatrixView } from '@/components/views/MatrixView';
@@ -47,7 +47,6 @@ interface ToastState {
 
 const cleanStr = (s?: string) => (s || '').toLowerCase().trim().replace(/\s+/g, ' ');
 
-// Ensure existing trades standardize DLF, TATA, and SBIN on initial hydration
 const sanitizeTrades = (tradesList: Trade[]): Trade[] => {
   return (tradesList || []).map(t => ({
     ...t,
@@ -76,6 +75,8 @@ export default function NivarpOS() {
   const [isEditCollectionOpen, setIsEditCollectionOpen] = useState(false);
   const [editingCollection, setEditingCollection] = useState<PlaybookCollection | null>(null);
   const [isAddStudyChartOpen, setIsAddStudyChartOpen] = useState(false);
+  const [isEditStudyModalOpen, setIsEditStudyModalOpen] = useState(false);
+  const [editingSpecimen, setEditingSpecimen] = useState<ChartSpecimen | null>(null);
   const [editingTrade, setEditingTrade] = useState<Trade | null>(null);
 
   const [inspectorChart, setInspectorChart] = useState<{
@@ -444,6 +445,41 @@ export default function NivarpOS() {
     showToast("Chart order saved.", "info");
   };
 
+  // UPDATE EXISTING SPECIMEN (INCLUDING TRIGGER VARIANT TAGS)
+  const handleUpdateSpecimen = (updatedSpecimen: ChartSpecimen) => {
+    // 1. If it's a live trade screenshot, update the trade's image and subtype tag
+    if (updatedSpecimen.id.startsWith('ltf-')) {
+      const tradeId = updatedSpecimen.id.replace('ltf-', '');
+      setTrades(prev => prev.map(t => {
+        if (t.id === tradeId) {
+          return {
+            ...t,
+            image2: updatedSpecimen.imageUrl
+          };
+        }
+        return t;
+      }));
+    }
+
+    // 2. Update the study specimen registry
+    setStudySpecimens(prev => {
+      const exists = prev.some(s => s.id === updatedSpecimen.id);
+      let nextList: ChartSpecimen[];
+      if (exists) {
+        nextList = prev.map(s => s.id === updatedSpecimen.id ? updatedSpecimen : s);
+      } else {
+        // If it was a live trade being customized with a tag, save it to persistent study storage
+        nextList = [updatedSpecimen, ...prev];
+      }
+      idbSet(STUDY_STORAGE_KEY, nextList);
+      return nextList;
+    });
+
+    setIsEditStudyModalOpen(false);
+    setEditingSpecimen(null);
+    showToast(`Chart updated with [${updatedSpecimen.subtype || 'General'}] tag.`, "success");
+  };
+
   const handlePurgeAll = async () => {
     if (!confirm("Are you sure you want to completely erase all trades and collections? This cannot be undone.")) {
       return;
@@ -492,20 +528,22 @@ export default function NivarpOS() {
     });
   }, [trades]);
 
-  // COMBINED SPECIMENS STRICTLY ORDERED NEWEST FIRST (LATEST ON TOP, OLDEST ON BOTTOM)
+  // COMBINED SPECIMENS STRICTLY ORDERED NEWEST FIRST
   const activeCollectionSpecimens = useMemo(() => {
     if (!selectedCollection) return [];
     const specs: ChartSpecimen[] = [];
     const targetColId = selectedCollection.id;
     const targetNameClean = cleanStr(selectedCollection.name);
 
-    // 1. Live Trades mapped to specimens with exact epoch timestamp
     trades
       .filter(t => cleanStr(t.setupType) === targetNameClean)
       .forEach(t => {
         const ltf = t.image2 || t.image1;
         if (ltf) {
           const tradeEpoch = parseDateToTimestamp(t.tradeDate) || 0;
+          // Check if user has explicitly tagged this live trade via edit modal
+          const existingSavedTag = studySpecimens.find(s => s.id === `ltf-${t.id}`)?.subtype;
+
           specs.push({ 
             id: `ltf-${t.id}`, 
             collectionId: targetColId,
@@ -515,14 +553,16 @@ export default function NivarpOS() {
             date: t.tradeDate, 
             imageUrl: ltf, 
             rMultiple: t.rMultiple,
+            subtype: existingSavedTag || 'General',
             createdAt: tradeEpoch
           });
         }
       });
 
-    // 2. Study Specimens mapped with timestamp
     studySpecimens
       .filter(s => {
+        // Exclude live trades duplicate override
+        if (s.id.startsWith('ltf-')) return false;
         if (s.collectionId && targetColId && s.collectionId === targetColId) return true;
         return cleanStr(s.collectionName) === targetNameClean;
       })
@@ -534,7 +574,6 @@ export default function NivarpOS() {
         });
       });
 
-    // 3. Strictly sort all specimens: Latest (newest) on top, oldest at the bottom
     return specs.sort((a, b) => {
       const timeA = a.createdAt || 0;
       const timeB = b.createdAt || 0;
@@ -653,6 +692,7 @@ export default function NivarpOS() {
             onOpenAddCollection={() => setIsAddCollectionOpen(true)}
             onOpenEditCollection={(col: PlaybookCollection) => { setEditingCollection(col); setIsEditCollectionOpen(true); }}
             onOpenAddStudy={() => setIsAddStudyChartOpen(true)}
+            onOpenEditSpecimen={(specimen: ChartSpecimen) => { setEditingSpecimen(specimen); setIsEditStudyModalOpen(true); }}
             onDeleteCollection={(id: string, name: string) => {
               setCollections((p: PlaybookCollection[]) => p.filter((c: PlaybookCollection) => c.id !== id));
               showToast(`Setup collection "${name}" deleted.`, "info");
@@ -775,7 +815,7 @@ export default function NivarpOS() {
       <AddStudyModal
         isOpen={isAddStudyChartOpen} collectionName={selectedCollection?.name || ''} suggestedSymbols={Array.from(new Set(trades.map(t => cleanSecurityName(t.symbol))))}
         onClose={() => setIsAddStudyChartOpen(false)}
-        onSave={(symbol, url) => {
+        onSave={(symbol, url, subtype) => {
           if (!selectedCollection) return;
           const cleanSym = cleanSecurityName(symbol.trim());
           const uniqueId = `s-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
@@ -788,6 +828,7 @@ export default function NivarpOS() {
             title: `${cleanSym} (Study)`,
             date: new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }),
             imageUrl: url.trim(),
+            subtype: subtype || 'General',
             createdAt: Date.now()
           };
 
@@ -797,9 +838,18 @@ export default function NivarpOS() {
             return updated;
           });
 
-          showToast(`Study chart saved to "${selectedCollection.name}".`, "success");
+          showToast(`Study chart saved with [${subtype || 'General'}] tag.`, "success");
           setIsAddStudyChartOpen(false);
         }}
+      />
+
+      {/* EDIT SPECIMEN MODAL (NEW: EDIT EXISTING CHARTS & APPLY TAGS) */}
+      <EditStudyModal
+        isOpen={isEditStudyModalOpen}
+        specimen={editingSpecimen}
+        collectionName={selectedCollection?.name || ''}
+        onClose={() => { setIsEditStudyModalOpen(false); setEditingSpecimen(null); }}
+        onSave={handleUpdateSpecimen}
       />
 
       {/* ADD SETUP MODAL */}

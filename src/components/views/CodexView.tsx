@@ -1,7 +1,7 @@
 'use client';
 
-import React, { useState } from 'react';
-import { Trade, PlaybookCollection, ChartSpecimen } from '@/types/trade';
+import React, { useState, useMemo } from 'react';
+import { Trade, PlaybookCollection, ChartSpecimen, SetupVariantTag } from '@/types/trade';
 import { ChartGalleryItem } from '@/components/modals/ChartInspector';
 import { 
   BookMarked, 
@@ -11,9 +11,11 @@ import {
   ImagePlus, 
   Trash2, 
   Pencil, 
-  GripVertical,
-  ChevronUp,
-  ChevronDown
+  GripVertical, 
+  ChevronUp, 
+  ChevronDown, 
+  ShieldCheck, 
+  Zap 
 } from 'lucide-react';
 
 export interface CodexViewProps {
@@ -27,6 +29,7 @@ export interface CodexViewProps {
   onOpenAddCollection: () => void;
   onOpenEditCollection: (col: PlaybookCollection) => void;
   onOpenAddStudy: () => void;
+  onOpenEditSpecimen?: (specimen: ChartSpecimen) => void;
   onDeleteCollection: (id: string, name: string) => void;
   onDeleteSpecimen: (id: string) => void;
   onReorderSpecimens: (reordered: ChartSpecimen[]) => void;
@@ -37,7 +40,7 @@ export interface CodexViewProps {
 
 const cleanStr = (s?: string) => (s || '').toLowerCase().trim().replace(/\s+/g, ' ');
 
-// Natural Numerical Sorter: Strictly honors 1, 2, 3, 4 ... 10, 11
+// Natural Numerical Sorter
 export function sortSetupsSmartly(a: PlaybookCollection, b: PlaybookCollection): number {
   const nameA = a.name.trim();
   const nameB = b.name.trim();
@@ -75,19 +78,36 @@ export function CodexView({
   onOpenAddCollection,
   onOpenEditCollection,
   onOpenAddStudy,
+  onOpenEditSpecimen,
   onDeleteCollection,
   onDeleteSpecimen,
   onReorderSpecimens,
   onReorderCategories,
   onOpenInspector
 }: CodexViewProps) {
-  // Specimen drag-and-drop state inside opened setup vault
   const [draggedIdx, setDraggedIdx] = useState<number | null>(null);
   const [dragOverIdx, setDragOverIdx] = useState<number | null>(null);
 
-  // Category section drag-and-drop state
   const [draggedCatIdx, setDraggedCatIdx] = useState<number | null>(null);
   const [dragOverCatIdx, setDragOverCatIdx] = useState<number | null>(null);
+
+  const [selectedSubtypeFilter, setSelectedSubtypeFilter] = useState<'all' | 'Resistance' | 'No Resistance'>('all');
+
+  const isBearToBullCollection = useMemo(() => {
+    if (!selectedCollection) return false;
+    return /bearish\s+to\s+bullish|bull\s+to\s+bear/i.test(selectedCollection.name || '');
+  }, [selectedCollection]);
+
+  const filteredSpecimens = useMemo(() => {
+    if (!isBearToBullCollection || selectedSubtypeFilter === 'all') return activeCollectionSpecimens;
+    return activeCollectionSpecimens.filter(s => s.subtype === selectedSubtypeFilter);
+  }, [activeCollectionSpecimens, selectedSubtypeFilter, isBearToBullCollection]);
+
+  const variantCounts = useMemo(() => {
+    const resCount = activeCollectionSpecimens.filter(s => s.subtype === 'Resistance').length;
+    const noResCount = activeCollectionSpecimens.filter(s => s.subtype === 'No Resistance').length;
+    return { resCount, noResCount, total: activeCollectionSpecimens.length };
+  }, [activeCollectionSpecimens]);
 
   // Specimen Drag Handlers
   const handleDragStart = (e: React.DragEvent, index: number) => {
@@ -150,7 +170,7 @@ export function CodexView({
     onReorderCategories(updated);
   };
 
-  const currentSetupGallery: ChartGalleryItem[] = activeCollectionSpecimens.map(s => ({
+  const currentSetupGallery: ChartGalleryItem[] = filteredSpecimens.map(s => ({
     url: s.imageUrl,
     title: s.title
   }));
@@ -248,7 +268,6 @@ export function CodexView({
                     </div>
                   </div>
 
-                  {/* 4 Cards Across: Clean Click-To-Open Cards */}
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
                     {catCollections.map(col => {
                       const colClean = cleanStr(col.name);
@@ -266,7 +285,10 @@ export function CodexView({
                       return (
                         <div 
                           key={col.id} 
-                          onClick={() => onSelectCollection(col)} 
+                          onClick={() => {
+                            setSelectedSubtypeFilter('all');
+                            onSelectCollection(col);
+                          }} 
                           className="relative p-3 rounded-xl bg-[#090A10] border border-white/[0.08] hover:border-cyan-500/50 hover:bg-white/[0.015] cursor-pointer flex flex-col justify-between group transition-all"
                         >
                           <div>
@@ -292,7 +314,6 @@ export function CodexView({
                               </div>
                             </div>
 
-                            {/* Compact Chart Preview */}
                             <div className="mt-1.5 w-full h-24 rounded-lg bg-black/40 overflow-hidden relative flex items-center justify-center">
                               {previewImage ? (
                                 <img
@@ -323,6 +344,7 @@ export function CodexView({
         </div>
       ) : (
         <div className="space-y-4">
+          {/* Header Row */}
           <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 border-b border-white/[0.06] pb-3">
             <div className="flex items-center gap-3">
               <button 
@@ -348,52 +370,150 @@ export function CodexView({
               onClick={onOpenAddStudy} 
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-400/10 border border-amber-400/30 text-amber-400 text-xs font-mono font-bold hover:bg-amber-400/20 transition-all w-full sm:w-auto justify-center"
             >
-              <ImagePlus className="w-3.5 h-3.5" /><span>Add Study Chart</span>
+              <ImagePlus className="w-3.5 h-3.5" /><span>Add Specimen</span>
             </button>
           </div>
 
-          {activeCollectionSpecimens.length === 0 ? (
-            <div className="p-12 text-center rounded-xl bg-[#090A10] border border-white/[0.06] text-zinc-500 font-mono text-xs">
-              No chart specimens archived for this setup yet.
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
-              {activeCollectionSpecimens.map((specimen, idx) => (
-                <div 
-                  key={specimen.id}
-                  draggable
-                  onDragStart={(e) => handleDragStart(e, idx)}
-                  onDragOver={(e) => handleDragOver(e, idx)}
-                  onDrop={(e) => handleDrop(e, idx)}
-                  className="group relative rounded-xl bg-[#090A10] border border-white/[0.08] overflow-hidden cursor-grab active:cursor-grabbing hover:border-zinc-500 transition-all"
+          {/* Trigger Variant Filter Bar (Stable non-shifting tabs) */}
+          {isBearToBullCollection && (
+            <div className="flex items-center justify-between flex-wrap gap-2 p-2 rounded-xl bg-[#090A10] border border-white/[0.06]">
+              <div className="flex items-center gap-1.5 font-mono text-xs">
+                <button
+                  type="button"
+                  onClick={() => setSelectedSubtypeFilter('all')}
+                  className={`px-3 py-1.5 rounded-lg font-bold border transition-colors ${
+                    selectedSubtypeFilter === 'all'
+                      ? 'bg-zinc-800 text-white border-zinc-700 shadow-sm'
+                      : 'bg-transparent text-zinc-400 border-transparent hover:text-white'
+                  }`}
                 >
-                  <div className="relative h-48 sm:h-52 w-full bg-black select-none">
-                    <img 
-                      src={specimen.imageUrl} 
-                      alt={specimen.title} 
-                      className="w-full h-full object-cover opacity-90 group-hover:opacity-100 transition-opacity" 
-                      onClick={() => onOpenInspector(specimen.imageUrl, specimen.title, idx, currentSetupGallery)} 
-                    />
+                  All Charts ({variantCounts.total})
+                </button>
 
-                    <button 
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onDeleteSpecimen(specimen.id);
-                      }}
-                      className="absolute top-2 right-2 p-1.5 rounded-lg bg-black/80 hover:bg-rose-500/20 text-zinc-400 hover:text-rose-400 border border-white/15 z-10 opacity-0 group-hover:opacity-100 transition-opacity"
-                    >
-                      <Trash2 className="w-3 h-3" />
-                    </button>
+                <button
+                  type="button"
+                  onClick={() => setSelectedSubtypeFilter('Resistance')}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-bold border transition-colors ${
+                    selectedSubtypeFilter === 'Resistance'
+                      ? 'bg-cyan-500/20 text-cyan-300 border-cyan-500/40 shadow-sm'
+                      : 'bg-transparent text-zinc-400 border-transparent hover:text-white'
+                  }`}
+                >
+                  <ShieldCheck className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
+                  <span>Resistance (Mainzone)</span>
+                  <span className="text-[10px] opacity-80">({variantCounts.resCount})</span>
+                </button>
 
-                    <div className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-black via-black/80 to-transparent p-2.5 flex items-center justify-between text-[10px] font-mono pointer-events-none">
-                      <span className="font-bold text-white truncate max-w-[70%]">{specimen.title}</span>
-                      <span className="text-zinc-400 text-[9px]">{specimen.date}</span>
-                    </div>
-                  </div>
-                </div>
-              ))}
+                <button
+                  type="button"
+                  onClick={() => setSelectedSubtypeFilter('No Resistance')}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-bold border transition-colors ${
+                    selectedSubtypeFilter === 'No Resistance'
+                      ? 'bg-purple-500/20 text-purple-300 border-purple-500/40 shadow-sm'
+                      : 'bg-transparent text-zinc-400 border-transparent hover:text-white'
+                  }`}
+                >
+                  <Zap className="w-3.5 h-3.5 text-purple-400 shrink-0" />
+                  <span>No Resistance (Liquidity Sweep)</span>
+                  <span className="text-[10px] opacity-80">({variantCounts.noResCount})</span>
+                </button>
+              </div>
+
+              <span className="text-[10px] font-mono text-zinc-500 hidden md:inline">
+                Hover chart & click pencil to edit tag
+              </span>
             </div>
           )}
+
+          {/* Stabilized Viewport */}
+          <div className="min-h-[440px]">
+            {filteredSpecimens.length === 0 ? (
+              <div className="h-72 flex flex-col items-center justify-center rounded-xl bg-[#090A10] border border-white/[0.06] text-zinc-500 font-mono text-xs space-y-3">
+                <p>No chart specimens archived {isBearToBullCollection && selectedSubtypeFilter !== 'all' ? 'under this variant filter.' : 'for this setup yet.'}</p>
+                {isBearToBullCollection && selectedSubtypeFilter !== 'all' && (
+                  <button
+                    type="button"
+                    onClick={() => setSelectedSubtypeFilter('all')}
+                    className="px-3 py-1.5 rounded-lg bg-zinc-800 text-cyan-400 hover:text-white font-bold transition-colors"
+                  >
+                    View all specimens ({variantCounts.total})
+                  </button>
+                )}
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 animate-in fade-in duration-150">
+                {filteredSpecimens.map((specimen, idx) => (
+                  <div 
+                    key={specimen.id}
+                    draggable
+                    onDragStart={(e) => handleDragStart(e, idx)}
+                    onDragOver={(e) => handleDragOver(e, idx)}
+                    onDrop={(e) => handleDrop(e, idx)}
+                    className="group relative rounded-xl bg-[#090A10] border border-white/[0.08] overflow-hidden cursor-grab active:cursor-grabbing hover:border-zinc-500 transition-colors"
+                  >
+                    <div className="relative h-48 sm:h-52 w-full bg-black select-none">
+                      <img 
+                        src={specimen.imageUrl} 
+                        alt={specimen.title} 
+                        className="w-full h-full object-cover opacity-90 group-hover:opacity-100 transition-opacity" 
+                        onClick={() => onOpenInspector(specimen.imageUrl, specimen.title, idx, currentSetupGallery)} 
+                      />
+
+                      {/* Subtype Badge Top Left */}
+                      {specimen.subtype && specimen.subtype !== 'General' && isBearToBullCollection && (
+                        <div className="absolute top-2 left-2 z-10 pointer-events-none">
+                          {specimen.subtype === 'Resistance' ? (
+                            <span className="flex items-center gap-1 px-2 py-0.5 rounded-md bg-cyan-950/90 border border-cyan-500/40 text-[9px] font-mono text-cyan-300 font-bold backdrop-blur-md shadow-lg">
+                              <ShieldCheck className="w-2.5 h-2.5 text-cyan-400" />
+                              <span>Resistance</span>
+                            </span>
+                          ) : (
+                            <span className="flex items-center gap-1 px-2 py-0.5 rounded-md bg-purple-950/90 border border-purple-500/40 text-[9px] font-mono text-purple-300 font-bold backdrop-blur-md shadow-lg">
+                              <Zap className="w-2.5 h-2.5 text-purple-400" />
+                              <span>No Resistance</span>
+                            </span>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Top Right Actions: Edit Tag & Delete */}
+                      <div className="absolute top-2 right-2 flex items-center gap-1 z-10 opacity-0 group-hover:opacity-100 transition-opacity">
+                        {onOpenEditSpecimen && (
+                          <button 
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onOpenEditSpecimen(specimen);
+                            }}
+                            className="p-1.5 rounded-lg bg-black/80 hover:bg-cyan-500/20 text-zinc-300 hover:text-cyan-400 border border-white/15"
+                            title="Edit Specimen & Tags"
+                          >
+                            <Pencil className="w-3 h-3" />
+                          </button>
+                        )}
+                        <button 
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onDeleteSpecimen(specimen.id);
+                          }}
+                          className="p-1.5 rounded-lg bg-black/80 hover:bg-rose-500/20 text-zinc-400 hover:text-rose-400 border border-white/15"
+                          title="Delete Specimen"
+                        >
+                          <Trash2 className="w-3 h-3" />
+                        </button>
+                      </div>
+
+                      <div className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-black via-black/80 to-transparent p-2.5 flex items-center justify-between text-[10px] font-mono pointer-events-none">
+                        <span className="font-bold text-white truncate max-w-[70%]">{specimen.title}</span>
+                        <span className="text-zinc-400 text-[9px]">{specimen.date}</span>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
       )}
     </div>
