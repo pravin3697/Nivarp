@@ -32,7 +32,9 @@ import {
   AlertOctagon, 
   ClockAlert, 
   Flame,
-  Maximize2
+  Maximize2,
+  Gauge,
+  Sparkles
 } from 'lucide-react';
 
 interface MatrixViewProps {
@@ -211,7 +213,7 @@ export function MatrixView({ collections, trades, onOpenInspector }: MatrixViewP
     };
   }, [normalizedTrades]);
 
-  // 2. Consolidated Setup Realization Edge with Per-Setup Peak & Worst Time Windows
+  // 2. Setup Realization Edge with Exit Capture Efficiency (% of peak run captured)
   const setupEdge = useMemo(() => {
     const getBaseModelName = (name: string): string => {
       const clean = displaySetupName(name);
@@ -243,6 +245,8 @@ export function MatrixView({ collections, trades, onOpenInspector }: MatrixViewP
       maeCount: number;
       totalMfeR: number;
       mfeCount: number;
+      winnerRealizedR: number;
+      winnerPeakMfeR: number;
       timeSlotsMap: Map<string, { trades: number; netR: number }>;
     }>();
 
@@ -266,6 +270,8 @@ export function MatrixView({ collections, trades, onOpenInspector }: MatrixViewP
           maeCount: 0,
           totalMfeR: 0,
           mfeCount: 0,
+          winnerRealizedR: 0,
+          winnerPeakMfeR: 0,
           timeSlotsMap: new Map()
         });
       }
@@ -309,6 +315,14 @@ export function MatrixView({ collections, trades, onOpenInspector }: MatrixViewP
         current.mfeCount += 1;
       }
 
+      // Exit Efficiency Calculation on Winning Trades
+      if (isWin) {
+        current.winnerRealizedR += t.rMultiple;
+        // If user recorded an MFE, use it; otherwise use the realized R
+        const peak = tradeMfe > 0 ? Math.max(tradeMfe, t.rMultiple) : t.rMultiple;
+        current.winnerPeakMfeR += peak;
+      }
+
       const slot = getTradeTimeSlot(t.tradeTime);
       if (slot) {
         const slotData = current.timeSlotsMap.get(slot) || { trades: 0, netR: 0 };
@@ -324,6 +338,13 @@ export function MatrixView({ collections, trades, onOpenInspector }: MatrixViewP
       const wr = d.totalTrades ? Math.round((d.wins / d.totalTrades) * 100) : 0;
       const avgMae = d.maeCount ? Number((d.totalMaeR / d.maeCount).toFixed(2)) : 0;
       const avgMfe = d.mfeCount ? Number((d.totalMfeR / d.mfeCount).toFixed(2)) : 0;
+
+      // Exit Efficiency: % of peak run captured on winners
+      const exitEfficiency = d.winnerPeakMfeR > 0 
+        ? Math.min(100, Math.round((d.winnerRealizedR / d.winnerPeakMfeR) * 100))
+        : 100;
+
+      const rLeftOnTable = Number(Math.max(0, d.winnerPeakMfeR - d.winnerRealizedR).toFixed(2));
 
       let bestSlot = '—';
       let bestSlotNetR = -Infinity;
@@ -365,6 +386,8 @@ export function MatrixView({ collections, trades, onOpenInspector }: MatrixViewP
         failedWins: d.failedWins,
         avgMae,
         avgMfe,
+        exitEfficiency,
+        rLeftOnTable,
         bestTimeSlot: bestSlot,
         bestTimeNetR: bestSlotNetR !== -Infinity ? bestSlotNetR : 0,
         worstTimeSlot: worstSlot,
@@ -372,6 +395,26 @@ export function MatrixView({ collections, trades, onOpenInspector }: MatrixViewP
       };
     }).sort((a, b) => b.netR - a.netR);
   }, [collections, normalizedTrades]);
+
+  // Overall Global Exit Efficiency
+  const globalEfficiencyStats = useMemo(() => {
+    let totalRealizedWinR = 0;
+    let totalPeakWinMfe = 0;
+
+    normalizedTrades.forEach(t => {
+      if (t.rMultiple > 0) {
+        totalRealizedWinR += t.rMultiple;
+        const mfe = parseExcursionR(t.mfe, t, false);
+        const peak = mfe > 0 ? Math.max(mfe, t.rMultiple) : t.rMultiple;
+        totalPeakWinMfe += peak;
+      }
+    });
+
+    const efficiency = totalPeakWinMfe > 0 ? Math.round((totalRealizedWinR / totalPeakWinMfe) * 100) : 100;
+    const unclaimedR = Number((totalPeakWinMfe - totalRealizedWinR).toFixed(2));
+
+    return { efficiency, unclaimedR };
+  }, [normalizedTrades]);
 
   // 3. Holding Duration
   const durationStats = useMemo(() => {
@@ -574,7 +617,7 @@ export function MatrixView({ collections, trades, onOpenInspector }: MatrixViewP
             <Binary className="w-5 h-5 text-purple-400" />
             Quant Edge & Behavioral Matrix
           </h2>
-          <p className="text-xs text-zinc-400 mt-0.5">Statistical setup models, per-setup peak/worst windows, and holding efficiency.</p>
+          <p className="text-xs text-zinc-400 mt-0.5">Statistical setup models, exit capture efficiency, and excursion profiles.</p>
         </div>
         {behaviorAnalytics.untaggedCount > 0 && (
           <span className="text-[11px] font-mono px-2.5 py-1 rounded-lg bg-amber-500/10 text-amber-400 border border-amber-500/30">
@@ -682,23 +725,33 @@ export function MatrixView({ collections, trades, onOpenInspector }: MatrixViewP
         </div>
       </div>
 
-      {/* 2. CONSOLIDATED SETUP PROBABILITY, EXCURSION & DUAL TIME WINDOWS */}
+      {/* 2. CONSOLIDATED SETUP PROBABILITY, EXCURSION & EXIT EFFICIENCY MATRIX */}
       <div className="w-full p-4 sm:p-6 rounded-2xl bg-[#090A10] border border-white/[0.06] space-y-4 shadow-lg">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-3 border-b border-white/[0.06] gap-2">
           <div className="flex items-center gap-2.5">
             <BarChart3 className="w-5 h-5 text-emerald-400" />
             <div>
               <h3 className="font-mono text-sm uppercase tracking-wider text-white font-bold">
-                Consolidated True Setup Probability, Excursion & Time Edge Matrix
+                Consolidated True Setup Probability, Excursion & Exit Efficiency
               </h3>
               <p className="text-[11px] font-mono text-zinc-400">
-                Full blueprint: win rate, primary vs failed variants, peak edge window, leakage/worst time, runner MFE, and adverse MAE.
+                Quant blueprint: win rate, exit capture efficiency (% of peak MFE harvested), and adverse MAE risk.
               </p>
             </div>
           </div>
-          <span className="text-[11px] font-mono px-2.5 py-1 rounded-lg bg-cyan-500/10 text-cyan-400 border border-cyan-500/30">
-            {setupEdge.length} Playbook Models Tracked
-          </span>
+          
+          {/* Global Exit Efficiency Summary Badge */}
+          <div className="flex items-center gap-2 font-mono text-xs">
+            <div className="flex items-center gap-1.5 px-3 py-1 rounded-lg bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 font-bold">
+              <Gauge className="w-3.5 h-3.5 text-emerald-400" />
+              <span>Overall Capture: {globalEfficiencyStats.efficiency}%</span>
+            </div>
+            {globalEfficiencyStats.unclaimedR > 0 && (
+              <span className="text-[10px] text-amber-400/90 hidden sm:inline">
+                ({globalEfficiencyStats.unclaimedR}R left on table)
+              </span>
+            )}
+          </div>
         </div>
 
         {setupEdge.length === 0 ? (
@@ -709,6 +762,9 @@ export function MatrixView({ collections, trades, onOpenInspector }: MatrixViewP
           <div className="divide-y divide-white/[0.04]">
             {setupEdge.map(col => {
               const isGreen = col.netR >= 0;
+              const isHighEfficiency = col.exitEfficiency >= 60;
+              const isLowEfficiency = col.exitEfficiency < 40 && col.wins > 0;
+
               return (
                 <div key={col.name} className="py-3.5 flex flex-col xl:flex-row xl:items-center justify-between hover:bg-white/[0.015] px-2 sm:px-3 rounded-xl transition-all gap-3">
                   {/* Setup Title, Category, and Volume Details */}
@@ -738,27 +794,40 @@ export function MatrixView({ collections, trades, onOpenInspector }: MatrixViewP
                     </div>
                   </div>
 
-                  {/* Quantitative Metric Badges: Peak Window, Worst Window, MFE, MAE, Win Bar, Net R */}
+                  {/* Quantitative Metric Badges: Exit Efficiency, Peak Window, Worst Window, MFE, MAE, Win Bar, Net R */}
                   <div className="flex flex-wrap items-center gap-2.5 sm:gap-3.5 font-mono text-xs">
+                    {/* Exit Capture Efficiency Metric Badge */}
+                    <div className={`px-2.5 py-1 rounded-xl border flex flex-col items-start min-w-[125px] ${
+                      isLowEfficiency 
+                        ? 'bg-amber-500/10 border-amber-500/30 text-amber-300' 
+                        : isHighEfficiency 
+                          ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300' 
+                          : 'bg-cyan-500/10 border-cyan-500/30 text-cyan-300'
+                    }`}>
+                      <span className="text-[9px] text-zinc-400 uppercase flex items-center gap-1 font-bold">
+                        <Gauge className="w-2.5 h-2.5" />
+                        <span>Exit Capture</span>
+                      </span>
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-[11px] font-black">
+                          {col.wins > 0 ? `${col.exitEfficiency}%` : '—'}
+                        </span>
+                        {col.rLeftOnTable > 0 && col.wins > 0 && (
+                          <span className="text-[9px] text-zinc-500 font-normal">
+                            (-{col.rLeftOnTable}R left)
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
                     {/* Setup-Specific Peak Time Edge Window */}
-                    <div className="px-2.5 py-1 rounded-xl bg-cyan-500/10 border border-cyan-500/25 flex flex-col items-start min-w-[125px]">
+                    <div className="px-2.5 py-1 rounded-xl bg-cyan-500/10 border border-cyan-500/25 flex flex-col items-start min-w-[120px]">
                       <span className="text-[9px] text-zinc-500 uppercase flex items-center gap-1 font-bold">
                         <Clock className="w-2.5 h-2.5 text-cyan-400" />
                         <span>Peak Edge Time</span>
                       </span>
-                      <span className="text-[11px] font-bold text-cyan-300 truncate max-w-[130px]">
+                      <span className="text-[11px] font-bold text-cyan-300 truncate max-w-[125px]">
                         {col.bestTimeSlot}
-                      </span>
-                    </div>
-
-                    {/* Setup-Specific Worst / Leakage Time Window */}
-                    <div className="px-2.5 py-1 rounded-xl bg-amber-500/10 border border-amber-500/25 flex flex-col items-start min-w-[125px]">
-                      <span className="text-[9px] text-zinc-500 uppercase flex items-center gap-1 font-bold">
-                        <Flame className="w-2.5 h-2.5 text-amber-400" />
-                        <span>Worst Time</span>
-                      </span>
-                      <span className="text-[11px] font-bold text-amber-300 truncate max-w-[130px]">
-                        {col.worstTimeSlot}
                       </span>
                     </div>
 
@@ -794,7 +863,7 @@ export function MatrixView({ collections, trades, onOpenInspector }: MatrixViewP
         )}
       </div>
 
-      {/* 3. DURATION VS PROFITABILITY MATRIX & HOLDING EFFICIENCY (STABLE NON-JITTERING DOTS) */}
+      {/* 3. DURATION VS PROFITABILITY MATRIX & HOLDING EFFICIENCY */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6">
         <div className="lg:col-span-2 p-4 sm:p-5 rounded-2xl bg-[#090A10] border border-white/[0.06] flex flex-col justify-between space-y-3">
           <div className="flex items-center justify-between">
