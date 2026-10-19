@@ -1,5 +1,5 @@
 import { initializeApp, getApps, getApp } from 'firebase/app';
-import { getFirestore } from 'firebase/firestore';
+import { initializeFirestore } from 'firebase/firestore';
 import { 
   getAuth, 
   GoogleAuthProvider, 
@@ -17,7 +17,15 @@ const firebaseConfig = {
 };
 
 const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
-export const db = getFirestore(app);
+
+// Use long-polling transport to prevent Windows/ISP WebChannel stream drops
+export const db = initializeFirestore(app, {
+  experimentalAutoDetectLongPolling: true,
+  experimentalLongPollingOptions: {
+    timeoutSeconds: 30
+  }
+});
+
 export const auth = getAuth(app);
 export const googleProvider = new GoogleAuthProvider();
 
