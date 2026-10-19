@@ -3,11 +3,51 @@
 import React, { useMemo, useState } from 'react';
 import { Trade } from '@/types/trade';
 import { parseDateToTimestamp } from '@/lib/parser';
-import { Flame, Calendar, Sparkles, Clock, ArrowUpRight, Table, X } from 'lucide-react';
+import { Flame, Calendar, Sparkles, Clock, ArrowUpRight, Table, X, Lock, ChevronDown, ChevronUp } from 'lucide-react';
 
 interface HeatmapViewProps {
   trades: Trade[];
 }
+
+// Official NSE / BSE Indian Equity Market Trading Holidays (Strictly trading holidays, not bank holidays)
+const NSE_TRADING_HOLIDAYS: Record<string, { name: string; day: string }> = {
+  // 2026 Official NSE Calendar
+  '2026-01-26': { name: 'Republic Day', day: 'Monday' },
+  '2026-02-17': { name: 'Mahashivratri', day: 'Tuesday' },
+  '2026-03-03': { name: 'Holi', day: 'Tuesday' },
+  '2026-03-20': { name: 'Id-Ul-Fitr (Ramzan Id)', day: 'Friday' },
+  '2026-04-03': { name: 'Good Friday', day: 'Friday' },
+  '2026-04-14': { name: 'Dr. Baba Saheb Ambedkar Jayanti', day: 'Tuesday' },
+  '2026-05-01': { name: 'Maharashtra Day', day: 'Friday' },
+  '2026-05-27': { name: 'Bakri Id / Id-Ul-Adha', day: 'Wednesday' },
+  '2026-06-26': { name: 'Muharram', day: 'Friday' },
+  '2026-08-15': { name: 'Independence Day', day: 'Saturday' },
+  '2026-09-14': { name: 'Ganesh Chaturthi', day: 'Monday' },
+  '2026-10-02': { name: 'Mahatma Gandhi Jayanti', day: 'Friday' },
+  '2026-10-20': { name: 'Dussehra', day: 'Tuesday' },
+  '2026-11-09': { name: 'Diwali (Laxmi Pujan)*', day: 'Monday' },
+  '2026-11-10': { name: 'Diwali Balipratipada', day: 'Tuesday' },
+  '2026-11-24': { name: 'Gurunanak Jayanti', day: 'Tuesday' },
+  '2026-12-25': { name: 'Christmas', day: 'Friday' },
+
+  // 2025 Official NSE Calendar
+  '2025-01-26': { name: 'Republic Day', day: 'Sunday' },
+  '2025-02-26': { name: 'Mahashivratri', day: 'Wednesday' },
+  '2025-03-14': { name: 'Holi', day: 'Friday' },
+  '2025-03-31': { name: 'Id-Ul-Fitr (Ramzan Id)', day: 'Monday' },
+  '2025-04-10': { name: 'Mahavir Jayanti', day: 'Thursday' },
+  '2025-04-14': { name: 'Dr. Baba Saheb Ambedkar Jayanti', day: 'Monday' },
+  '2025-04-18': { name: 'Good Friday', day: 'Friday' },
+  '2025-05-01': { name: 'Maharashtra Day', day: 'Thursday' },
+  '2025-06-07': { name: 'Bakri Id / Id-Ul-Adha', day: 'Saturday' },
+  '2025-08-15': { name: 'Independence Day', day: 'Friday' },
+  '2025-08-27': { name: 'Ganesh Chaturthi', day: 'Wednesday' },
+  '2025-10-02': { name: 'Mahatma Gandhi Jayanti / Dussehra', day: 'Thursday' },
+  '2025-10-21': { name: 'Diwali (Laxmi Pujan)*', day: 'Tuesday' },
+  '2025-10-22': { name: 'Diwali Balipratipada', day: 'Wednesday' },
+  '2025-11-05': { name: 'Gurunanak Jayanti', day: 'Wednesday' },
+  '2025-12-25': { name: 'Christmas', day: 'Thursday' }
+};
 
 export function HeatmapView({ trades }: HeatmapViewProps) {
   const availableYears = useMemo(() => {
@@ -22,6 +62,7 @@ export function HeatmapView({ trades }: HeatmapViewProps) {
 
   const [selectedYear, setSelectedYear] = useState<number>(availableYears[0]);
   const [selectedDayKey, setSelectedDayKey] = useState<string | null>(null);
+  const [isHolidaysExpanded, setIsHolidaysExpanded] = useState<boolean>(false);
 
   const daysMap = useMemo(() => {
     const map = new Map<string, {
@@ -57,7 +98,7 @@ export function HeatmapView({ trades }: HeatmapViewProps) {
     return map;
   }, [trades, selectedYear]);
 
-  // Overall Year Analytics
+  // Year analytics
   const analytics = useMemo(() => {
     const allTradedDays = Array.from(daysMap.values());
     const totalDays = allTradedDays.length;
@@ -87,7 +128,25 @@ export function HeatmapView({ trades }: HeatmapViewProps) {
     return { totalDays, greenDays, redDays, neutralDays, dayWinRate, totalHarvestedR, bestDay, maxGreenStreak };
   }, [daysMap]);
 
-  // GitHub-style Calendar Matrices for Each Month (Monday to Friday rows x up to 5 week columns)
+  // List of trading holidays for the currently selected year
+  const yearHolidaysList = useMemo(() => {
+    return Object.entries(NSE_TRADING_HOLIDAYS)
+      .filter(([dateKey]) => dateKey.startsWith(`${selectedYear}-`))
+      .sort((a, b) => a[0].localeCompare(b[0]))
+      .map(([dateKey, info]) => {
+        const [, m, d] = dateKey.split('-');
+        const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+        const formattedDate = `${parseInt(d, 10)} ${monthNames[parseInt(m, 10) - 1]} ${selectedYear}`;
+        return {
+          dateKey,
+          formattedDate,
+          dayOfWeek: info.day,
+          name: info.name
+        };
+      });
+  }, [selectedYear]);
+
+  // Monthly Matrices (Monday to Friday rows x up to 5 week columns)
   const monthlyBlocks = useMemo(() => {
     const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
     
@@ -98,6 +157,8 @@ export function HeatmapView({ trades }: HeatmapViewProps) {
         dateKey?: string;
         dayNum?: number;
         isValid: boolean;
+        isHoliday?: boolean;
+        holidayName?: string;
         data?: ReturnType<typeof daysMap.get>;
       }>> = [];
 
@@ -105,6 +166,8 @@ export function HeatmapView({ trades }: HeatmapViewProps) {
         dateKey?: string;
         dayNum?: number;
         isValid: boolean;
+        isHoliday?: boolean;
+        holidayName?: string;
         data?: ReturnType<typeof daysMap.get>;
       }> = [];
 
@@ -136,6 +199,7 @@ export function HeatmapView({ trades }: HeatmapViewProps) {
 
         const dateKey = `${selectedYear}-${String(monthIdx + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
         const dayData = daysMap.get(dateKey);
+        const holidayRecord = NSE_TRADING_HOLIDAYS[dateKey];
 
         if (dayData) {
           monthNetR = Number((monthNetR + dayData.totalR).toFixed(2));
@@ -148,6 +212,8 @@ export function HeatmapView({ trades }: HeatmapViewProps) {
           dateKey,
           dayNum: day,
           isValid: true,
+          isHoliday: !!holidayRecord,
+          holidayName: holidayRecord?.name,
           data: dayData
         });
 
@@ -188,7 +254,15 @@ export function HeatmapView({ trades }: HeatmapViewProps) {
     return daysMap.get(selectedDayKey) || null;
   }, [selectedDayKey, daysMap]);
 
-  const getHeatColor = (totalR?: number, count?: number) => {
+  const activeDayHoliday = useMemo(() => {
+    if (!selectedDayKey) return null;
+    return NSE_TRADING_HOLIDAYS[selectedDayKey] || null;
+  }, [selectedDayKey]);
+
+  const getHeatColor = (totalR?: number, count?: number, isHoliday?: boolean) => {
+    if (isHoliday) {
+      return 'bg-purple-950/70 border-purple-500/40 text-purple-300 hover:border-purple-400';
+    }
     if (!count || totalR === undefined) return 'bg-[#12141F] border-white/[0.04] hover:border-white/20';
     if (totalR > 2.0) return 'bg-emerald-400 text-black border-emerald-300 shadow-[0_0_8px_rgba(16,185,129,0.5)]';
     if (totalR > 0.5) return 'bg-emerald-500/80 text-black border-emerald-400';
@@ -208,7 +282,7 @@ export function HeatmapView({ trades }: HeatmapViewProps) {
             <Flame className="w-5 h-5 text-amber-400" />
             Execution Heatmap & Calendar Matrix
           </h2>
-          <p className="text-xs text-zinc-400 mt-0.5">Month-by-month market density and monthly performance dossier.</p>
+          <p className="text-xs text-zinc-400 mt-0.5">Verified Indian market sessions, performance density & trading calendar.</p>
         </div>
 
         {/* Year Selector */}
@@ -284,7 +358,7 @@ export function HeatmapView({ trades }: HeatmapViewProps) {
 
       {/* MONTH-BY-MONTH UNIFORM 5x5 CALENDAR MATRIX */}
       <div className="p-4 sm:p-6 rounded-2xl bg-[#090A10] border border-white/[0.06] space-y-4">
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
           <div className="flex items-center gap-2">
             <Calendar className="w-4 h-4 text-cyan-400" />
             <h3 className="font-mono text-xs uppercase text-zinc-200">
@@ -292,16 +366,19 @@ export function HeatmapView({ trades }: HeatmapViewProps) {
             </h3>
           </div>
 
-          <div className="flex items-center gap-2 font-mono text-[10px] text-zinc-500">
-            <span>Loss</span>
-            <div className="flex items-center gap-1">
-              <span className="h-2.5 w-2.5 rounded bg-rose-500" />
-              <span className="h-2.5 w-2.5 rounded bg-rose-700/80" />
-              <span className="h-2.5 w-2.5 rounded bg-zinc-800" />
-              <span className="h-2.5 w-2.5 rounded bg-emerald-600/40" />
-              <span className="h-2.5 w-2.5 rounded bg-emerald-400" />
+          <div className="flex items-center gap-3 font-mono text-[10px] text-zinc-400 flex-wrap">
+            <div className="flex items-center gap-1.5">
+              <span className="h-2.5 w-2.5 rounded bg-purple-600 border border-purple-400" />
+              <span className="text-purple-300 font-bold">NSE Trading Holiday</span>
             </div>
-            <span>Win</span>
+
+            <div className="flex items-center gap-1 ml-2">
+              <span>Loss</span>
+              <span className="h-2.5 w-2.5 rounded bg-rose-500" />
+              <span className="h-2.5 w-2.5 rounded bg-zinc-800" />
+              <span className="h-2.5 w-2.5 rounded bg-emerald-400" />
+              <span>Win</span>
+            </div>
           </div>
         </div>
 
@@ -339,15 +416,16 @@ export function HeatmapView({ trades }: HeatmapViewProps) {
 
                           const isSelected = selectedDayKey === day.dateKey;
                           const hasTrades = !!(day.data && day.data.trades.length > 0);
+                          const isHol = day.isHoliday;
 
                           return (
                             <button
                               key={rIdx}
                               onClick={() => setSelectedDayKey(day.dateKey!)}
                               className={`h-3 w-3 sm:h-3.5 sm:w-3.5 rounded-[3px] border transition-all ${
-                                getHeatColor(day.data?.totalR, day.data?.trades.length)
+                                getHeatColor(day.data?.totalR, day.data?.trades.length, isHol)
                               } ${isSelected ? 'ring-2 ring-cyan-400 ring-offset-1 ring-offset-black scale-125 z-10' : ''}`}
-                              title={`${day.dateKey}: ${hasTrades ? `${day.data!.totalR}R (${day.data!.trades.length} trades)` : 'No trades'}`}
+                              title={`${day.dateKey}: ${isHol ? `Market Holiday: ${day.holidayName}` : hasTrades ? `${day.data!.totalR}R (${day.data!.trades.length} trades)` : 'No trades'}`}
                             />
                           );
                         })}
@@ -361,26 +439,34 @@ export function HeatmapView({ trades }: HeatmapViewProps) {
         </div>
       </div>
 
-      {/* POSITIONED DIRECTLY BELOW CALENDAR: Selected Day Execution Details */}
-      {activeDayDetails ? (
+      {/* SELECTED DAY DOSSIER */}
+      {(activeDayDetails || activeDayHoliday) ? (
         <div className="p-4 sm:p-5 rounded-2xl bg-[#090A10] border border-cyan-500/40 space-y-3 animate-in fade-in duration-150 shadow-[0_0_20px_rgba(6,182,212,0.1)]">
           <div className="flex items-center justify-between pb-2 border-b border-white/[0.06]">
             <div className="flex items-center gap-2.5">
               <span className="h-2 w-2 rounded-full bg-cyan-400 shadow-[0_0_8px_#22d3ee]" />
               <div>
-                <h4 className="text-xs sm:text-sm font-bold text-white font-mono">
-                  Day Dossier // {activeDayDetails.dateFormatted} ({activeDayDetails.dayOfWeek})
+                <h4 className="text-xs sm:text-sm font-bold text-white font-mono flex items-center gap-2">
+                  <span>Day Dossier // {selectedDayKey}</span>
+                  {activeDayHoliday && (
+                    <span className="px-2 py-0.5 rounded-md bg-purple-500/20 text-purple-300 border border-purple-500/40 text-[10px] flex items-center gap-1">
+                      <Lock className="w-2.5 h-2.5 text-purple-400" />
+                      <span>{activeDayHoliday.name} (NSE Holiday)</span>
+                    </span>
+                  )}
                 </h4>
                 <span className="text-[10px] text-zinc-500 font-mono">
-                  {activeDayDetails.trades.length} Executed Trades
+                  {activeDayDetails ? `${activeDayDetails.trades.length} Executed Trades` : 'Market closed for trading'}
                 </span>
               </div>
             </div>
 
             <div className="flex items-center gap-3">
-              <div className={`text-sm sm:text-base font-black font-mono ${activeDayDetails.totalR >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-                Day Net: {activeDayDetails.totalR >= 0 ? '+' : ''}{activeDayDetails.totalR}R
-              </div>
+              {activeDayDetails && (
+                <div className={`text-sm sm:text-base font-black font-mono ${activeDayDetails.totalR >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                  Day Net: {activeDayDetails.totalR >= 0 ? '+' : ''}{activeDayDetails.totalR}R
+                </div>
+              )}
               <button 
                 onClick={() => setSelectedDayKey(null)}
                 className="p-1 rounded-lg text-zinc-500 hover:text-white hover:bg-white/[0.06] transition-colors"
@@ -391,39 +477,41 @@ export function HeatmapView({ trades }: HeatmapViewProps) {
             </div>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 sm:gap-3">
-            {activeDayDetails.trades.map((t, idx) => (
-              <div key={t.id || idx} className="p-3 rounded-xl bg-white/[0.02] border border-white/[0.05] flex items-center justify-between font-mono text-xs">
-                <div>
-                  <div className="flex items-center gap-2">
-                    <span className="font-bold text-white text-sm">{t.symbol}</span>
-                    <span className={`px-1.5 py-0.2 rounded text-[9px] font-bold ${
-                      t.direction === 'LONG' ? 'bg-emerald-500/10 text-emerald-400' : 'bg-rose-500/10 text-rose-400'
-                    }`}>
-                      {t.direction}
-                    </span>
+          {activeDayDetails && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 sm:gap-3">
+              {activeDayDetails.trades.map((t, idx) => (
+                <div key={t.id || idx} className="p-3 rounded-xl bg-white/[0.02] border border-white/[0.05] flex items-center justify-between font-mono text-xs">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="font-bold text-white text-sm">{t.symbol}</span>
+                      <span className={`px-1.5 py-0.2 rounded text-[9px] font-bold ${
+                        t.direction === 'LONG' ? 'bg-emerald-500/10 text-emerald-400' : 'bg-rose-500/10 text-rose-400'
+                      }`}>
+                        {t.direction}
+                      </span>
+                    </div>
+                    <div className="text-[10px] text-cyan-300 mt-0.5 truncate max-w-[170px]">{t.setupType}</div>
                   </div>
-                  <div className="text-[10px] text-cyan-300 mt-0.5 truncate max-w-[170px]">{t.setupType}</div>
+                  <div className={`text-sm sm:text-base font-black ${t.rMultiple > 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                    {t.rMultiple > 0 ? '+' : ''}{t.rMultiple}R
+                  </div>
                 </div>
-                <div className={`text-sm sm:text-base font-black ${t.rMultiple > 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-                  {t.rMultiple > 0 ? '+' : ''}{t.rMultiple}R
-                </div>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          )}
         </div>
       ) : (
         <div className="p-3 rounded-xl bg-white/[0.015] border border-white/[0.04] text-xs font-mono text-zinc-500 flex items-center gap-2 justify-center">
           <Clock className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
-          <span>Click any day square in the calendar above to inspect trade executions right here.</span>
+          <span>Click any day or holiday square in the calendar above to inspect session details.</span>
         </div>
       )}
 
-      {/* MONTHLY PERFORMANCE BREAKDOWN TABLE (At the bottom as reference) */}
+      {/* MONTHLY PERFORMANCE BREAKDOWN TABLE */}
       <div className="p-4 sm:p-6 rounded-2xl bg-[#090A10] border border-white/[0.06] space-y-3">
         <div className="flex items-center gap-2 pb-2 border-b border-white/[0.04]">
           <Table className="w-4 h-4 text-emerald-400" />
-          <h3 className="font-mono text-xs uppercase tracking-wider text-zinc-300">
+          <h3 className="font-mono text-xs uppercase tracking-wider text-zinc-300 font-bold">
             Monthly Performance Breakdown ({selectedYear})
           </h3>
         </div>
@@ -476,6 +564,53 @@ export function HeatmapView({ trades }: HeatmapViewProps) {
             </tbody>
           </table>
         </div>
+      </div>
+
+      {/* COLLAPSIBLE OFFICIAL NSE TRADING HOLIDAYS DOSSIER (AT THE VERY BOTTOM) */}
+      <div className="p-4 sm:p-5 rounded-2xl bg-[#090A10] border border-white/[0.06] space-y-3">
+        <button
+          type="button"
+          onClick={() => setIsHolidaysExpanded(prev => !prev)}
+          className="w-full flex items-center justify-between text-left group"
+        >
+          <div className="flex items-center gap-2">
+            <Lock className="w-4 h-4 text-purple-400" />
+            <h3 className="font-mono text-xs uppercase tracking-wider text-zinc-300 font-bold group-hover:text-purple-300 transition-colors">
+              Official NSE Indian Equity Trading Holidays ({selectedYear})
+            </h3>
+            <span className="text-[10px] font-mono text-purple-400 px-2 py-0.5 rounded-full bg-purple-500/10 border border-purple-500/30">
+              {yearHolidaysList.length} Closures
+            </span>
+          </div>
+
+          <div className="flex items-center gap-1 text-[11px] font-mono text-zinc-400 group-hover:text-purple-300 transition-colors">
+            <span>{isHolidaysExpanded ? 'Hide' : 'Show Holidays'}</span>
+            {isHolidaysExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+          </div>
+        </button>
+
+        {isHolidaysExpanded && (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-2.5 font-mono text-xs pt-2 border-t border-white/[0.04] animate-in fade-in duration-200">
+            {yearHolidaysList.map(h => (
+              <div 
+                key={h.dateKey}
+                onClick={() => setSelectedDayKey(h.dateKey)}
+                className="p-3 rounded-xl bg-purple-950/20 border border-purple-500/25 hover:border-purple-400 hover:bg-purple-900/30 transition-all cursor-pointer flex flex-col justify-between"
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <span className="font-bold text-white text-xs leading-snug">{h.name}</span>
+                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-purple-900/60 text-purple-300 shrink-0">
+                    Closed
+                  </span>
+                </div>
+                <div className="mt-2 pt-1.5 border-t border-purple-500/20 flex items-center justify-between text-[11px] text-purple-200/70">
+                  <span>{h.formattedDate}</span>
+                  <span className="text-zinc-500 font-bold">{h.dayOfWeek}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );
