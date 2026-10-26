@@ -299,9 +299,17 @@ export function CodexView({
                         return cleanStr(s.collectionName) === colClean;
                       });
 
-                      let chartCount = studyForThis.length;
-                      tradedForThis.forEach(t => { if (t.image2 || t.image1) chartCount++; });
+                      // Deduplicate chart count strictly by URL / Specimen ID so edited specimens aren't double-counted
+                      const uniqueChartUrls = new Set<string>();
+                      studyForThis.forEach(s => {
+                        if (s.imageUrl) uniqueChartUrls.add(s.imageUrl.trim());
+                      });
+                      tradedForThis.forEach(t => {
+                        if (t.image2) uniqueChartUrls.add(t.image2.trim());
+                        else if (t.image1) uniqueChartUrls.add(t.image1.trim());
+                      });
 
+                      const chartCount = uniqueChartUrls.size;
                       const previewImage = studyForThis[0]?.imageUrl || tradedForThis.find(t => t.image2 || t.image1)?.image2;
 
                       return (
