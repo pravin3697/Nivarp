@@ -5,7 +5,7 @@ import { Trade, PlaybookCollection, BehavioralTag, SetupVariantTag, ChartSpecime
 import { CustomSetupDropdown } from '@/components/ui/CustomControls';
 import { uploadScreenshotToCloud } from '@/lib/cloudSync';
 import { formatTo12HourRange } from '@/lib/parser';
-import { X, ImagePlus, Sparkles, Pencil, Clipboard, Check, Loader2, Clock, ShieldCheck, Zap } from 'lucide-react';
+import { X, ImagePlus, Sparkles, Pencil, Clipboard, Check, Loader2, Clock, ShieldCheck, Zap, Waves } from 'lucide-react';
 
 export const BEHAVIORAL_TAGS: { label: BehavioralTag; color: string; border: string; bg: string }[] = [
   { label: 'Rules Followed', color: 'text-emerald-400', border: 'border-emerald-500/40', bg: 'bg-emerald-500/10' },
@@ -92,7 +92,6 @@ export function EditDebriefModal({
         </div>
 
         <form onSubmit={(e) => { e.preventDefault(); onSave(form); }} className="space-y-4 text-xs font-mono">
-          {/* Behavioral Execution Tag Selector */}
           <div>
             <label className="text-zinc-400 block mb-1.5 flex items-center justify-between">
               <span>Behavioral Execution Tag</span>
@@ -129,7 +128,6 @@ export function EditDebriefModal({
             />
           </div>
 
-          {/* Clean 3-Column Grid: MAE, MFE, and Execution Time */}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 sm:gap-3 p-3 rounded-xl bg-white/[0.02] border border-white/[0.04]">
             <div>
               <label className="text-zinc-400 block mb-1 text-[11px]">MAE (Max Heat)</label>
@@ -348,6 +346,7 @@ export function AddStudyModal({
   const [isUploading, setIsUploading] = useState(false);
 
   const isBearToBull = /bearish\s+to\s+bullish|bull\s+to\s+bear/i.test(collectionName || '');
+  const isLiquiditySpring = /liquidity\s+spring/i.test(collectionName || '');
 
   useEffect(() => {
     if (!isOpen) return;
@@ -397,12 +396,14 @@ export function AddStudyModal({
         
         <form onSubmit={(e) => { 
           e.preventDefault(); 
-          onSave(symbol.trim(), url.trim(), isBearToBull ? subtype : 'General'); 
+          const activeTag = isBearToBull || isLiquiditySpring ? subtype : 'General';
+          onSave(symbol.trim(), url.trim(), activeTag); 
           setSymbol(''); 
           setUrl(''); 
           setSubtype('General'); 
         }} className="space-y-4 text-xs font-mono">
           
+          {/* Subtypes for Bearish to Bullish */}
           {isBearToBull && (
             <div>
               <label className="text-zinc-400 block mb-1.5 flex items-center justify-between">
@@ -442,10 +443,78 @@ export function AddStudyModal({
                     <Zap className="w-3.5 h-3.5 text-purple-400" />
                     <div>
                       <span className="block font-bold">No Resistance</span>
-                      <span className="text-[9px] text-zinc-500 font-normal">Liquidity zone sweep</span>
+                      <span className="text-[9px] text-zinc-500 font-normal">Liquidity sweep</span>
                     </div>
                   </div>
                   {subtype === 'No Resistance' && <Check className="w-3 h-3 text-purple-400" />}
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Subtypes for Liquidity Spring: Standard, Extended, Pre 10AM */}
+          {isLiquiditySpring && (
+            <div>
+              <label className="text-zinc-400 block mb-1.5 flex items-center justify-between">
+                <span>Liquidity Spring Variant Tag</span>
+                <span className="text-[10px] text-zinc-500">Pick sweep & execution timing</span>
+              </label>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                <button
+                  type="button"
+                  onClick={() => setSubtype('Standard Spring')}
+                  className={`p-2 rounded-xl border text-xs font-bold text-left transition-all flex items-center justify-between ${
+                    subtype === 'Standard Spring'
+                      ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/50 ring-1 ring-emerald-500/30'
+                      : 'bg-white/[0.02] border-white/10 text-zinc-400 hover:text-white hover:border-white/20'
+                  }`}
+                >
+                  <div className="flex items-center gap-1.5">
+                    <Zap className="w-3 h-3 text-emerald-400" />
+                    <div>
+                      <span className="block font-bold text-[11px]">Standard</span>
+                      <span className="text-[9px] text-zinc-500 font-normal">Clean sweep</span>
+                    </div>
+                  </div>
+                  {subtype === 'Standard Spring' && <Check className="w-3 h-3 text-emerald-400" />}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setSubtype('Extended Spring')}
+                  className={`p-2 rounded-xl border text-xs font-bold text-left transition-all flex items-center justify-between ${
+                    subtype === 'Extended Spring'
+                      ? 'bg-cyan-500/20 text-cyan-300 border-cyan-500/50 ring-1 ring-cyan-500/30'
+                      : 'bg-white/[0.02] border-white/10 text-zinc-400 hover:text-white hover:border-white/20'
+                  }`}
+                >
+                  <div className="flex items-center gap-1.5">
+                    <Waves className="w-3 h-3 text-cyan-400" />
+                    <div>
+                      <span className="block font-bold text-[11px]">Extended</span>
+                      <span className="text-[9px] text-zinc-500 font-normal">Deep wick</span>
+                    </div>
+                  </div>
+                  {subtype === 'Extended Spring' && <Check className="w-3 h-3 text-cyan-400" />}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setSubtype('Pre 10AM')}
+                  className={`p-2 rounded-xl border text-xs font-bold text-left transition-all flex items-center justify-between ${
+                    subtype === 'Pre 10AM'
+                      ? 'bg-amber-500/20 text-amber-300 border-amber-500/50 ring-1 ring-amber-500/30'
+                      : 'bg-white/[0.02] border-white/10 text-zinc-400 hover:text-white hover:border-white/20'
+                  }`}
+                >
+                  <div className="flex items-center gap-1.5">
+                    <Clock className="w-3 h-3 text-amber-400" />
+                    <div>
+                      <span className="block font-bold text-[11px]">Pre 10 AM</span>
+                      <span className="text-[9px] text-zinc-500 font-normal">09:15 - 10:00</span>
+                    </div>
+                  </div>
+                  {subtype === 'Pre 10AM' && <Check className="w-3 h-3 text-amber-400" />}
                 </button>
               </div>
             </div>
@@ -567,7 +636,7 @@ export function AddStudyModal({
   );
 }
 
-// EDIT EXISTING SPECIMEN DIALOG (ADD / EDIT TAGS ON EXISTING CHARTS)
+// EDIT EXISTING SPECIMEN DIALOG
 export function EditStudyModal({
   isOpen,
   specimen,
@@ -586,6 +655,7 @@ export function EditStudyModal({
   const [subtype, setSubtype] = useState<SetupVariantTag>('General');
 
   const isBearToBull = /bearish\s+to\s+bullish|bull\s+to\s+bear/i.test(collectionName || '');
+  const isLiquiditySpring = /liquidity\s+spring/i.test(collectionName || '');
 
   useEffect(() => {
     if (specimen) {
@@ -612,15 +682,16 @@ export function EditStudyModal({
 
         <form onSubmit={(e) => {
           e.preventDefault();
+          const activeTag = isBearToBull || isLiquiditySpring ? subtype : 'General';
           onSave({
             ...specimen,
             title: title.trim(),
             imageUrl: url.trim(),
-            subtype: isBearToBull ? subtype : 'General'
+            subtype: activeTag
           });
         }} className="space-y-4 text-xs font-mono">
           
-          {/* Subtype Model Tag Selection: ONLY shown for Bearish to Bullish setup */}
+          {/* Bearish to Bullish Variants */}
           {isBearToBull && (
             <div>
               <label className="text-zinc-400 block mb-1.5 flex items-center justify-between">
@@ -660,10 +731,79 @@ export function EditStudyModal({
                     <Zap className="w-3.5 h-3.5 text-purple-400" />
                     <div>
                       <span className="block font-bold">No Resistance</span>
-                      <span className="text-[9px] text-zinc-500 font-normal">Liquidity zone sweep</span>
+                      <span className="text-[9px] text-zinc-500 font-normal">Liquidity sweep</span>
                     </div>
                   </div>
                   {subtype === 'No Resistance' && <Check className="w-3 h-3 text-purple-400" />}
+                </button>
+              </div>
+
+              {subtype !== 'General' && (
+                <button
+                  type="button"
+                  onClick={() => setSubtype('General')}
+                  className="mt-2 text-[10px] text-zinc-500 hover:text-rose-400 underline block"
+                >
+                  Remove tag (reset to general)
+                </button>
+              )}
+            </div>
+          )}
+
+          {/* Liquidity Spring Variants */}
+          {isLiquiditySpring && (
+            <div>
+              <label className="text-zinc-400 block mb-1.5 flex items-center justify-between">
+                <span>Liquidity Spring Variant Tag</span>
+                <span className="text-[10px] text-zinc-500">Pick sweep & execution timing</span>
+              </label>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                <button
+                  type="button"
+                  onClick={() => setSubtype('Standard Spring')}
+                  className={`p-2.5 rounded-xl border text-xs font-bold text-left transition-all flex items-center justify-between ${
+                    subtype === 'Standard Spring'
+                      ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/50 ring-1 ring-emerald-500/30'
+                      : 'bg-white/[0.02] border-white/10 text-zinc-400 hover:text-white hover:border-white/20'
+                  }`}
+                >
+                  <div>
+                    <span className="block font-bold text-[11px]">Standard</span>
+                    <span className="text-[9px] text-zinc-500 font-normal">Clean sweep</span>
+                  </div>
+                  {subtype === 'Standard Spring' && <Check className="w-3 h-3 text-emerald-400" />}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setSubtype('Extended Spring')}
+                  className={`p-2.5 rounded-xl border text-xs font-bold text-left transition-all flex items-center justify-between ${
+                    subtype === 'Extended Spring'
+                      ? 'bg-cyan-500/20 text-cyan-300 border-cyan-500/50 ring-1 ring-cyan-500/30'
+                      : 'bg-white/[0.02] border-white/10 text-zinc-400 hover:text-white hover:border-white/20'
+                  }`}
+                >
+                  <div>
+                    <span className="block font-bold text-[11px]">Extended</span>
+                    <span className="text-[9px] text-zinc-500 font-normal">Deep wick</span>
+                  </div>
+                  {subtype === 'Extended Spring' && <Check className="w-3 h-3 text-cyan-400" />}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setSubtype('Pre 10AM')}
+                  className={`p-2.5 rounded-xl border text-xs font-bold text-left transition-all flex items-center justify-between ${
+                    subtype === 'Pre 10AM'
+                      ? 'bg-amber-500/20 text-amber-300 border-amber-500/50 ring-1 ring-amber-500/30'
+                      : 'bg-white/[0.02] border-white/10 text-zinc-400 hover:text-white hover:border-white/20'
+                  }`}
+                >
+                  <div>
+                    <span className="block font-bold text-[11px]">Pre 10 AM</span>
+                    <span className="text-[9px] text-zinc-500 font-normal">09:15 - 10:00</span>
+                  </div>
+                  {subtype === 'Pre 10AM' && <Check className="w-3 h-3 text-amber-400" />}
                 </button>
               </div>
 

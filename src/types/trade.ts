@@ -4,7 +4,13 @@ export type BehavioralTag =
   | 'SL Hunt / Slippage Hunt' 
   | 'Hallucinated Trade';
 
-export type SetupVariantTag = 'Resistance' | 'No Resistance' | 'General';
+export type SetupVariantTag = 
+  | 'Resistance' 
+  | 'No Resistance' 
+  | 'Standard Spring' 
+  | 'Extended Spring' 
+  | 'Pre 10AM' 
+  | 'General';
 
 export interface Trade {
   id: string;
@@ -47,6 +53,6 @@ export interface ChartSpecimen {
   imageUrl: string;
   rMultiple?: number;
   direction?: 'LONG' | 'SHORT';
-  subtype?: SetupVariantTag; // 'Resistance' (Mainzone) vs 'No Resistance' (Liquidity Zone)
+  subtype?: SetupVariantTag; // Bearish to Bullish: 'Resistance' | 'No Resistance'; Liquidity Spring: 'Standard Spring' | 'Extended Spring' | 'Pre 10AM'
   createdAt?: number; // Exact epoch timestamp for chronological ordering
 }
