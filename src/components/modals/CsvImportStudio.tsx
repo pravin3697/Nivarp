@@ -1,11 +1,11 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { Trade, PlaybookCollection } from '@/types/trade';
+import { Trade, PlaybookCollection, SetupVariantTag } from '@/types/trade';
 import { CustomSetupDropdown } from '@/components/ui/CustomControls';
 import { uploadScreenshotToCloud } from '@/lib/cloudSync';
 import { BEHAVIORAL_TAGS } from '@/components/modals/TradeModals';
-import { FileSpreadsheet, X, UploadCloud, Sparkles, Clipboard, Check, Loader2, Clock } from 'lucide-react';
+import { FileSpreadsheet, X, UploadCloud, Sparkles, Clipboard, Check, Loader2, Clock, ShieldCheck, Zap, Waves } from 'lucide-react';
 
 interface CsvImportStudioProps {
   isOpen: boolean;
@@ -126,6 +126,9 @@ export function CsvImportStudio({
                 const isGreen = trade.netPnl >= 0;
                 const isCurrentTrade = activePasteIndex === idx;
 
+                const isBearToBull = /bearish\s+to\s+bullish|bull\s+to\s+bear/i.test(trade.setupType || '');
+                const isLiquiditySpring = /liquidity\s+spring/i.test(trade.setupType || '');
+
                 return (
                   <div 
                     key={idx} 
@@ -196,10 +199,128 @@ export function CsvImportStudio({
                       <label className="text-zinc-400 text-[11px] font-mono block mb-1">Playbook Setup</label>
                       <CustomSetupDropdown
                         value={trade.setupType}
-                        onChange={(val) => onUpdateTrade(idx, 'setupType', val)}
+                        onChange={(val) => {
+                          onUpdateTrade(idx, 'setupType', val);
+                          // Default first variant if selecting Bearish to Bullish or Liquidity Spring
+                          if (/bearish\s+to\s+bullish|bull\s+to\s+bear/i.test(val)) {
+                            onUpdateTrade(idx, 'setupSubtype', 'Resistance');
+                          } else if (/liquidity\s+spring/i.test(val)) {
+                            onUpdateTrade(idx, 'setupSubtype', 'Standard Spring');
+                          } else {
+                            onUpdateTrade(idx, 'setupSubtype', 'General');
+                          }
+                        }}
                         collections={collections}
                       />
                     </div>
+
+                    {/* DYNAMIC SUBHEADING SELECTOR: Shows when Bearish to Bullish is selected */}
+                    {isBearToBull && (
+                      <div className="p-2.5 rounded-xl bg-white/[0.015] border border-white/[0.06] space-y-1.5 animate-in fade-in duration-150">
+                        <label className="text-cyan-400 text-[11px] font-mono font-bold flex items-center justify-between">
+                          <span>Subheading / Trigger Variant (Bearish To Bullish)</span>
+                          <span className="text-[10px] text-zinc-500 font-normal">Zone confirmation behavior</span>
+                        </label>
+                        <div className="grid grid-cols-2 gap-2">
+                          <button
+                            type="button"
+                            onClick={() => onUpdateTrade(idx, 'setupSubtype', 'Resistance')}
+                            className={`p-2 rounded-xl border text-xs font-bold text-left transition-all flex items-center justify-between ${
+                              trade.setupSubtype === 'Resistance'
+                                ? 'bg-cyan-500/20 text-cyan-300 border-cyan-500/50 ring-1 ring-cyan-500/30'
+                                : 'bg-[#090A10] border-white/10 text-zinc-400 hover:text-white'
+                            }`}
+                          >
+                            <div className="flex items-center gap-1.5">
+                              <ShieldCheck className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
+                              <div>
+                                <span className="block font-bold">Resistance</span>
+                                <span className="text-[9px] text-zinc-500 font-normal">Mainzone entry</span>
+                              </div>
+                            </div>
+                            {trade.setupSubtype === 'Resistance' && <Check className="w-3 h-3 text-cyan-400" />}
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => onUpdateTrade(idx, 'setupSubtype', 'No Resistance')}
+                            className={`p-2 rounded-xl border text-xs font-bold text-left transition-all flex items-center justify-between ${
+                              trade.setupSubtype === 'No Resistance'
+                                ? 'bg-purple-500/20 text-purple-300 border-purple-500/50 ring-1 ring-purple-500/30'
+                                : 'bg-[#090A10] border-white/10 text-zinc-400 hover:text-white'
+                            }`}
+                          >
+                            <div className="flex items-center gap-1.5">
+                              <Zap className="w-3.5 h-3.5 text-purple-400 shrink-0" />
+                              <div>
+                                <span className="block font-bold">No Resistance</span>
+                                <span className="text-[9px] text-zinc-500 font-normal">Liquidity sweep</span>
+                              </div>
+                            </div>
+                            {trade.setupSubtype === 'No Resistance' && <Check className="w-3 h-3 text-purple-400" />}
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* DYNAMIC SUBHEADING SELECTOR: Shows when Liquidity Spring is selected */}
+                    {isLiquiditySpring && (
+                      <div className="p-2.5 rounded-xl bg-white/[0.015] border border-white/[0.06] space-y-1.5 animate-in fade-in duration-150">
+                        <label className="text-emerald-400 text-[11px] font-mono font-bold flex items-center justify-between">
+                          <span>Subheading / Variant (Liquidity Spring)</span>
+                          <span className="text-[10px] text-zinc-500 font-normal">Sweep depth & timing</span>
+                        </label>
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                          <button
+                            type="button"
+                            onClick={() => onUpdateTrade(idx, 'setupSubtype', 'Standard Spring')}
+                            className={`p-2 rounded-xl border text-xs font-bold text-left transition-all flex items-center justify-between ${
+                              trade.setupSubtype === 'Standard Spring'
+                                ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/50 ring-1 ring-emerald-500/30'
+                                : 'bg-[#090A10] border-white/10 text-zinc-400 hover:text-white'
+                            }`}
+                          >
+                            <div>
+                              <span className="block font-bold text-[11px]">Standard</span>
+                              <span className="text-[9px] text-zinc-500 font-normal">Clean sweep</span>
+                            </div>
+                            {trade.setupSubtype === 'Standard Spring' && <Check className="w-3 h-3 text-emerald-400" />}
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => onUpdateTrade(idx, 'setupSubtype', 'Extended Spring')}
+                            className={`p-2 rounded-xl border text-xs font-bold text-left transition-all flex items-center justify-between ${
+                              trade.setupSubtype === 'Extended Spring'
+                                ? 'bg-cyan-500/20 text-cyan-300 border-cyan-500/50 ring-1 ring-cyan-500/30'
+                                : 'bg-[#090A10] border-white/10 text-zinc-400 hover:text-white'
+                            }`}
+                          >
+                            <div>
+                              <span className="block font-bold text-[11px]">Extended</span>
+                              <span className="text-[9px] text-zinc-500 font-normal">Deep wick</span>
+                            </div>
+                            {trade.setupSubtype === 'Extended Spring' && <Check className="w-3 h-3 text-cyan-400" />}
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => onUpdateTrade(idx, 'setupSubtype', 'Pre 10AM')}
+                            className={`p-2 rounded-xl border text-xs font-bold text-left transition-all flex items-center justify-between ${
+                              trade.setupSubtype === 'Pre 10AM'
+                                ? 'bg-amber-500/20 text-amber-300 border-amber-500/50 ring-1 ring-amber-500/30'
+                                : 'bg-[#090A10] border-white/10 text-zinc-400 hover:text-white'
+                            }`}
+                          >
+                            <div>
+                              <span className="block font-bold text-[11px]">Pre 10 AM</span>
+                              <span className="text-[9px] text-zinc-500 font-normal">09:15 - 10:00</span>
+                            </div>
+                            {trade.setupSubtype === 'Pre 10AM' && <Check className="w-3 h-3 text-amber-400" />}
+                          </button>
+                        </div>
+                      </div>
+                    )}
 
                     {/* Clean 3-Column Grid: MAE, MFE, Execution Time */}
                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 sm:gap-3 text-xs font-mono">

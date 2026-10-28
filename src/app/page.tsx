@@ -447,28 +447,26 @@ export default function NivarpOS() {
 
   // UPDATE EXISTING SPECIMEN (INCLUDING TRIGGER VARIANT TAGS)
   const handleUpdateSpecimen = (updatedSpecimen: ChartSpecimen) => {
-    // 1. If it's a live trade screenshot, update the trade's image and subtype tag
     if (updatedSpecimen.id.startsWith('ltf-')) {
       const tradeId = updatedSpecimen.id.replace('ltf-', '');
       setTrades(prev => prev.map(t => {
         if (t.id === tradeId) {
           return {
             ...t,
-            image2: updatedSpecimen.imageUrl
+            image2: updatedSpecimen.imageUrl,
+            setupSubtype: updatedSpecimen.subtype
           };
         }
         return t;
       }));
     }
 
-    // 2. Update the study specimen registry
     setStudySpecimens(prev => {
       const exists = prev.some(s => s.id === updatedSpecimen.id);
       let nextList: ChartSpecimen[];
       if (exists) {
         nextList = prev.map(s => s.id === updatedSpecimen.id ? updatedSpecimen : s);
       } else {
-        // If it was a live trade being customized with a tag, save it to persistent study storage
         nextList = [updatedSpecimen, ...prev];
       }
       idbSet(STUDY_STORAGE_KEY, nextList);
@@ -541,8 +539,7 @@ export default function NivarpOS() {
         const ltf = t.image2 || t.image1;
         if (ltf) {
           const tradeEpoch = parseDateToTimestamp(t.tradeDate) || 0;
-          // Check if user has explicitly tagged this live trade via edit modal
-          const existingSavedTag = studySpecimens.find(s => s.id === `ltf-${t.id}`)?.subtype;
+          const existingSavedTag = t.setupSubtype || studySpecimens.find(s => s.id === `ltf-${t.id}`)?.subtype;
 
           specs.push({ 
             id: `ltf-${t.id}`, 
@@ -561,7 +558,6 @@ export default function NivarpOS() {
 
     studySpecimens
       .filter(s => {
-        // Exclude live trades duplicate override
         if (s.id.startsWith('ltf-')) return false;
         if (s.collectionId && targetColId && s.collectionId === targetColId) return true;
         return cleanStr(s.collectionName) === targetNameClean;
@@ -784,6 +780,32 @@ export default function NivarpOS() {
         onUpdateTrade={(idx, field, val) => setCsvPreview(prev => { const c = [...prev]; c[idx] = { ...c[idx], [field]: val }; return c; })}
         onResetPreview={() => { setCsvPreview([]); setCsvFileName(''); }}
         onConfirmImport={() => { 
+          const updatedStudySpecimens = [...studySpecimens];
+
+          csvPreview.forEach(t => {
+            const ltf = t.image2 || t.image1;
+            if (ltf && t.setupSubtype && t.setupSubtype !== 'General') {
+              const specimenId = `ltf-${t.id}`;
+              const targetCol = collections.find(c => cleanStr(c.name) === cleanStr(t.setupType));
+              
+              updatedStudySpecimens.push({
+                id: specimenId,
+                collectionId: targetCol?.id,
+                collectionName: t.setupType,
+                type: 'LIVE_TRADE',
+                title: `${t.symbol} — Execution (LTF)`,
+                date: t.tradeDate,
+                imageUrl: ltf,
+                rMultiple: t.rMultiple,
+                subtype: t.setupSubtype,
+                createdAt: parseDateToTimestamp(t.tradeDate) || Date.now()
+              });
+            }
+          });
+
+          setStudySpecimens(updatedStudySpecimens);
+          idbSet(STUDY_STORAGE_KEY, updatedStudySpecimens);
+
           setTrades(prev => [...prev, ...csvPreview]); 
           showToast(`Successfully imported ${csvPreview.length} trades.`, "success");
           setCsvPreview([]); 
@@ -797,6 +819,39 @@ export default function NivarpOS() {
         onClose={() => setIsDebriefModalOpen(false)}
         onSave={(updated) => { 
           const cleanUpdated = { ...updated, symbol: cleanSecurityName(updated.symbol) };
+          
+          // Update corresponding live trade specimen if it has an LTF chart (with safe fallback for string type)
+          if (cleanUpdated.image2 && cleanUpdated.setupSubtype) {
+            setStudySpecimens(prev => {
+              const specId = `ltf-${cleanUpdated.id}`;
+              const existingIdx = prev.findIndex(s => s.id === specId);
+              const targetCol = collections.find(c => cleanStr(c.name) === cleanStr(cleanUpdated.setupType));
+
+              const specimenData: ChartSpecimen = {
+                id: specId,
+                collectionId: targetCol?.id,
+                collectionName: cleanUpdated.setupType,
+                type: 'LIVE_TRADE',
+                title: `${cleanUpdated.symbol} — Execution (LTF)`,
+                date: cleanUpdated.tradeDate,
+                imageUrl: cleanUpdated.image2 || '',
+                rMultiple: cleanUpdated.rMultiple,
+                subtype: cleanUpdated.setupSubtype,
+                createdAt: parseDateToTimestamp(cleanUpdated.tradeDate) || Date.now()
+              };
+
+              let nextList: ChartSpecimen[];
+              if (existingIdx !== -1) {
+                nextList = [...prev];
+                nextList[existingIdx] = specimenData;
+              } else {
+                nextList = [specimenData, ...prev];
+              }
+              idbSet(STUDY_STORAGE_KEY, nextList);
+              return nextList;
+            });
+          }
+
           setTrades(prev => prev.map(t => t.id === cleanUpdated.id ? cleanUpdated : t)); 
           showToast(`Debrief for ${cleanUpdated.symbol} saved.`, "success");
           setIsDebriefModalOpen(false); 
@@ -843,7 +898,7 @@ export default function NivarpOS() {
         }}
       />
 
-      {/* EDIT SPECIMEN MODAL (NEW: EDIT EXISTING CHARTS & APPLY TAGS) */}
+      {/* EDIT SPECIMEN MODAL */}
       <EditStudyModal
         isOpen={isEditStudyModalOpen}
         specimen={editingSpecimen}

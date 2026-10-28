@@ -27,6 +27,7 @@ export interface Trade {
   netPnl: number;
   fees: number;
   setupType: string;
+  setupSubtype?: SetupVariantTag; // Dynamic subheading variant tag
   regime?: 'Bullish' | 'Bearish' | 'Choppy';
   behaviorTag?: BehavioralTag;
   mae?: string;
@@ -53,6 +54,6 @@ export interface ChartSpecimen {
   imageUrl: string;
   rMultiple?: number;
   direction?: 'LONG' | 'SHORT';
-  subtype?: SetupVariantTag; // Bearish to Bullish: 'Resistance' | 'No Resistance'; Liquidity Spring: 'Standard Spring' | 'Extended Spring' | 'Pre 10AM'
-  createdAt?: number; // Exact epoch timestamp for chronological ordering
+  subtype?: SetupVariantTag;
+  createdAt?: number;
 }
