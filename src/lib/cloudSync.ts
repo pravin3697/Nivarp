@@ -50,6 +50,8 @@ export async function syncMasterToCloud(
     studySpecimens: ChartSpecimen[];
     categoryOrder: string[];
     defaultRiskPerTrade: number;
+    securityPin?: string;
+    isLockEnabled?: boolean;
   },
   userId: string = 'master'
 ): Promise<{ success: boolean; error?: string }> {
@@ -61,6 +63,8 @@ export async function syncMasterToCloud(
       collections: payload.collections,
       categoryOrder: payload.categoryOrder,
       defaultRiskPerTrade: payload.defaultRiskPerTrade,
+      securityPin: payload.securityPin,
+      isLockEnabled: payload.isLockEnabled,
       updatedAt: Date.now()
     }), { merge: true });
 
@@ -101,26 +105,24 @@ export async function fetchMasterFromCloud(userId: string = 'master'): Promise<{
   studySpecimens: ChartSpecimen[];
   categoryOrder: string[];
   defaultRiskPerTrade?: number;
+  securityPin?: string;
+  isLockEnabled?: boolean;
 } | null> {
   try {
     const scope = userId || 'master';
 
-    // 1. Fetch Meta & Collections
     let metaSnap = await getDoc(doc(db, `users_${scope}`, 'meta'));
-    // Fallback to legacy 'journal' doc if newly logged in
     if (!metaSnap.exists() && scope === 'master') {
       metaSnap = await getDoc(doc(db, 'journal', 'meta'));
     }
     const metaData = metaSnap.exists() ? metaSnap.data() : {};
 
-    // 2. Fetch Trades
     let tradesSnap = await getDoc(doc(db, `users_${scope}`, 'trades'));
     if (!tradesSnap.exists() && scope === 'master') {
       tradesSnap = await getDoc(doc(db, 'journal', 'trades'));
     }
     const tradesData = tradesSnap.exists() ? tradesSnap.data() : {};
 
-    // 3. Fetch Chunked Specimens
     let specMetaSnap = await getDoc(doc(db, `users_${scope}`, 'specimens_meta'));
     if (!specMetaSnap.exists() && scope === 'master') {
       specMetaSnap = await getDoc(doc(db, 'journal', 'specimens_meta'));
@@ -148,7 +150,9 @@ export async function fetchMasterFromCloud(userId: string = 'master'): Promise<{
       collections: Array.isArray(metaData.collections) ? metaData.collections : [],
       studySpecimens: Array.from(uniqueSpecimensMap.values()),
       categoryOrder: Array.isArray(metaData.categoryOrder) ? metaData.categoryOrder : MASTER_CATEGORY_ORDER,
-      defaultRiskPerTrade: metaData.defaultRiskPerTrade || 600
+      defaultRiskPerTrade: metaData.defaultRiskPerTrade || 600,
+      securityPin: metaData.securityPin || '',
+      isLockEnabled: !!metaData.isLockEnabled
     };
   } catch (err) {
     console.warn('Failed to fetch from Firebase:', err);
@@ -156,7 +160,6 @@ export async function fetchMasterFromCloud(userId: string = 'master'): Promise<{
   }
 }
 
-// Master Force Sync
 export async function forcePushAllToCloud(
   trades: Trade[], 
   collections: PlaybookCollection[], 
@@ -172,7 +175,6 @@ export async function forcePushAllToCloud(
   }, userId);
 }
 
-// Permanent Purge for this user
 export async function purgeCloudData(userId: string = 'master'): Promise<boolean> {
   try {
     const scope = userId || 'master';

@@ -3,11 +3,31 @@
 import React, { useState } from 'react';
 import { CustomNumberInput } from '@/components/ui/CustomControls';
 import { User } from 'firebase/auth';
-import { Sliders, Database, Download, Upload, Trash2, Cloud, RefreshCw, Smartphone, LogIn, LogOut, CheckCircle } from 'lucide-react';
+import { 
+  Sliders, 
+  Database, 
+  Download, 
+  Upload, 
+  Trash2, 
+  Cloud, 
+  RefreshCw, 
+  Smartphone, 
+  LogIn, 
+  LogOut, 
+  CheckCircle,
+  Shield,
+  Lock,
+  KeyRound,
+  Eye,
+  EyeOff
+} from 'lucide-react';
 
 interface SettingsViewProps {
   defaultRisk: number;
   currentUser: User | null;
+  securityPin: string;
+  isLockEnabled: boolean;
+  onUpdateSecurityPin: (newPin: string, enabled: boolean) => void;
   onGoogleLogin: () => Promise<void>;
   onLogout: () => Promise<void>;
   onChangeDefaultRisk: (val: number) => void;
@@ -20,6 +40,9 @@ interface SettingsViewProps {
 export function SettingsView({
   defaultRisk,
   currentUser,
+  securityPin,
+  isLockEnabled,
+  onUpdateSecurityPin,
   onGoogleLogin,
   onLogout,
   onChangeDefaultRisk,
@@ -29,11 +52,22 @@ export function SettingsView({
   onForceSync
 }: SettingsViewProps) {
   const [isSyncing, setIsSyncing] = useState(false);
+  const [pinInput, setPinInput] = useState(securityPin || '');
+  const [showPin, setShowPin] = useState(false);
+  const [enabledToggle, setEnabledToggle] = useState(isLockEnabled);
+  const [pinSavedFeedback, setPinSavedFeedback] = useState(false);
 
   const handleManualSync = async () => {
     setIsSyncing(true);
     await onForceSync();
     setIsSyncing(false);
+  };
+
+  const handleSavePin = (e: React.FormEvent) => {
+    e.preventDefault();
+    onUpdateSecurityPin(pinInput.trim(), enabledToggle);
+    setPinSavedFeedback(true);
+    setTimeout(() => setPinSavedFeedback(false), 3000);
   };
 
   return (
@@ -97,6 +131,80 @@ export function SettingsView({
             </button>
           </div>
         </div>
+      </div>
+
+      {/* TERMINAL SECURITY LOCK PANEL */}
+      <div className="p-4 sm:p-6 rounded-2xl bg-[#090A10] border border-white/[0.06] space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <div className="p-2 rounded-xl bg-cyan-500/10 text-cyan-400 shrink-0 border border-cyan-500/20">
+              <Shield className="w-5 h-5" />
+            </div>
+            <div>
+              <h3 className="font-bold text-sm text-white flex items-center gap-2">
+                <span>Terminal Security & PIN Lock</span>
+                {enabledToggle && pinInput && (
+                  <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
+                    Active
+                  </span>
+                )}
+              </h3>
+              <p className="text-xs text-zinc-500">
+                Locks the journal behind a password/PIN so others cannot inspect your trades or P&L when accessing your computer.
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <form onSubmit={handleSavePin} className="space-y-3 pt-2 border-t border-white/[0.04]">
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 font-mono text-xs">
+            <div className="relative flex-1">
+              <KeyRound className="w-4 h-4 text-zinc-500 absolute left-3 top-1/2 -translate-y-1/2" />
+              <input
+                type={showPin ? 'text' : 'password'}
+                value={pinInput}
+                onChange={(e) => setPinInput(e.target.value)}
+                placeholder="Enter password or 4-digit PIN (e.g. 1928)"
+                className="w-full bg-zinc-900 border border-white/10 rounded-xl pl-9 pr-10 py-2.5 text-white outline-none focus:border-cyan-400"
+              />
+              <button
+                type="button"
+                onClick={() => setShowPin(prev => !prev)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-white"
+              >
+                {showPin ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              </button>
+            </div>
+
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                type="button"
+                onClick={() => setEnabledToggle(prev => !prev)}
+                className={`px-4 py-2.5 rounded-xl font-bold transition-all border ${
+                  enabledToggle
+                    ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/40'
+                    : 'bg-zinc-900 text-zinc-500 border-white/10 hover:text-white'
+                }`}
+              >
+                {enabledToggle ? 'Lock: Enabled' : 'Lock: Disabled'}
+              </button>
+
+              <button
+                type="submit"
+                className="px-5 py-2.5 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-black font-bold transition-all shadow-md shadow-cyan-500/20"
+              >
+                Save PIN
+              </button>
+            </div>
+          </div>
+
+          {pinSavedFeedback && (
+            <div className="text-[11px] font-mono text-emerald-400 flex items-center gap-1.5 animate-in fade-in">
+              <CheckCircle className="w-3.5 h-3.5" />
+              <span>Security settings updated successfully. Use the lock icon in the top header to lock anytime.</span>
+            </div>
+          )}
+        </form>
       </div>
 
       {/* 1R Capital Benchmark Card */}

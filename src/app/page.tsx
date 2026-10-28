@@ -33,12 +33,17 @@ import {
   CheckCircle2, 
   AlertCircle, 
   Info, 
-  X
+  X,
+  Lock,
+  Unlock,
+  KeyRound,
+  ShieldCheck
 } from 'lucide-react';
 
 const STORAGE_KEY = 'NIVARP_MASTER_STORAGE';
 const STUDY_STORAGE_KEY = 'NIVARP_STUDY_SPECIMENS';
 const CATEGORY_ORDER_KEY = 'NIVARP_CATEGORY_ORDER';
+const SECURITY_LOCK_KEY = 'NIVARP_SECURITY_LOCK';
 
 interface ToastState {
   message: string;
@@ -64,6 +69,13 @@ export default function NivarpOS() {
   const [defaultRiskPerTrade, setDefaultRiskPerTrade] = useState<number>(600);
   const [activeTab, setActiveTab] = useState<'pulse' | 'codex' | 'matrix' | 'heatmap' | 'settings'>('pulse');
   const [selectedCollection, setSelectedCollection] = useState<PlaybookCollection | null>(null);
+
+  // Security Lock State
+  const [securityPin, setSecurityPin] = useState<string>('');
+  const [isLockEnabled, setIsLockEnabled] = useState<boolean>(false);
+  const [isVaultLocked, setIsVaultLocked] = useState<boolean>(false);
+  const [unlockInput, setUnlockInput] = useState<string>('');
+  const [unlockError, setUnlockError] = useState<boolean>(false);
 
   const [isLoaded, setIsLoaded] = useState(false);
   const [toast, setToast] = useState<ToastState | null>(null);
@@ -128,6 +140,13 @@ export default function NivarpOS() {
           setStudySpecimens(cloudData.studySpecimens || []);
           setCategoryOrder(cloudData.categoryOrder || MASTER_CATEGORY_ORDER);
           if (cloudData.defaultRiskPerTrade) setDefaultRiskPerTrade(cloudData.defaultRiskPerTrade);
+          if (cloudData.securityPin !== undefined) {
+            setSecurityPin(cloudData.securityPin);
+            setIsLockEnabled(!!cloudData.isLockEnabled);
+            if (cloudData.isLockEnabled && cloudData.securityPin) {
+              setIsVaultLocked(true);
+            }
+          }
         }
       }
     });
@@ -216,11 +235,22 @@ export default function NivarpOS() {
 
     async function loadData() {
       try {
-        const [idbMaster, idbStudy, idbCatOrder] = await Promise.all([
+        const [idbMaster, idbStudy, idbCatOrder, idbSecurity] = await Promise.all([
           idbGet<any>(STORAGE_KEY),
           idbGet<ChartSpecimen[]>(STUDY_STORAGE_KEY),
-          idbGet<string[]>(CATEGORY_ORDER_KEY)
+          idbGet<string[]>(CATEGORY_ORDER_KEY),
+          idbGet<any>(SECURITY_LOCK_KEY)
         ]);
+
+        if (idbSecurity) {
+          if (idbSecurity.securityPin) setSecurityPin(idbSecurity.securityPin);
+          if (idbSecurity.isLockEnabled !== undefined) {
+            setIsLockEnabled(idbSecurity.isLockEnabled);
+            if (idbSecurity.isLockEnabled && idbSecurity.securityPin) {
+              setIsVaultLocked(true);
+            }
+          }
+        }
 
         if (idbMaster) {
           if (idbMaster.trades?.length) setTrades(sanitizeTrades(idbMaster.trades));
@@ -242,6 +272,13 @@ export default function NivarpOS() {
           setCollections(cloudData.collections);
           setStudySpecimens(cloudData.studySpecimens);
           setCategoryOrder(cloudData.categoryOrder);
+          if (cloudData.securityPin !== undefined) {
+            setSecurityPin(cloudData.securityPin);
+            setIsLockEnabled(!!cloudData.isLockEnabled);
+            if (cloudData.isLockEnabled && cloudData.securityPin) {
+              setIsVaultLocked(true);
+            }
+          }
         }
       } catch (err) {
         console.warn('Storage sync notice:', err);
@@ -268,6 +305,10 @@ export default function NivarpOS() {
     });
     idbSet(STUDY_STORAGE_KEY, studySpecimens);
     idbSet(CATEGORY_ORDER_KEY, categoryOrder);
+    idbSet(SECURITY_LOCK_KEY, {
+      securityPin,
+      isLockEnabled
+    });
 
     const timer = setTimeout(async () => {
       await syncMasterToCloud({
@@ -275,12 +316,43 @@ export default function NivarpOS() {
         collections: deduplicatedCollections,
         studySpecimens,
         categoryOrder,
-        defaultRiskPerTrade
+        defaultRiskPerTrade,
+        securityPin,
+        isLockEnabled
       }, currentUser?.uid || 'master');
     }, 2000);
 
     return () => clearTimeout(timer);
-  }, [isLoaded, trades, deduplicatedCollections, categoryOrder, studySpecimens, defaultRiskPerTrade, currentUser]);
+  }, [isLoaded, trades, deduplicatedCollections, categoryOrder, studySpecimens, defaultRiskPerTrade, securityPin, isLockEnabled, currentUser]);
+
+  const handleUpdateSecurityPin = (newPin: string, enabled: boolean) => {
+    setSecurityPin(newPin);
+    setIsLockEnabled(enabled);
+    idbSet(SECURITY_LOCK_KEY, { securityPin: newPin, isLockEnabled: enabled });
+    showToast(enabled ? "Security Lock enabled." : "Security Lock disabled.", "info");
+  };
+
+  const handleUnlockAttempt = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (unlockInput.trim() === securityPin.trim()) {
+      setIsVaultLocked(false);
+      setUnlockInput('');
+      setUnlockError(false);
+      showToast("Terminal unlocked.", "success");
+    } else {
+      setUnlockError(true);
+      setTimeout(() => setUnlockError(false), 2000);
+    }
+  };
+
+  const handleManualLock = () => {
+    if (!isLockEnabled || !securityPin) {
+      showToast("Configure your PIN in Settings first.", "info");
+      setActiveTab('settings');
+      return;
+    }
+    setIsVaultLocked(true);
+  };
 
   const handleExportBackup = () => {
     try {
@@ -290,6 +362,8 @@ export default function NivarpOS() {
         categoryOrder,
         studySpecimens,
         defaultRiskPerTrade,
+        securityPin,
+        isLockEnabled,
         exportedAt: new Date().toISOString()
       };
       const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
@@ -326,6 +400,8 @@ export default function NivarpOS() {
         setCategoryOrder(restoredCats);
         setStudySpecimens(restoredStudy);
         if (d.defaultRiskPerTrade) setDefaultRiskPerTrade(d.defaultRiskPerTrade);
+        if (d.securityPin) setSecurityPin(d.securityPin);
+        if (d.isLockEnabled !== undefined) setIsLockEnabled(d.isLockEnabled);
 
         await Promise.all([
           idbSet(STORAGE_KEY, {
@@ -335,7 +411,11 @@ export default function NivarpOS() {
             defaultRiskPerTrade: d.defaultRiskPerTrade || 600
           }),
           idbSet(STUDY_STORAGE_KEY, restoredStudy),
-          idbSet(CATEGORY_ORDER_KEY, restoredCats)
+          idbSet(CATEGORY_ORDER_KEY, restoredCats),
+          idbSet(SECURITY_LOCK_KEY, {
+            securityPin: d.securityPin || '',
+            isLockEnabled: !!d.isLockEnabled
+          })
         ]);
 
         showToast("Restoring backup...", "info");
@@ -344,7 +424,9 @@ export default function NivarpOS() {
           collections: restoredCols,
           studySpecimens: restoredStudy,
           categoryOrder: restoredCats,
-          defaultRiskPerTrade: d.defaultRiskPerTrade || 600
+          defaultRiskPerTrade: d.defaultRiskPerTrade || 600,
+          securityPin: d.securityPin,
+          isLockEnabled: d.isLockEnabled
         }, currentUser?.uid || 'master');
 
         showToast(`Restored & synced: ${restoredTrades.length} trades, ${restoredCols.length} setups.`, "success");
@@ -445,7 +527,6 @@ export default function NivarpOS() {
     showToast("Chart order saved.", "info");
   };
 
-  // UPDATE EXISTING SPECIMEN (INCLUDING TRIGGER VARIANT TAGS)
   const handleUpdateSpecimen = (updatedSpecimen: ChartSpecimen) => {
     if (updatedSpecimen.id.startsWith('ltf-')) {
       const tradeId = updatedSpecimen.id.replace('ltf-', '');
@@ -526,7 +607,6 @@ export default function NivarpOS() {
     });
   }, [trades]);
 
-  // COMBINED SPECIMENS STRICTLY ORDERED NEWEST FIRST
   const activeCollectionSpecimens = useMemo(() => {
     if (!selectedCollection) return [];
     const specs: ChartSpecimen[] = [];
@@ -577,11 +657,62 @@ export default function NivarpOS() {
     });
   }, [selectedCollection, trades, studySpecimens]);
 
+  // FULLSCREEN SECURITY VAULT LOCK OVERLAY
+  if (isLockEnabled && isVaultLocked) {
+    return (
+      <div className="min-h-screen bg-[#050608] text-zinc-100 flex flex-col items-center justify-center p-4 selection:bg-cyan-500/20 antialiased font-mono">
+        <div className="max-w-sm w-full p-6 sm:p-8 rounded-3xl bg-[#090A10] border border-white/10 shadow-[0_20px_60px_rgba(0,0,0,0.9)] text-center space-y-6">
+          <div className="flex justify-center">
+            <NivarpLogo size="lg" />
+          </div>
+
+          <div className="space-y-1.5">
+            <div className="w-12 h-12 rounded-2xl bg-cyan-500/10 border border-cyan-500/30 text-cyan-400 mx-auto flex items-center justify-center shadow-[0_0_20px_rgba(34,211,238,0.2)]">
+              <Lock className="w-6 h-6" />
+            </div>
+            <h2 className="text-base font-bold text-white pt-2">Terminal Vault Locked</h2>
+            <p className="text-xs text-zinc-500">Enter your master PIN to access trading data.</p>
+          </div>
+
+          <form onSubmit={handleUnlockAttempt} className="space-y-4">
+            <div className="relative">
+              <KeyRound className="w-4 h-4 text-zinc-500 absolute left-3 top-1/2 -translate-y-1/2" />
+              <input
+                type="password"
+                autoFocus
+                value={unlockInput}
+                onChange={(e) => setUnlockInput(e.target.value)}
+                placeholder="Enter PIN"
+                className={`w-full bg-zinc-900 rounded-xl pl-9 pr-4 py-3 text-white text-center font-bold text-sm tracking-widest outline-none transition-all ${
+                  unlockError ? 'border-2 border-rose-500 shadow-[0_0_15px_rgba(244,63,94,0.4)] animate-shake' : 'border border-white/15 focus:border-cyan-400'
+                }`}
+              />
+            </div>
+
+            {unlockError && (
+              <span className="text-[11px] text-rose-400 font-bold block">
+                Incorrect PIN. Please try again.
+              </span>
+            )}
+
+            <button
+              type="submit"
+              className="w-full py-3 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-black font-bold text-xs shadow-lg shadow-cyan-500/20 transition-all flex items-center justify-center gap-2"
+            >
+              <Unlock className="w-4 h-4" />
+              <span>Unlock Terminal</span>
+            </button>
+          </form>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-[#050608] text-zinc-100 font-sans selection:bg-emerald-500/20 antialiased pb-20 md:pb-6">
-      {/* FLOATING TOAST NOTIFICATION */}
+      {/* FLOATING TOAST NOTIFICATION: POSITIONED CLEANLY IN BOTTOM-RIGHT CORNER */}
       {toast && (
-        <div className="fixed top-4 right-4 left-4 md:left-auto md:right-6 z-[120] flex items-center gap-3 px-4 py-3 rounded-2xl bg-[#0B0D14]/95 border border-white/15 text-white shadow-2xl backdrop-blur-2xl animate-in fade-in duration-200 font-mono text-xs max-w-md">
+        <div className="fixed bottom-5 right-5 left-5 sm:left-auto z-[120] flex items-center gap-3 px-4 py-3 rounded-2xl bg-[#0B0D14]/95 border border-white/15 text-white shadow-2xl backdrop-blur-2xl animate-in fade-in slide-in-from-bottom-2 duration-200 font-mono text-xs max-w-md safe-bottom-padding">
           <div className={`p-1.5 rounded-xl shrink-0 ${
             toast.type === 'error' ? 'bg-rose-500/20 text-rose-400' : 
             toast.type === 'info' ? 'bg-cyan-500/20 text-cyan-400' : 
@@ -624,8 +755,16 @@ export default function NivarpOS() {
           </nav>
         </div>
 
-        {/* Right side: Clean Import Button */}
+        {/* Right side: Lock Button & Clean Import Button */}
         <div className="flex items-center gap-2 md:gap-3">
+          <button
+            onClick={handleManualLock}
+            className="p-2 rounded-xl bg-white/[0.03] hover:bg-white/[0.08] border border-white/10 text-zinc-400 hover:text-cyan-300 transition-colors"
+            title={isLockEnabled ? "Lock Terminal Now" : "Configure Lock in Settings"}
+          >
+            <Lock className="w-4 h-4" />
+          </button>
+
           <button 
             onClick={() => setIsCsvModalOpen(true)} 
             className="flex items-center gap-2 px-3 md:px-4 py-1.5 md:py-2 rounded-xl bg-emerald-500/10 border border-emerald-500/30 hover:bg-emerald-500/20 text-emerald-400 text-xs font-bold transition-all shadow-[0_0_20px_rgba(16,185,129,0.18)]"
@@ -738,6 +877,9 @@ export default function NivarpOS() {
           <SettingsView
             defaultRisk={defaultRiskPerTrade}
             currentUser={currentUser}
+            securityPin={securityPin}
+            isLockEnabled={isLockEnabled}
+            onUpdateSecurityPin={handleUpdateSecurityPin}
             onGoogleLogin={handleGoogleLogin}
             onLogout={handleLogout}
             onChangeDefaultRisk={(val: number) => {
@@ -820,7 +962,6 @@ export default function NivarpOS() {
         onSave={(updated) => { 
           const cleanUpdated = { ...updated, symbol: cleanSecurityName(updated.symbol) };
           
-          // Update corresponding live trade specimen if it has an LTF chart (with safe fallback for string type)
           if (cleanUpdated.image2 && cleanUpdated.setupSubtype) {
             setStudySpecimens(prev => {
               const specId = `ltf-${cleanUpdated.id}`;
