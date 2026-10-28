@@ -607,6 +607,7 @@ export default function NivarpOS() {
     });
   }, [trades]);
 
+  // COMBINED SPECIMENS STRICTLY ORDERED NEWEST FIRST
   const activeCollectionSpecimens = useMemo(() => {
     if (!selectedCollection) return [];
     const specs: ChartSpecimen[] = [];
@@ -710,10 +711,10 @@ export default function NivarpOS() {
 
   return (
     <div className="min-h-screen bg-[#050608] text-zinc-100 font-sans selection:bg-emerald-500/20 antialiased pb-20 md:pb-6">
-      {/* FLOATING TOAST NOTIFICATION: POSITIONED CLEANLY IN BOTTOM-RIGHT CORNER */}
+      {/* FLOATING TOAST NOTIFICATION: PERFECTLY CENTERED VERTICALLY IN BOTTOM-RIGHT CORNER */}
       {toast && (
-        <div className="fixed bottom-5 right-5 left-5 sm:left-auto z-[120] flex items-center gap-3 px-4 py-3 rounded-2xl bg-[#0B0D14]/95 border border-white/15 text-white shadow-2xl backdrop-blur-2xl animate-in fade-in slide-in-from-bottom-2 duration-200 font-mono text-xs max-w-md safe-bottom-padding">
-          <div className={`p-1.5 rounded-xl shrink-0 ${
+        <div className="fixed bottom-5 right-5 z-[120] flex items-center gap-3 px-4 py-3 rounded-2xl bg-[#0C0E16]/95 border border-white/15 text-white shadow-[0_16px_40px_rgba(0,0,0,0.85)] backdrop-blur-2xl animate-in fade-in slide-in-from-bottom-2 duration-150 font-mono text-xs max-w-sm">
+          <div className={`p-1.5 rounded-xl shrink-0 flex items-center justify-center ${
             toast.type === 'error' ? 'bg-rose-500/20 text-rose-400' : 
             toast.type === 'info' ? 'bg-cyan-500/20 text-cyan-400' : 
             'bg-emerald-500/20 text-emerald-400'
@@ -722,8 +723,11 @@ export default function NivarpOS() {
              toast.type === 'info' ? <Info className="w-4 h-4" /> : 
              <CheckCircle2 className="w-4 h-4" />}
           </div>
-          <span className="font-semibold text-zinc-100 flex-1 leading-snug">{toast.message}</span>
-          <button onClick={() => setToast(null)} className="text-zinc-500 hover:text-white p-1">
+          <span className="font-semibold text-zinc-100 flex-1 leading-normal select-none">{toast.message}</span>
+          <button 
+            onClick={() => setToast(null)} 
+            className="text-zinc-500 hover:text-white p-1 shrink-0 transition-colors"
+          >
             <X className="w-3.5 h-3.5" />
           </button>
         </div>
