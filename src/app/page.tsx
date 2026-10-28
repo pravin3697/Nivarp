@@ -44,6 +44,7 @@ const STORAGE_KEY = 'NIVARP_MASTER_STORAGE';
 const STUDY_STORAGE_KEY = 'NIVARP_STUDY_SPECIMENS';
 const CATEGORY_ORDER_KEY = 'NIVARP_CATEGORY_ORDER';
 const SECURITY_LOCK_KEY = 'NIVARP_SECURITY_LOCK';
+const SESSION_UNLOCKED_KEY = 'NIVARP_SESSION_UNLOCKED';
 
 interface ToastState {
   message: string;
@@ -127,6 +128,12 @@ export default function NivarpOS() {
     }
   };
 
+  // Helper to check if current tab session is already unlocked
+  const isSessionAlreadyUnlocked = (): boolean => {
+    if (typeof window === 'undefined') return false;
+    return sessionStorage.getItem(SESSION_UNLOCKED_KEY) === 'true';
+  };
+
   // Auth State Listener
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
@@ -140,10 +147,12 @@ export default function NivarpOS() {
           setStudySpecimens(cloudData.studySpecimens || []);
           setCategoryOrder(cloudData.categoryOrder || MASTER_CATEGORY_ORDER);
           if (cloudData.defaultRiskPerTrade) setDefaultRiskPerTrade(cloudData.defaultRiskPerTrade);
+          
           if (cloudData.securityPin !== undefined) {
             setSecurityPin(cloudData.securityPin);
             setIsLockEnabled(!!cloudData.isLockEnabled);
-            if (cloudData.isLockEnabled && cloudData.securityPin) {
+            // CRITICAL FIX: Only lock if user hasn't already unlocked in this active browser session!
+            if (cloudData.isLockEnabled && cloudData.securityPin && !isSessionAlreadyUnlocked()) {
               setIsVaultLocked(true);
             }
           }
@@ -246,7 +255,8 @@ export default function NivarpOS() {
           if (idbSecurity.securityPin) setSecurityPin(idbSecurity.securityPin);
           if (idbSecurity.isLockEnabled !== undefined) {
             setIsLockEnabled(idbSecurity.isLockEnabled);
-            if (idbSecurity.isLockEnabled && idbSecurity.securityPin) {
+            // CRITICAL FIX: Only lock if user hasn't already unlocked in this session
+            if (idbSecurity.isLockEnabled && idbSecurity.securityPin && !isSessionAlreadyUnlocked()) {
               setIsVaultLocked(true);
             }
           }
@@ -275,7 +285,8 @@ export default function NivarpOS() {
           if (cloudData.securityPin !== undefined) {
             setSecurityPin(cloudData.securityPin);
             setIsLockEnabled(!!cloudData.isLockEnabled);
-            if (cloudData.isLockEnabled && cloudData.securityPin) {
+            // CRITICAL FIX: Do NOT relock if already unlocked!
+            if (cloudData.isLockEnabled && cloudData.securityPin && !isSessionAlreadyUnlocked()) {
               setIsVaultLocked(true);
             }
           }
@@ -328,6 +339,10 @@ export default function NivarpOS() {
   const handleUpdateSecurityPin = (newPin: string, enabled: boolean) => {
     setSecurityPin(newPin);
     setIsLockEnabled(enabled);
+    if (!enabled) {
+      if (typeof window !== 'undefined') sessionStorage.removeItem(SESSION_UNLOCKED_KEY);
+      setIsVaultLocked(false);
+    }
     idbSet(SECURITY_LOCK_KEY, { securityPin: newPin, isLockEnabled: enabled });
     showToast(enabled ? "Security Lock enabled." : "Security Lock disabled.", "info");
   };
@@ -336,6 +351,9 @@ export default function NivarpOS() {
     e.preventDefault();
     if (unlockInput.trim() === securityPin.trim()) {
       setIsVaultLocked(false);
+      if (typeof window !== 'undefined') {
+        sessionStorage.setItem(SESSION_UNLOCKED_KEY, 'true');
+      }
       setUnlockInput('');
       setUnlockError(false);
       showToast("Terminal unlocked.", "success");
@@ -350,6 +368,9 @@ export default function NivarpOS() {
       showToast("Configure your PIN in Settings first.", "info");
       setActiveTab('settings');
       return;
+    }
+    if (typeof window !== 'undefined') {
+      sessionStorage.removeItem(SESSION_UNLOCKED_KEY);
     }
     setIsVaultLocked(true);
   };
@@ -577,6 +598,7 @@ export default function NivarpOS() {
 
     if (typeof window !== 'undefined') {
       localStorage.clear();
+      sessionStorage.clear();
     }
 
     showToast("All journal data wiped clean.", "info");
@@ -711,7 +733,7 @@ export default function NivarpOS() {
 
   return (
     <div className="min-h-screen bg-[#050608] text-zinc-100 font-sans selection:bg-emerald-500/20 antialiased pb-20 md:pb-6">
-      {/* FLOATING TOAST NOTIFICATION: PERFECTLY CENTERED VERTICALLY IN BOTTOM-RIGHT CORNER */}
+      {/* FLOATING TOAST NOTIFICATION */}
       {toast && (
         <div className="fixed bottom-5 right-5 z-[120] flex items-center gap-3 px-4 py-3 rounded-2xl bg-[#0C0E16]/95 border border-white/15 text-white shadow-[0_16px_40px_rgba(0,0,0,0.85)] backdrop-blur-2xl animate-in fade-in slide-in-from-bottom-2 duration-150 font-mono text-xs max-w-sm">
           <div className={`p-1.5 rounded-xl shrink-0 flex items-center justify-center ${
