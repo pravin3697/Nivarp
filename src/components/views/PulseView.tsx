@@ -17,8 +17,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Check,
-  X,
-  Calendar
+  X
 } from 'lucide-react';
 
 interface PulseViewProps {
@@ -70,14 +69,12 @@ export function PulseView({
 }: PulseViewProps) {
   const [filterMode, setFilterMode] = useState<'rules-only' | 'all'>('rules-only');
 
-  // Discover latest trade date or fallback to now
   const latestTradeDate = useMemo(() => {
     if (!trades.length) return new Date();
     const timestamps = trades.map(t => parseDateToTimestamp(t.tradeDate)).filter(ts => ts > 0);
     return timestamps.length ? new Date(Math.max(...timestamps)) : new Date();
   }, [trades]);
 
-  // View state: Month date navigation cursor
   const [currentDateCursor, setCurrentDateCursor] = useState<Date>(() => latestTradeDate);
   const [isAllTime, setIsAllTime] = useState<boolean>(false);
 
@@ -97,7 +94,6 @@ export function PulseView({
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [isTimeDropdownOpen]);
 
-  // Navigate forward / backward 1 month
   const handlePrevMonth = () => {
     setIsAllTime(false);
     setCurrentDateCursor(prev => new Date(prev.getFullYear(), prev.getMonth() - 1, 1));
@@ -118,13 +114,11 @@ export function PulseView({
     return `${monthNames[currentDateCursor.getMonth()]} ${currentDateCursor.getFullYear()}`;
   }, [currentDateCursor]);
 
-  // Dashboard trades: Filtered by Month cursor (or All Time) and Rules
   const dashboardTrades = useMemo(() => {
     const curYear = currentDateCursor.getFullYear();
     const curMonth = currentDateCursor.getMonth();
 
     return trades.filter(t => {
-      // 1. Timeframe Filter
       if (!isAllTime) {
         const ts = parseDateToTimestamp(t.tradeDate);
         if (ts) {
@@ -135,7 +129,6 @@ export function PulseView({
         }
       }
 
-      // 2. Rules Discipline Filter
       if (filterMode === 'rules-only') {
         const tag = t.behaviorTag;
         return (
@@ -149,7 +142,6 @@ export function PulseView({
     });
   }, [trades, filterMode, isAllTime, currentDateCursor]);
 
-  // Dynamic Dashboard Stats
   const dynamicStats = useMemo(() => {
     const list = dashboardTrades;
     const total = list.length;
@@ -207,7 +199,6 @@ export function PulseView({
     };
   }, [dashboardTrades]);
 
-  // Dashboard Growth Trajectory Curve
   const dynamicGrowthCurve = useMemo(() => {
     const chronological = [...dashboardTrades].sort((a, b) => parseDateToTimestamp(a.tradeDate) - parseDateToTimestamp(b.tradeDate));
     let cumR = 0;
@@ -217,7 +208,6 @@ export function PulseView({
     });
   }, [dashboardTrades]);
 
-  // Logged trades list: isolates ONLY the list for review by intraday time
   const sortedRecentTrades = useMemo(() => {
     const targetSlot = TIME_WINDOWS.find(w => w.value === listTimeSlot);
 
@@ -253,7 +243,7 @@ export function PulseView({
 
   return (
     <div className="space-y-5 sm:space-y-6">
-      {/* Top Filter Bar: Compact Pager Navigation */}
+      {/* Top Filter Bar */}
       <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 p-3 rounded-2xl bg-[#090A10] border border-white/[0.06] select-none">
         
         {/* Left: Discipline Mode Toggle */}
@@ -286,8 +276,7 @@ export function PulseView({
 
         {/* Right: Sleek Month Pager (Prev / Next) + All Time Toggle */}
         <div className="flex items-center justify-between sm:justify-end gap-2 font-mono text-xs">
-          {/* Month Step Pager */}
-          <div className="flex items-center bg-white/[0.03] border border-white/[0.06] rounded-xl p-0.5 shadow-inner">
+          <div className="flex items-center bg-white/[0.03] border border-white/[0.06] rounded-xl p-0.5">
             <button
               type="button"
               onClick={handlePrevMonth}
@@ -317,24 +306,23 @@ export function PulseView({
             </button>
           </div>
 
-          {/* All Time Lifetime Toggle */}
           <button
             type="button"
             onClick={() => setIsAllTime(prev => !prev)}
             className={`px-3 py-1.5 rounded-xl font-bold transition-all border ${
               isAllTime
-                ? 'bg-cyan-500/20 text-cyan-300 border-cyan-500/50 shadow-sm'
+                ? 'bg-cyan-500/20 text-cyan-300 border-cyan-500/40 shadow-sm'
                 : 'bg-white/[0.02] text-zinc-400 border-white/[0.06] hover:text-white'
             }`}
           >
-            {isAllTime ? 'All Time' : 'All Time'}
+            All Time
           </button>
         </div>
       </div>
 
       {/* KPI Cards Row */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
-        {/* Net Edge & Expectancy */}
+        {/* Net Edge */}
         <div className="p-4 sm:p-5 rounded-2xl bg-[#090A10] border border-white/[0.06]">
           <div className="flex items-center justify-between text-zinc-500 text-[10px] sm:text-xs font-mono uppercase mb-1 sm:mb-2">
             <span>{filterMode === 'rules-only' ? 'System Net Edge' : 'Realized Edge'}</span>
@@ -349,7 +337,7 @@ export function PulseView({
           </div>
         </div>
 
-        {/* Strike Accuracy & Risk/Reward */}
+        {/* Win Rate */}
         <div className="p-4 sm:p-5 rounded-2xl bg-[#090A10] border border-white/[0.06]">
           <div className="flex items-center justify-between text-zinc-500 text-[10px] sm:text-xs font-mono uppercase mb-1 sm:mb-2">
             <span>{filterMode === 'rules-only' ? 'System Win Rate' : 'Total Win Rate'}</span>
@@ -376,7 +364,7 @@ export function PulseView({
           </div>
         </div>
 
-        {/* Drawdown & ATH Peak */}
+        {/* Drawdown & Peak */}
         <div className="p-4 sm:p-5 rounded-2xl bg-[#090A10] border border-white/[0.06]">
           <div className="flex items-center justify-between text-zinc-500 text-[10px] sm:text-xs font-mono uppercase mb-1 sm:mb-2">
             <span>Drawdown & Peak</span>
@@ -391,7 +379,7 @@ export function PulseView({
         </div>
       </div>
 
-      {/* Trajectory Growth Curve */}
+      {/* Trajectory Growth Curve with Balanced Contrast Numbers & Graph Lines */}
       <div className="p-4 sm:p-6 rounded-2xl bg-[#090A10] border border-white/[0.06]">
         <div className="flex items-center justify-between mb-3">
           <h3 className="font-mono text-xs uppercase text-zinc-400 flex items-center gap-2">
@@ -406,20 +394,31 @@ export function PulseView({
         </div>
         <div className="h-56 sm:h-72 w-full">
           {dashboardTrades.length === 0 ? (
-            <div className="h-full w-full flex items-center justify-center text-xs font-mono text-zinc-600 border border-dashed border-white/[0.05] rounded-xl p-4 text-center">
+            <div className="h-full w-full flex items-center justify-center text-xs font-mono text-zinc-500 border border-dashed border-white/[0.05] rounded-xl p-4 text-center">
               No trades matching {isAllTime ? 'lifetime records' : monthLabel}.
             </div>
           ) : (
             <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={dynamicGrowthCurve}>
+              <AreaChart data={dynamicGrowthCurve} margin={{ top: 10, right: 10, bottom: 5, left: -15 }}>
                 <defs>
                   <linearGradient id="curveLaser" x1="0" y1="0" x2="0" y2="1">
                     <stop offset="0%" stopColor={filterMode === 'rules-only' ? '#00F5A0' : '#22d3ee'} stopOpacity={0.25} />
                     <stop offset="100%" stopColor={filterMode === 'rules-only' ? '#00F5A0' : '#22d3ee'} stopOpacity={0.0} />
                   </linearGradient>
                 </defs>
-                <XAxis dataKey="point" stroke="#27272A" fontSize={10} tickLine={false} />
-                <YAxis stroke="#27272A" fontSize={10} tickLine={false} unit="R" />
+                {/* Clean, readable axis numbers without over-brightness */}
+                <XAxis 
+                  dataKey="point" 
+                  stroke="#3F3F46" 
+                  tick={{ fill: '#A1A1AA', fontSize: 10, fontFamily: 'monospace' }} 
+                  tickLine={{ stroke: '#3F3F46' }} 
+                />
+                <YAxis 
+                  stroke="#3F3F46" 
+                  tick={{ fill: '#A1A1AA', fontSize: 10, fontFamily: 'monospace' }} 
+                  tickLine={{ stroke: '#3F3F46' }} 
+                  unit="R" 
+                />
                 <Tooltip 
                   contentStyle={{ backgroundColor: '#0C0D14', borderColor: '#27272A', borderRadius: '12px', fontSize: '11px', fontFamily: 'monospace' }} 
                   formatter={(val: any) => [`${Number(val).toFixed(2)}R`, 'Cumulative Return']}
@@ -428,7 +427,7 @@ export function PulseView({
                   type="monotone" 
                   dataKey="r" 
                   stroke={filterMode === 'rules-only' ? '#00F5A0' : '#22d3ee'} 
-                  strokeWidth={2.5} 
+                  strokeWidth={2} 
                   fill="url(#curveLaser)" 
                 />
               </AreaChart>
@@ -437,7 +436,7 @@ export function PulseView({
         </div>
       </div>
 
-      {/* Logged Trade Entries with Cybernetic Custom Dropdown */}
+      {/* Logged Trade Entries */}
       <div className="p-4 sm:p-6 rounded-2xl bg-[#090A10] border border-white/[0.06] space-y-3">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-2 border-b border-white/[0.06] gap-2.5">
           <div>

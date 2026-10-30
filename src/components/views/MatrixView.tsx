@@ -45,18 +45,15 @@ interface MatrixViewProps {
 }
 
 export function MatrixView({ collections, trades, onOpenInspector }: MatrixViewProps) {
-  // Discover latest trade date or fallback to now
   const latestTradeDate = useMemo(() => {
     if (!trades.length) return new Date();
     const timestamps = trades.map(t => parseDateToTimestamp(t.tradeDate)).filter(ts => ts > 0);
     return timestamps.length ? new Date(Math.max(...timestamps)) : new Date();
   }, [trades]);
 
-  // View state: Month date navigation cursor
   const [currentDateCursor, setCurrentDateCursor] = useState<Date>(() => latestTradeDate);
   const [isAllTime, setIsAllTime] = useState<boolean>(false);
 
-  // Navigate forward / backward 1 month
   const handlePrevMonth = () => {
     setIsAllTime(false);
     setCurrentDateCursor(prev => new Date(prev.getFullYear(), prev.getMonth() - 1, 1));
@@ -77,7 +74,6 @@ export function MatrixView({ collections, trades, onOpenInspector }: MatrixViewP
     return `${monthNames[currentDateCursor.getMonth()]} ${currentDateCursor.getFullYear()}`;
   }, [currentDateCursor]);
 
-  // Filtered trades by timeframe cursor
   const filteredTrades = useMemo(() => {
     const curYear = currentDateCursor.getFullYear();
     const curMonth = currentDateCursor.getMonth();
@@ -96,7 +92,6 @@ export function MatrixView({ collections, trades, onOpenInspector }: MatrixViewP
     });
   }, [trades, isAllTime, currentDateCursor]);
 
-  // Normalize trades
   const normalizedTrades = useMemo(() => {
     return filteredTrades.map(t => ({
       ...t,
@@ -104,7 +99,6 @@ export function MatrixView({ collections, trades, onOpenInspector }: MatrixViewP
     }));
   }, [filteredTrades]);
 
-  // Helper to extract clean numeric R from MAE/MFE strings with Rupee price guard
   const parseExcursionR = (val: string | undefined, trade: Trade, isMae: boolean): number => {
     if (!val) {
       if (isMae) return trade.rMultiple < 0 ? Math.min(1.0, Math.abs(trade.rMultiple)) : 0.3;
@@ -150,7 +144,6 @@ export function MatrixView({ collections, trades, onOpenInspector }: MatrixViewP
     return null;
   };
 
-  // 1. Behavioral Execution Analytics
   const behaviorAnalytics = useMemo(() => {
     const totalTrades = normalizedTrades.length;
 
@@ -263,7 +256,6 @@ export function MatrixView({ collections, trades, onOpenInspector }: MatrixViewP
     };
   }, [normalizedTrades]);
 
-  // 2. Setup Realization Edge with Exit Capture Efficiency
   const setupEdge = useMemo(() => {
     const getBaseModelName = (name: string): string => {
       const clean = displaySetupName(name);
@@ -443,7 +435,6 @@ export function MatrixView({ collections, trades, onOpenInspector }: MatrixViewP
     }).sort((a, b) => b.netR - a.netR);
   }, [collections, normalizedTrades]);
 
-  // Overall Exit Efficiency
   const globalEfficiencyStats = useMemo(() => {
     let totalRealizedWinR = 0;
     let totalPeakWinMfe = 0;
@@ -463,7 +454,6 @@ export function MatrixView({ collections, trades, onOpenInspector }: MatrixViewP
     return { efficiency, unclaimedR };
   }, [normalizedTrades]);
 
-  // 3. Duration Stats
   const durationStats = useMemo(() => {
     let totalWinDuration = 0;
     let winCount = 0;
@@ -509,7 +499,6 @@ export function MatrixView({ collections, trades, onOpenInspector }: MatrixViewP
     };
   }, [normalizedTrades]);
 
-  // 4. Drawdown Depth
   const drawdownData = useMemo(() => {
     if (!normalizedTrades.length) return { data: [], maxDrawdown: 0 };
     const sorted = [...normalizedTrades].sort((a, b) => parseDateToTimestamp(a.tradeDate) - parseDateToTimestamp(b.tradeDate));
@@ -536,7 +525,6 @@ export function MatrixView({ collections, trades, onOpenInspector }: MatrixViewP
     return { data, maxDrawdown: Number(maxDrawdown.toFixed(2)) };
   }, [normalizedTrades]);
 
-  // 5. Global Time Edge
   const timeEdgeAnalysis = useMemo(() => {
     const timeSlots = [
       { label: '09:15 - 10:00 AM', startMin: 9 * 60 + 15, endMin: 10 * 60 - 1 },
@@ -595,7 +583,6 @@ export function MatrixView({ collections, trades, onOpenInspector }: MatrixViewP
     };
   }, [normalizedTrades]);
 
-  // 6. Asset Edge
   const assetEdge = useMemo(() => {
     const map = new Map<string, { total: number; wins: number; netR: number }>();
 
@@ -619,7 +606,6 @@ export function MatrixView({ collections, trades, onOpenInspector }: MatrixViewP
       .sort((a, b) => b.netR - a.netR);
   }, [normalizedTrades]);
 
-  // 7. Day of Week Edge
   const dayEdge = useMemo(() => {
     const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
     const dayStats = days.map(d => ({ day: d, trades: 0, wins: 0, netR: 0 }));
@@ -668,7 +654,7 @@ export function MatrixView({ collections, trades, onOpenInspector }: MatrixViewP
 
         {/* Month Pager Controls */}
         <div className="flex items-center justify-between sm:justify-end gap-2 font-mono text-xs self-stretch sm:self-auto">
-          <div className="flex items-center bg-white/[0.03] border border-white/[0.06] rounded-xl p-0.5 shadow-inner">
+          <div className="flex items-center bg-white/[0.03] border border-white/[0.06] rounded-xl p-0.5">
             <button
               type="button"
               onClick={handlePrevMonth}
@@ -703,7 +689,7 @@ export function MatrixView({ collections, trades, onOpenInspector }: MatrixViewP
             onClick={() => setIsAllTime(prev => !prev)}
             className={`px-3 py-1.5 rounded-xl font-bold transition-all border ${
               isAllTime
-                ? 'bg-cyan-500/20 text-cyan-300 border-cyan-500/50 shadow-sm'
+                ? 'bg-cyan-500/20 text-cyan-300 border-cyan-500/40 shadow-sm'
                 : 'bg-white/[0.02] text-zinc-400 border-white/[0.06] hover:text-white'
             }`}
           >
@@ -719,18 +705,18 @@ export function MatrixView({ collections, trades, onOpenInspector }: MatrixViewP
             <ShieldCheck className="w-5 h-5 text-emerald-400" />
             <div>
               <h3 className="text-sm font-bold text-white uppercase tracking-wider font-mono">Behavioral Discipline & Leakage Audit</h3>
-              <p className="text-[11px] text-zinc-500">True edge realization vs. cost of unforced execution errors.</p>
+              <p className="text-[11px] text-zinc-400">True edge realization vs. cost of unforced execution errors.</p>
             </div>
           </div>
 
           <div className="flex items-center gap-4 font-mono text-xs">
             <div className="flex items-center gap-1.5">
-              <span className="text-zinc-500">Discipline Score:</span>
+              <span className="text-zinc-400">Discipline Score:</span>
               <span className="text-base font-black text-cyan-400">{behaviorAnalytics.complianceRate}%</span>
             </div>
             <div className="h-4 w-[1px] bg-white/10" />
             <div className="flex items-center gap-1.5">
-              <span className="text-zinc-500">Unforced Mistake Cost:</span>
+              <span className="text-zinc-400">Unforced Mistake Cost:</span>
               <span className={`text-base font-black ${behaviorAnalytics.mistakeR <= 0 ? 'text-rose-400' : 'text-emerald-400'}`}>
                 {behaviorAnalytics.mistakeR >= 0 ? '+' : ''}{behaviorAnalytics.mistakeR}R
               </span>
@@ -766,7 +752,7 @@ export function MatrixView({ collections, trades, onOpenInspector }: MatrixViewP
                 </div>
 
                 <div className="space-y-1">
-                  <span className="text-[10px] font-mono text-zinc-500 block">Realized Return</span>
+                  <span className="text-[10px] font-mono text-zinc-400 block">Realized Return</span>
                   <div className={`text-2xl font-black font-mono ${isProfit ? 'text-emerald-400' : 'text-rose-400'}`}>
                     {isProfit ? '+' : ''}{item.netR.toFixed(2)}R
                   </div>
@@ -795,14 +781,14 @@ export function MatrixView({ collections, trades, onOpenInspector }: MatrixViewP
 
           <div className="flex items-center gap-4 text-right">
             <div>
-              <span className="text-[10px] text-zinc-500 block">Avg Cost per Mistake</span>
+              <span className="text-[10px] text-zinc-400 block">Avg Cost per Mistake</span>
               <span className="text-sm font-black text-rose-400">
                 {behaviorAnalytics.avgCostPerMistake}R / trade
               </span>
             </div>
             <div className="h-6 w-[1px] bg-rose-500/20 hidden sm:block" />
             <div className="hidden sm:block text-left">
-              <span className="text-[10px] text-zinc-500 block">Capital Saved If Skipped</span>
+              <span className="text-[10px] text-zinc-400 block">Capital Saved If Skipped</span>
               <span className="text-sm font-black text-emerald-400">
                 +{Math.abs(behaviorAnalytics.mistakeR)}R Saved
               </span>
@@ -812,7 +798,7 @@ export function MatrixView({ collections, trades, onOpenInspector }: MatrixViewP
       </div>
 
       {/* 2. CONSOLIDATED SETUP PROBABILITY, EXCURSION & EXIT EFFICIENCY MATRIX */}
-      <div className="w-full p-4 sm:p-6 rounded-2xl bg-[#090A10] border border-white/[0.06] space-y-4 shadow-lg">
+      <div className="w-full p-4 sm:p-6 rounded-2xl bg-[#090A10] border border-white/[0.06] space-y-4">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-3 border-b border-white/[0.06] gap-2">
           <div className="flex items-center gap-2.5">
             <BarChart3 className="w-5 h-5 text-emerald-400" />
@@ -840,7 +826,7 @@ export function MatrixView({ collections, trades, onOpenInspector }: MatrixViewP
         </div>
 
         {setupEdge.length === 0 ? (
-          <div className="py-12 text-center text-xs font-mono text-zinc-600">
+          <div className="py-12 text-center text-xs font-mono text-zinc-500">
             No playbook setups logged for {isAllTime ? 'lifetime records' : monthLabel}.
           </div>
         ) : (
@@ -855,12 +841,12 @@ export function MatrixView({ collections, trades, onOpenInspector }: MatrixViewP
                   <div className="flex-1 min-w-[260px]">
                     <div className="flex items-center gap-2 flex-wrap">
                       <span className="text-sm font-bold text-white">{col.name}</span>
-                      <span className="text-[9px] sm:text-[10px] font-mono px-2 py-0.5 rounded bg-zinc-800/80 text-zinc-400 border border-white/[0.04]">
+                      <span className="text-[9px] sm:text-[10px] font-mono px-2 py-0.5 rounded bg-zinc-800 text-zinc-400 border border-white/[0.04]">
                         {col.category}
                       </span>
                     </div>
                     
-                    <div className="text-[11px] font-mono text-zinc-500 mt-1 flex flex-wrap items-center gap-2">
+                    <div className="text-[11px] font-mono text-zinc-400 mt-1 flex flex-wrap items-center gap-2">
                       <span>{col.total} Total Trades</span>
                       <span>•</span>
                       <span className="text-zinc-300 font-bold">{col.wr}% Win Rate</span>
@@ -895,7 +881,7 @@ export function MatrixView({ collections, trades, onOpenInspector }: MatrixViewP
                           {col.wins > 0 ? `${col.exitEfficiency}%` : '—'}
                         </span>
                         {col.rLeftOnTable > 0 && col.wins > 0 && (
-                          <span className="text-[9px] text-zinc-500 font-normal">
+                          <span className="text-[9px] text-zinc-400 font-normal">
                             (-{col.rLeftOnTable}R left)
                           </span>
                         )}
@@ -903,7 +889,7 @@ export function MatrixView({ collections, trades, onOpenInspector }: MatrixViewP
                     </div>
 
                     <div className="px-2.5 py-1 rounded-xl bg-cyan-500/10 border border-cyan-500/25 flex flex-col items-start min-w-[120px]">
-                      <span className="text-[9px] text-zinc-500 uppercase flex items-center gap-1 font-bold">
+                      <span className="text-[9px] text-zinc-400 uppercase flex items-center gap-1 font-bold">
                         <Clock className="w-2.5 h-2.5 text-cyan-400" />
                         <span>Peak Edge Time</span>
                       </span>
@@ -913,12 +899,12 @@ export function MatrixView({ collections, trades, onOpenInspector }: MatrixViewP
                     </div>
 
                     <div className="px-2.5 py-1 rounded-xl bg-emerald-500/10 border border-emerald-500/25 text-right min-w-[70px]">
-                      <span className="text-[9px] text-zinc-500 block uppercase font-bold">Avg MFE</span>
+                      <span className="text-[9px] text-zinc-400 block uppercase font-bold">Avg MFE</span>
                       <span className="text-[11px] font-black text-emerald-400">+{col.avgMfe}R</span>
                     </div>
 
                     <div className="px-2.5 py-1 rounded-xl bg-rose-500/10 border border-rose-500/25 text-right min-w-[70px]">
-                      <span className="text-[9px] text-zinc-500 block uppercase font-bold">Avg MAE</span>
+                      <span className="text-[9px] text-zinc-400 block uppercase font-bold">Avg MAE</span>
                       <span className="text-[11px] font-black text-rose-400">-{col.avgMae}R</span>
                     </div>
 
@@ -963,25 +949,25 @@ export function MatrixView({ collections, trades, onOpenInspector }: MatrixViewP
 
           <div className="h-56 w-full">
             <ResponsiveContainer width="100%" height="100%">
-              <ScatterChart margin={{ top: 10, right: 10, bottom: 10, left: -20 }}>
+              <ScatterChart margin={{ top: 10, right: 10, bottom: 5, left: -15 }}>
                 <XAxis 
                   type="number" 
                   dataKey="duration" 
                   name="Holding Time" 
                   unit="m" 
                   domain={[0, 60]}
-                  stroke="#27272A" 
-                  fontSize={10} 
-                  tickLine={false} 
+                  stroke="#3F3F46" 
+                  tick={{ fill: '#A1A1AA', fontSize: 10, fontFamily: 'monospace' }} 
+                  tickLine={{ stroke: '#3F3F46' }} 
                 />
                 <YAxis 
                   type="number" 
                   dataKey="r" 
                   name="Return" 
                   unit="R" 
-                  stroke="#27272A" 
-                  fontSize={10} 
-                  tickLine={false} 
+                  stroke="#3F3F46" 
+                  tick={{ fill: '#A1A1AA', fontSize: 10, fontFamily: 'monospace' }} 
+                  tickLine={{ stroke: '#3F3F46' }} 
                 />
                 <ZAxis range={[70, 70]} />
                 <Tooltip 
@@ -1022,7 +1008,7 @@ export function MatrixView({ collections, trades, onOpenInspector }: MatrixViewP
                     );
                   }}
                 />
-                <ReferenceLine y={0} stroke="rgba(255,255,255,0.15)" strokeDasharray="3 3" />
+                <ReferenceLine y={0} stroke="rgba(255,255,255,0.18)" strokeDasharray="3 3" />
                 <Scatter 
                   data={durationStats.scatterData.filter(d => d.isWin)} 
                   fill="#10b981" 
@@ -1110,20 +1096,31 @@ export function MatrixView({ collections, trades, onOpenInspector }: MatrixViewP
 
           <div className="h-48 sm:h-56 w-full">
             {!drawdownData.data || drawdownData.data.length === 0 ? (
-              <div className="h-full flex items-center justify-center text-xs font-mono text-zinc-600 border border-dashed border-white/5 rounded-xl p-4 text-center">
+              <div className="h-full flex items-center justify-center text-xs font-mono text-zinc-500 border border-dashed border-white/5 rounded-xl p-4 text-center">
                 No trades available to calculate drawdown depth.
               </div>
             ) : (
               <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={drawdownData.data}>
+                <AreaChart data={drawdownData.data} margin={{ top: 10, right: 10, bottom: 5, left: -15 }}>
                   <defs>
                     <linearGradient id="drawdownFill" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor="#f43f5e" stopOpacity={0.05} />
+                      <stop offset="0%" stopColor="#f43f5e" stopOpacity={0.08} />
                       <stop offset="100%" stopColor="#f43f5e" stopOpacity={0.35} />
                     </linearGradient>
                   </defs>
-                  <XAxis dataKey="point" stroke="#27272A" fontSize={10} tickLine={false} />
-                  <YAxis stroke="#27272A" fontSize={10} tickLine={false} unit="R" domain={['auto', 0]} />
+                  <XAxis 
+                    dataKey="point" 
+                    stroke="#3F3F46" 
+                    tick={{ fill: '#A1A1AA', fontSize: 10, fontFamily: 'monospace' }} 
+                    tickLine={{ stroke: '#3F3F46' }} 
+                  />
+                  <YAxis 
+                    stroke="#3F3F46" 
+                    tick={{ fill: '#A1A1AA', fontSize: 10, fontFamily: 'monospace' }} 
+                    tickLine={{ stroke: '#3F3F46' }} 
+                    unit="R" 
+                    domain={['auto', 0]} 
+                  />
                   <Tooltip
                     contentStyle={{ backgroundColor: '#090A10', borderColor: '#27272A', borderRadius: '12px', fontSize: '11px', fontFamily: 'monospace' }}
                     formatter={(val: any) => [`${val}R`, 'Drawdown from Peak']}
@@ -1252,7 +1249,7 @@ export function MatrixView({ collections, trades, onOpenInspector }: MatrixViewP
             </div>
 
             {assetEdge.length === 0 ? (
-              <div className="py-8 text-center text-xs font-mono text-zinc-600">
+              <div className="py-8 text-center text-xs font-mono text-zinc-500">
                 No ticker records for {isAllTime ? 'lifetime records' : monthLabel}.
               </div>
             ) : (
