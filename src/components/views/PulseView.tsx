@@ -14,8 +14,11 @@ import {
   ShieldCheck, 
   Clock, 
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
   Check,
-  X
+  X,
+  Calendar
 } from 'lucide-react';
 
 interface PulseViewProps {
@@ -66,13 +69,22 @@ export function PulseView({
   onOpenDebrief,
 }: PulseViewProps) {
   const [filterMode, setFilterMode] = useState<'rules-only' | 'all'>('rules-only');
-  const [timeframe, setTimeframe] = useState<'week' | 'month' | 'all'>('all');
+
+  // Discover latest trade date or fallback to now
+  const latestTradeDate = useMemo(() => {
+    if (!trades.length) return new Date();
+    const timestamps = trades.map(t => parseDateToTimestamp(t.tradeDate)).filter(ts => ts > 0);
+    return timestamps.length ? new Date(Math.max(...timestamps)) : new Date();
+  }, [trades]);
+
+  // View state: Month date navigation cursor
+  const [currentDateCursor, setCurrentDateCursor] = useState<Date>(() => latestTradeDate);
+  const [isAllTime, setIsAllTime] = useState<boolean>(false);
+
   const [listTimeSlot, setListTimeSlot] = useState<string>('all');
   const [isTimeDropdownOpen, setIsTimeDropdownOpen] = useState(false);
-
   const dropdownRef = useRef<HTMLDivElement>(null);
 
-  // Close dropdown on outside click
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
       if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
@@ -85,26 +97,45 @@ export function PulseView({
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [isTimeDropdownOpen]);
 
-  // Dashboard-level trades: filtered strictly by Rules and Calendar Period
+  // Navigate forward / backward 1 month
+  const handlePrevMonth = () => {
+    setIsAllTime(false);
+    setCurrentDateCursor(prev => new Date(prev.getFullYear(), prev.getMonth() - 1, 1));
+  };
+
+  const handleNextMonth = () => {
+    setIsAllTime(false);
+    setCurrentDateCursor(prev => new Date(prev.getFullYear(), prev.getMonth() + 1, 1));
+  };
+
+  const handleSnapToLatest = () => {
+    setIsAllTime(false);
+    setCurrentDateCursor(latestTradeDate);
+  };
+
+  const monthLabel = useMemo(() => {
+    const monthNames = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+    return `${monthNames[currentDateCursor.getMonth()]} ${currentDateCursor.getFullYear()}`;
+  }, [currentDateCursor]);
+
+  // Dashboard trades: Filtered by Month cursor (or All Time) and Rules
   const dashboardTrades = useMemo(() => {
-    const now = new Date();
+    const curYear = currentDateCursor.getFullYear();
+    const curMonth = currentDateCursor.getMonth();
 
     return trades.filter(t => {
-      const ts = parseDateToTimestamp(t.tradeDate);
-      if (ts) {
-        const d = new Date(ts);
-        if (timeframe === 'week') {
-          const currentDay = now.getDay();
-          const diffToMonday = currentDay === 0 ? 6 : currentDay - 1;
-          const monday = new Date(now);
-          monday.setDate(now.getDate() - diffToMonday);
-          monday.setHours(0, 0, 0, 0);
-          if (d < monday) return false;
-        } else if (timeframe === 'month') {
-          if (d.getMonth() !== now.getMonth() || d.getFullYear() !== now.getFullYear()) return false;
+      // 1. Timeframe Filter
+      if (!isAllTime) {
+        const ts = parseDateToTimestamp(t.tradeDate);
+        if (ts) {
+          const d = new Date(ts);
+          if (d.getFullYear() !== curYear || d.getMonth() !== curMonth) {
+            return false;
+          }
         }
       }
 
+      // 2. Rules Discipline Filter
       if (filterMode === 'rules-only') {
         const tag = t.behaviorTag;
         return (
@@ -116,9 +147,9 @@ export function PulseView({
 
       return true;
     });
-  }, [trades, filterMode, timeframe]);
+  }, [trades, filterMode, isAllTime, currentDateCursor]);
 
-  // Overall Dashboard Stats
+  // Dynamic Dashboard Stats
   const dynamicStats = useMemo(() => {
     const list = dashboardTrades;
     const total = list.length;
@@ -186,7 +217,7 @@ export function PulseView({
     });
   }, [dashboardTrades]);
 
-  // Logged trades list: isolates ONLY the list for review
+  // Logged trades list: isolates ONLY the list for review by intraday time
   const sortedRecentTrades = useMemo(() => {
     const targetSlot = TIME_WINDOWS.find(w => w.value === listTimeSlot);
 
@@ -222,7 +253,7 @@ export function PulseView({
 
   return (
     <div className="space-y-5 sm:space-y-6">
-      {/* Top Filter Bar (Controls Dashboard Metrics) */}
+      {/* Top Filter Bar: Compact Pager Navigation */}
       <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 p-3 rounded-2xl bg-[#090A10] border border-white/[0.06] select-none">
         
         {/* Left: Discipline Mode Toggle */}
@@ -253,27 +284,51 @@ export function PulseView({
           </div>
         </div>
 
-        {/* Right: Period Switcher */}
-        <div className="flex items-center justify-between sm:justify-end gap-2.5">
-          <div className="flex items-center p-1 rounded-xl bg-white/[0.03] border border-white/[0.06] text-xs font-mono shrink-0">
-            {(['week', 'month', 'all'] as const).map(t => {
-              const label = t === 'week' ? 'Week' : t === 'month' ? 'Month' : 'All';
-              const isSelected = timeframe === t;
-              return (
-                <button
-                  key={t}
-                  onClick={() => setTimeframe(t)}
-                  className={`w-16 sm:w-20 text-center py-1.5 rounded-lg font-bold transition-all shrink-0 ${
-                    isSelected 
-                      ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 shadow-sm' 
-                      : 'text-zinc-400 hover:text-white border border-transparent'
-                  }`}
-                >
-                  {label}
-                </button>
-              );
-            })}
+        {/* Right: Sleek Month Pager (Prev / Next) + All Time Toggle */}
+        <div className="flex items-center justify-between sm:justify-end gap-2 font-mono text-xs">
+          {/* Month Step Pager */}
+          <div className="flex items-center bg-white/[0.03] border border-white/[0.06] rounded-xl p-0.5 shadow-inner">
+            <button
+              type="button"
+              onClick={handlePrevMonth}
+              className="p-1.5 text-zinc-400 hover:text-white hover:bg-white/[0.06] rounded-lg transition-colors"
+              title="Previous Month"
+            >
+              <ChevronLeft className="w-4 h-4" />
+            </button>
+
+            <div 
+              onClick={handleSnapToLatest}
+              className="px-3 py-1 font-bold text-center select-none cursor-pointer hover:text-cyan-300 transition-colors min-w-[130px] sm:min-w-[145px]"
+              title="Click to reset to current month"
+            >
+              <span className={isAllTime ? 'text-zinc-500' : 'text-cyan-300'}>
+                {monthLabel}
+              </span>
+            </div>
+
+            <button
+              type="button"
+              onClick={handleNextMonth}
+              className="p-1.5 text-zinc-400 hover:text-white hover:bg-white/[0.06] rounded-lg transition-colors"
+              title="Next Month"
+            >
+              <ChevronRight className="w-4 h-4" />
+            </button>
           </div>
+
+          {/* All Time Lifetime Toggle */}
+          <button
+            type="button"
+            onClick={() => setIsAllTime(prev => !prev)}
+            className={`px-3 py-1.5 rounded-xl font-bold transition-all border ${
+              isAllTime
+                ? 'bg-cyan-500/20 text-cyan-300 border-cyan-500/50 shadow-sm'
+                : 'bg-white/[0.02] text-zinc-400 border-white/[0.06] hover:text-white'
+            }`}
+          >
+            {isAllTime ? 'All Time' : 'All Time'}
+          </button>
         </div>
       </div>
 
@@ -352,7 +407,7 @@ export function PulseView({
         <div className="h-56 sm:h-72 w-full">
           {dashboardTrades.length === 0 ? (
             <div className="h-full w-full flex items-center justify-center text-xs font-mono text-zinc-600 border border-dashed border-white/[0.05] rounded-xl p-4 text-center">
-              No trades matching this period.
+              No trades matching {isAllTime ? 'lifetime records' : monthLabel}.
             </div>
           ) : (
             <ResponsiveContainer width="100%" height="100%">
@@ -390,7 +445,7 @@ export function PulseView({
               {filterMode === 'rules-only' ? 'Rules-Based Executions' : 'All Trade Executions'} (Newest First)
             </h3>
             <span className="text-[11px] font-mono text-zinc-500">
-              Showing {sortedRecentTrades.length} of {dashboardTrades.length} Trades
+              Showing {sortedRecentTrades.length} of {dashboardTrades.length} Trades {isAllTime ? '(All Time)' : `(${monthLabel})`}
             </span>
           </div>
 
@@ -422,7 +477,6 @@ export function PulseView({
               )}
             </div>
 
-            {/* Floating Dropdown Menu Panel */}
             {isTimeDropdownOpen && (
               <div className="absolute right-0 top-full mt-1.5 z-50 w-56 bg-[#0B0D14]/95 border border-white/15 rounded-2xl shadow-[0_16px_40px_rgba(0,0,0,0.85)] backdrop-blur-2xl py-1.5 font-mono text-xs divide-y divide-white/[0.05] animate-in fade-in zoom-in-95 duration-100">
                 <div className="p-1 space-y-0.5">
