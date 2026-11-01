@@ -50,6 +50,7 @@ export async function syncMasterToCloud(
     studySpecimens: ChartSpecimen[];
     categoryOrder: string[];
     defaultRiskPerTrade: number;
+    tradingCapital?: number; // Persistent Account Capital
     securityPin?: string;
     isLockEnabled?: boolean;
   },
@@ -63,6 +64,7 @@ export async function syncMasterToCloud(
       collections: payload.collections,
       categoryOrder: payload.categoryOrder,
       defaultRiskPerTrade: payload.defaultRiskPerTrade,
+      tradingCapital: payload.tradingCapital,
       securityPin: payload.securityPin,
       isLockEnabled: payload.isLockEnabled,
       updatedAt: Date.now()
@@ -105,6 +107,7 @@ export async function fetchMasterFromCloud(userId: string = 'master'): Promise<{
   studySpecimens: ChartSpecimen[];
   categoryOrder: string[];
   defaultRiskPerTrade?: number;
+  tradingCapital?: number;
   securityPin?: string;
   isLockEnabled?: boolean;
 } | null> {
@@ -151,6 +154,7 @@ export async function fetchMasterFromCloud(userId: string = 'master'): Promise<{
       studySpecimens: Array.from(uniqueSpecimensMap.values()),
       categoryOrder: Array.isArray(metaData.categoryOrder) ? metaData.categoryOrder : MASTER_CATEGORY_ORDER,
       defaultRiskPerTrade: metaData.defaultRiskPerTrade || 600,
+      tradingCapital: metaData.tradingCapital || 70000,
       securityPin: metaData.securityPin || '',
       isLockEnabled: !!metaData.isLockEnabled
     };

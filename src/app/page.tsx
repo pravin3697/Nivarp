@@ -68,6 +68,7 @@ export default function NivarpOS() {
   const [categoryOrder, setCategoryOrder] = useState<string[]>(MASTER_CATEGORY_ORDER);
   const [studySpecimens, setStudySpecimens] = useState<ChartSpecimen[]>([]);
   const [defaultRiskPerTrade, setDefaultRiskPerTrade] = useState<number>(600);
+  const [tradingCapital, setTradingCapital] = useState<number>(70000); // Persistent Capital
   const [activeTab, setActiveTab] = useState<'pulse' | 'codex' | 'matrix' | 'heatmap' | 'settings'>('pulse');
   const [selectedCollection, setSelectedCollection] = useState<PlaybookCollection | null>(null);
 
@@ -128,7 +129,6 @@ export default function NivarpOS() {
     }
   };
 
-  // Helper to check if current tab session is already unlocked
   const isSessionAlreadyUnlocked = (): boolean => {
     if (typeof window === 'undefined') return false;
     return sessionStorage.getItem(SESSION_UNLOCKED_KEY) === 'true';
@@ -147,11 +147,11 @@ export default function NivarpOS() {
           setStudySpecimens(cloudData.studySpecimens || []);
           setCategoryOrder(cloudData.categoryOrder || MASTER_CATEGORY_ORDER);
           if (cloudData.defaultRiskPerTrade) setDefaultRiskPerTrade(cloudData.defaultRiskPerTrade);
+          if (cloudData.tradingCapital) setTradingCapital(cloudData.tradingCapital);
           
           if (cloudData.securityPin !== undefined) {
             setSecurityPin(cloudData.securityPin);
             setIsLockEnabled(!!cloudData.isLockEnabled);
-            // CRITICAL FIX: Only lock if user hasn't already unlocked in this active browser session!
             if (cloudData.isLockEnabled && cloudData.securityPin && !isSessionAlreadyUnlocked()) {
               setIsVaultLocked(true);
             }
@@ -255,7 +255,6 @@ export default function NivarpOS() {
           if (idbSecurity.securityPin) setSecurityPin(idbSecurity.securityPin);
           if (idbSecurity.isLockEnabled !== undefined) {
             setIsLockEnabled(idbSecurity.isLockEnabled);
-            // CRITICAL FIX: Only lock if user hasn't already unlocked in this session
             if (idbSecurity.isLockEnabled && idbSecurity.securityPin && !isSessionAlreadyUnlocked()) {
               setIsVaultLocked(true);
             }
@@ -266,6 +265,7 @@ export default function NivarpOS() {
           if (idbMaster.trades?.length) setTrades(sanitizeTrades(idbMaster.trades));
           if (idbMaster.collections?.length) setCollections(idbMaster.collections);
           if (idbMaster.defaultRiskPerTrade) setDefaultRiskPerTrade(idbMaster.defaultRiskPerTrade);
+          if (idbMaster.tradingCapital) setTradingCapital(idbMaster.tradingCapital);
         }
 
         if (idbStudy && Array.isArray(idbStudy)) {
@@ -282,10 +282,10 @@ export default function NivarpOS() {
           setCollections(cloudData.collections);
           setStudySpecimens(cloudData.studySpecimens);
           setCategoryOrder(cloudData.categoryOrder);
+          if (cloudData.tradingCapital) setTradingCapital(cloudData.tradingCapital);
           if (cloudData.securityPin !== undefined) {
             setSecurityPin(cloudData.securityPin);
             setIsLockEnabled(!!cloudData.isLockEnabled);
-            // CRITICAL FIX: Do NOT relock if already unlocked!
             if (cloudData.isLockEnabled && cloudData.securityPin && !isSessionAlreadyUnlocked()) {
               setIsVaultLocked(true);
             }
@@ -312,7 +312,8 @@ export default function NivarpOS() {
       trades, 
       collections: deduplicatedCollections, 
       categoryOrder,
-      defaultRiskPerTrade
+      defaultRiskPerTrade,
+      tradingCapital
     });
     idbSet(STUDY_STORAGE_KEY, studySpecimens);
     idbSet(CATEGORY_ORDER_KEY, categoryOrder);
@@ -328,13 +329,14 @@ export default function NivarpOS() {
         studySpecimens,
         categoryOrder,
         defaultRiskPerTrade,
+        tradingCapital,
         securityPin,
         isLockEnabled
       }, currentUser?.uid || 'master');
     }, 2000);
 
     return () => clearTimeout(timer);
-  }, [isLoaded, trades, deduplicatedCollections, categoryOrder, studySpecimens, defaultRiskPerTrade, securityPin, isLockEnabled, currentUser]);
+  }, [isLoaded, trades, deduplicatedCollections, categoryOrder, studySpecimens, defaultRiskPerTrade, tradingCapital, securityPin, isLockEnabled, currentUser]);
 
   const handleUpdateSecurityPin = (newPin: string, enabled: boolean) => {
     setSecurityPin(newPin);
@@ -383,6 +385,7 @@ export default function NivarpOS() {
         categoryOrder,
         studySpecimens,
         defaultRiskPerTrade,
+        tradingCapital,
         securityPin,
         isLockEnabled,
         exportedAt: new Date().toISOString()
@@ -421,6 +424,7 @@ export default function NivarpOS() {
         setCategoryOrder(restoredCats);
         setStudySpecimens(restoredStudy);
         if (d.defaultRiskPerTrade) setDefaultRiskPerTrade(d.defaultRiskPerTrade);
+        if (d.tradingCapital) setTradingCapital(d.tradingCapital);
         if (d.securityPin) setSecurityPin(d.securityPin);
         if (d.isLockEnabled !== undefined) setIsLockEnabled(d.isLockEnabled);
 
@@ -429,7 +433,8 @@ export default function NivarpOS() {
             trades: restoredTrades,
             collections: restoredCols,
             categoryOrder: restoredCats,
-            defaultRiskPerTrade: d.defaultRiskPerTrade || 600
+            defaultRiskPerTrade: d.defaultRiskPerTrade || 600,
+            tradingCapital: d.tradingCapital || 70000
           }),
           idbSet(STUDY_STORAGE_KEY, restoredStudy),
           idbSet(CATEGORY_ORDER_KEY, restoredCats),
@@ -446,6 +451,7 @@ export default function NivarpOS() {
           studySpecimens: restoredStudy,
           categoryOrder: restoredCats,
           defaultRiskPerTrade: d.defaultRiskPerTrade || 600,
+          tradingCapital: d.tradingCapital || 70000,
           securityPin: d.securityPin,
           isLockEnabled: d.isLockEnabled
         }, currentUser?.uid || 'master');
@@ -629,7 +635,6 @@ export default function NivarpOS() {
     });
   }, [trades]);
 
-  // COMBINED SPECIMENS STRICTLY ORDERED NEWEST FIRST
   const activeCollectionSpecimens = useMemo(() => {
     if (!selectedCollection) return [];
     const specs: ChartSpecimen[] = [];
@@ -902,6 +907,7 @@ export default function NivarpOS() {
         {activeTab === 'settings' && (
           <SettingsView
             defaultRisk={defaultRiskPerTrade}
+            tradingCapital={tradingCapital}
             currentUser={currentUser}
             securityPin={securityPin}
             isLockEnabled={isLockEnabled}
@@ -912,6 +918,10 @@ export default function NivarpOS() {
               setDefaultRiskPerTrade(val);
               showToast(`1R Risk updated to ₹${val.toLocaleString('en-IN')}`, "success");
             }} 
+            onChangeTradingCapital={(val: number) => {
+              setTradingCapital(val);
+              showToast(`Account Capital updated to ₹${val.toLocaleString('en-IN')}`, "info");
+            }}
             onExport={handleExportBackup}
             onRestore={handleRestoreBackup}
             onReset={handlePurgeAll}
