@@ -5,7 +5,7 @@ import { Trade, PlaybookCollection, SetupVariantTag } from '@/types/trade';
 import { CustomSetupDropdown } from '@/components/ui/CustomControls';
 import { uploadScreenshotToCloud } from '@/lib/cloudSync';
 import { BEHAVIORAL_TAGS } from '@/components/modals/TradeModals';
-import { FileSpreadsheet, X, UploadCloud, Sparkles, Clipboard, Check, Loader2, Clock, ShieldCheck, Zap, Waves } from 'lucide-react';
+import { FileSpreadsheet, X, UploadCloud, Sparkles, Clipboard, Check, Loader2, Clock, ShieldCheck, Zap, Waves, Ruler } from 'lucide-react';
 
 interface CsvImportStudioProps {
   isOpen: boolean;
@@ -201,7 +201,6 @@ export function CsvImportStudio({
                         value={trade.setupType}
                         onChange={(val) => {
                           onUpdateTrade(idx, 'setupType', val);
-                          // Default first variant if selecting Bearish to Bullish or Liquidity Spring
                           if (/bearish\s+to\s+bullish|bull\s+to\s+bear/i.test(val)) {
                             onUpdateTrade(idx, 'setupSubtype', 'Resistance');
                           } else if (/liquidity\s+spring/i.test(val)) {
@@ -214,11 +213,11 @@ export function CsvImportStudio({
                       />
                     </div>
 
-                    {/* DYNAMIC SUBHEADING SELECTOR: Shows when Bearish to Bullish is selected */}
+                    {/* SUBHEADING SELECTORS */}
                     {isBearToBull && (
                       <div className="p-2.5 rounded-xl bg-white/[0.015] border border-white/[0.06] space-y-1.5 animate-in fade-in duration-150">
                         <label className="text-cyan-400 text-[11px] font-mono font-bold flex items-center justify-between">
-                          <span>Subheading / Trigger Variant (Bearish To Bullish)</span>
+                          <span>Subheading Variant (Bearish To Bullish)</span>
                           <span className="text-[10px] text-zinc-500 font-normal">Zone confirmation behavior</span>
                         </label>
                         <div className="grid grid-cols-2 gap-2">
@@ -263,11 +262,10 @@ export function CsvImportStudio({
                       </div>
                     )}
 
-                    {/* DYNAMIC SUBHEADING SELECTOR: Shows when Liquidity Spring is selected */}
                     {isLiquiditySpring && (
                       <div className="p-2.5 rounded-xl bg-white/[0.015] border border-white/[0.06] space-y-1.5 animate-in fade-in duration-150">
                         <label className="text-emerald-400 text-[11px] font-mono font-bold flex items-center justify-between">
-                          <span>Subheading / Variant (Liquidity Spring)</span>
+                          <span>Subheading Variant (Liquidity Spring)</span>
                           <span className="text-[10px] text-zinc-500 font-normal">Sweep depth & timing</span>
                         </label>
                         <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
@@ -322,8 +320,35 @@ export function CsvImportStudio({
                       </div>
                     )}
 
-                    {/* Clean 3-Column Grid: MAE, MFE, Execution Time */}
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 sm:gap-3 text-xs font-mono">
+                    {/* EXECUTION PARAMETERS + MAINZONE HEIGHT (%) TRACKER */}
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3 text-xs font-mono">
+                      {/* NEW: Mainzone Height (%) input */}
+                      <div>
+                        <label className="text-zinc-400 text-[10px] block mb-1 flex items-center gap-1">
+                          <Ruler className="w-2.5 h-2.5 text-cyan-400" />
+                          <span>Mainzone Height (%)</span>
+                        </label>
+                        <div className="relative">
+                          <input
+                            type="number"
+                            step="0.001"
+                            value={trade.mainzoneHeightPct !== undefined ? trade.mainzoneHeightPct : ''}
+                            onChange={(e) => onUpdateTrade(idx, 'mainzoneHeightPct', parseFloat(e.target.value) || 0)}
+                            placeholder="e.g. 0.138"
+                            className={`w-full bg-[#090A10] border rounded-xl p-2 font-bold outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none ${
+                              trade.mainzoneHeightPct && trade.mainzoneHeightPct > 0.33 
+                                ? 'border-rose-500/60 text-rose-400' 
+                                : 'border-white/10 text-cyan-300 focus:border-cyan-400'
+                            }`}
+                          />
+                          {trade.mainzoneHeightPct !== undefined && trade.mainzoneHeightPct > 0 && (
+                            <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[10px] text-zinc-500 pointer-events-none">
+                              %
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
                       <div>
                         <label className="text-zinc-400 text-[10px] block mb-1">MAE (Heat Taken)</label>
                         <input

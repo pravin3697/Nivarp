@@ -28,6 +28,7 @@ export interface Trade {
   fees: number;
   setupType: string;
   setupSubtype?: SetupVariantTag; // Dynamic subheading variant tag
+  mainzoneHeightPct?: number; // Exact Mainzone height/width in % (e.g. 0.138%)
   regime?: 'Bullish' | 'Bearish' | 'Choppy';
   behaviorTag?: BehavioralTag;
   mae?: string;

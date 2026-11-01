@@ -17,7 +17,8 @@ import {
   ChevronLeft,
   ChevronRight,
   Check,
-  X
+  X,
+  Ruler
 } from 'lucide-react';
 
 interface PulseViewProps {
@@ -69,7 +70,6 @@ export function PulseView({
 }: PulseViewProps) {
   const [filterMode, setFilterMode] = useState<'rules-only' | 'all'>('rules-only');
 
-  // Discover date of the latest actual recorded trade
   const latestTradeDate = useMemo(() => {
     if (!trades.length) return new Date();
     const timestamps = trades.map(t => parseDateToTimestamp(t.tradeDate)).filter(ts => ts > 0);
@@ -79,7 +79,6 @@ export function PulseView({
   const [currentDateCursor, setCurrentDateCursor] = useState<Date>(() => latestTradeDate);
   const [isAllTime, setIsAllTime] = useState<boolean>(false);
 
-  // CRITICAL FIX: Whenever trades finish loading or updating, snap automatically to the latest trade month!
   useEffect(() => {
     if (trades.length > 0) {
       const timestamps = trades.map(t => parseDateToTimestamp(t.tradeDate)).filter(ts => ts > 0);
@@ -131,7 +130,6 @@ export function PulseView({
     const curMonth = currentDateCursor.getMonth();
 
     return trades.filter(t => {
-      // 1. Timeframe Filter
       if (!isAllTime) {
         const ts = parseDateToTimestamp(t.tradeDate);
         if (ts) {
@@ -142,7 +140,6 @@ export function PulseView({
         }
       }
 
-      // 2. Rules Discipline Filter
       if (filterMode === 'rules-only') {
         const tag = t.behaviorTag;
         return (
@@ -449,7 +446,7 @@ export function PulseView({
         </div>
       </div>
 
-      {/* Logged Trade Entries */}
+      {/* Logged Trade Entries with Zone Height Badge */}
       <div className="p-4 sm:p-6 rounded-2xl bg-[#090A10] border border-white/[0.06] space-y-3">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-2 border-b border-white/[0.06] gap-2.5">
           <div>
@@ -548,6 +545,18 @@ export function PulseView({
                       <div className="flex items-center gap-2 flex-wrap">
                         <span className="text-sm font-bold text-white">{t.symbol}</span>
                         <span className="text-[11px] text-zinc-500 font-mono">({t.tradeDate})</span>
+
+                        {/* Mainzone Height Badge */}
+                        {t.mainzoneHeightPct !== undefined && t.mainzoneHeightPct > 0 && (
+                          <span className={`flex items-center gap-1 px-1.5 py-0.2 rounded text-[9px] font-mono font-bold border ${
+                            t.mainzoneHeightPct > 0.33 
+                              ? 'bg-rose-500/10 text-rose-400 border-rose-500/30' 
+                              : 'bg-cyan-500/10 text-cyan-300 border-cyan-500/30'
+                          }`}>
+                            <Ruler className="w-2.5 h-2.5" />
+                            <span>Zone: {t.mainzoneHeightPct}%</span>
+                          </span>
+                        )}
 
                         {t.behaviorTag && (
                           <span className={`px-1.5 py-0.2 rounded border text-[9px] font-mono font-bold ${behaviorClass}`}>

@@ -5,7 +5,7 @@ import { Trade, PlaybookCollection, BehavioralTag, SetupVariantTag, ChartSpecime
 import { CustomSetupDropdown } from '@/components/ui/CustomControls';
 import { uploadScreenshotToCloud } from '@/lib/cloudSync';
 import { formatTo12HourRange } from '@/lib/parser';
-import { X, ImagePlus, Sparkles, Pencil, Clipboard, Check, Loader2, Clock, ShieldCheck, Zap, Waves } from 'lucide-react';
+import { X, ImagePlus, Sparkles, Pencil, Clipboard, Check, Loader2, Clock, ShieldCheck, Zap, Waves, Ruler } from 'lucide-react';
 
 export const BEHAVIORAL_TAGS: { label: BehavioralTag; color: string; border: string; bg: string }[] = [
   { label: 'Rules Followed', color: 'text-emerald-400', border: 'border-emerald-500/40', bg: 'bg-emerald-500/10' },
@@ -144,7 +144,7 @@ export function EditDebriefModal({
             />
           </div>
 
-          {/* DYNAMIC SUBHEADING SELECTOR IN DEBRIEF: Bearish to Bullish */}
+          {/* DYNAMIC SUBHEADING SELECTORS */}
           {isBearToBull && (
             <div className="p-2.5 rounded-xl bg-white/[0.015] border border-white/[0.06] space-y-1.5 animate-in fade-in duration-150">
               <label className="text-cyan-400 text-[11px] font-mono font-bold flex items-center justify-between">
@@ -193,7 +193,6 @@ export function EditDebriefModal({
             </div>
           )}
 
-          {/* DYNAMIC SUBHEADING SELECTOR IN DEBRIEF: Liquidity Spring */}
           {isLiquiditySpring && (
             <div className="p-2.5 rounded-xl bg-white/[0.015] border border-white/[0.06] space-y-1.5 animate-in fade-in duration-150">
               <label className="text-emerald-400 text-[11px] font-mono font-bold flex items-center justify-between">
@@ -252,8 +251,34 @@ export function EditDebriefModal({
             </div>
           )}
 
-          {/* Clean 3-Column Grid: MAE, MFE, and Execution Time */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 sm:gap-3 p-3 rounded-xl bg-white/[0.02] border border-white/[0.04]">
+          {/* PARAMETERS + MAINZONE HEIGHT (%) */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3 p-3 rounded-xl bg-white/[0.02] border border-white/[0.04]">
+            <div>
+              <label className="text-zinc-400 block mb-1 text-[11px] flex items-center gap-1">
+                <Ruler className="w-2.5 h-2.5 text-cyan-400" />
+                <span>Zone Height (%)</span>
+              </label>
+              <div className="relative">
+                <input
+                  type="number"
+                  step="0.001"
+                  value={form.mainzoneHeightPct !== undefined ? form.mainzoneHeightPct : ''}
+                  onChange={(e) => setForm({ ...form, mainzoneHeightPct: parseFloat(e.target.value) || 0 })}
+                  placeholder="e.g. 0.138"
+                  className={`w-full bg-zinc-900 border rounded-lg p-2 font-bold outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none ${
+                    form.mainzoneHeightPct && form.mainzoneHeightPct > 0.33
+                      ? 'border-rose-500/60 text-rose-400'
+                      : 'border-white/10 text-cyan-300 focus:border-cyan-400'
+                  }`}
+                />
+                {form.mainzoneHeightPct !== undefined && form.mainzoneHeightPct > 0 && (
+                  <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[10px] text-zinc-500 pointer-events-none">
+                    %
+                  </span>
+                )}
+              </div>
+            </div>
+
             <div>
               <label className="text-zinc-400 block mb-1 text-[11px]">MAE (Max Heat)</label>
               <input
@@ -528,7 +553,6 @@ export function AddStudyModal({
           setSubtype('General'); 
         }} className="space-y-4 text-xs font-mono">
           
-          {/* Subtypes for Bearish to Bullish */}
           {isBearToBull && (
             <div>
               <label className="text-zinc-400 block mb-1.5 flex items-center justify-between">
@@ -577,7 +601,6 @@ export function AddStudyModal({
             </div>
           )}
 
-          {/* Subtypes for Liquidity Spring: Standard, Extended, Pre 10AM */}
           {isLiquiditySpring && (
             <div>
               <label className="text-zinc-400 block mb-1.5 flex items-center justify-between">
@@ -594,12 +617,9 @@ export function AddStudyModal({
                       : 'bg-white/[0.02] border-white/10 text-zinc-400 hover:text-white hover:border-white/20'
                   }`}
                 >
-                  <div className="flex items-center gap-1.5">
-                    <Zap className="w-3.5 h-3.5 text-emerald-400" />
-                    <div>
-                      <span className="block font-bold text-[11px]">Standard</span>
-                      <span className="text-[9px] text-zinc-500 font-normal">Clean sweep</span>
-                    </div>
+                  <div>
+                    <span className="block font-bold text-[11px]">Standard</span>
+                    <span className="text-[9px] text-zinc-500 font-normal">Clean sweep</span>
                   </div>
                   {subtype === 'Standard Spring' && <Check className="w-3 h-3 text-emerald-400" />}
                 </button>
@@ -613,12 +633,9 @@ export function AddStudyModal({
                       : 'bg-white/[0.02] border-white/10 text-zinc-400 hover:text-white hover:border-white/20'
                   }`}
                 >
-                  <div className="flex items-center gap-1.5">
-                    <Waves className="w-3.5 h-3.5 text-cyan-400" />
-                    <div>
-                      <span className="block font-bold text-[11px]">Extended</span>
-                      <span className="text-[9px] text-zinc-500 font-normal">Deep wick</span>
-                    </div>
+                  <div>
+                    <span className="block font-bold text-[11px]">Extended</span>
+                    <span className="text-[9px] text-zinc-500 font-normal">Deep wick</span>
                   </div>
                   {subtype === 'Extended Spring' && <Check className="w-3 h-3 text-cyan-400" />}
                 </button>
@@ -632,12 +649,9 @@ export function AddStudyModal({
                       : 'bg-white/[0.02] border-white/10 text-zinc-400 hover:text-white hover:border-white/20'
                   }`}
                 >
-                  <div className="flex items-center gap-1.5">
-                    <Clock className="w-3.5 h-3.5 text-amber-400" />
-                    <div>
-                      <span className="block font-bold text-[11px]">Pre 10 AM</span>
-                      <span className="text-[9px] text-zinc-500 font-normal">09:15 - 10:00</span>
-                    </div>
+                  <div>
+                    <span className="block font-bold text-[11px]">Pre 10 AM</span>
+                    <span className="text-[9px] text-zinc-500 font-normal">09:15 - 10:00</span>
                   </div>
                   {subtype === 'Pre 10AM' && <Check className="w-3 h-3 text-amber-400" />}
                 </button>

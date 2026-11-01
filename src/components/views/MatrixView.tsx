@@ -35,7 +35,8 @@ import {
   Maximize2, 
   Gauge, 
   ChevronLeft, 
-  ChevronRight 
+  ChevronRight,
+  Ruler
 } from 'lucide-react';
 
 interface MatrixViewProps {
@@ -45,6 +46,7 @@ interface MatrixViewProps {
 }
 
 export function MatrixView({ collections, trades, onOpenInspector }: MatrixViewProps) {
+  // Discover latest trade date or fallback to now
   const latestTradeDate = useMemo(() => {
     if (!trades.length) return new Date();
     const timestamps = trades.map(t => parseDateToTimestamp(t.tradeDate)).filter(ts => ts > 0);
@@ -54,7 +56,7 @@ export function MatrixView({ collections, trades, onOpenInspector }: MatrixViewP
   const [currentDateCursor, setCurrentDateCursor] = useState<Date>(() => latestTradeDate);
   const [isAllTime, setIsAllTime] = useState<boolean>(false);
 
-  // CRITICAL FIX: Automatically snap to latest trade date as soon as trades load
+  // Automatically snap to latest trade month as soon as trades load
   useEffect(() => {
     if (trades.length > 0) {
       const timestamps = trades.map(t => parseDateToTimestamp(t.tradeDate)).filter(ts => ts > 0);
@@ -155,6 +157,7 @@ export function MatrixView({ collections, trades, onOpenInspector }: MatrixViewP
     return null;
   };
 
+  // 1. Behavioral Execution Analytics
   const behaviorAnalytics = useMemo(() => {
     const totalTrades = normalizedTrades.length;
 
@@ -267,6 +270,42 @@ export function MatrixView({ collections, trades, onOpenInspector }: MatrixViewP
     };
   }, [normalizedTrades]);
 
+  // 2. Mainzone Height (%) Sweet-Spot Segments
+  const zoneHeightAnalytics = useMemo(() => {
+    const brackets = [
+      { key: 'tight', label: 'Ultra-Tight (< 0.15%)', min: 0, max: 0.15, trades: 0, wins: 0, netR: 0, totalMae: 0 },
+      { key: 'golden', label: 'Golden Zone (0.15% - 0.25%)', min: 0.15, max: 0.25, trades: 0, wins: 0, netR: 0, totalMae: 0 },
+      { key: 'wide', label: 'Wide Zone (0.25% - 0.33%)', min: 0.25, max: 0.33, trades: 0, wins: 0, netR: 0, totalMae: 0 },
+      { key: 'void', label: 'Overextended (> 0.33%)', min: 0.33, max: 999, trades: 0, wins: 0, netR: 0, totalMae: 0 }
+    ];
+
+    let recordedCount = 0;
+
+    normalizedTrades.forEach(t => {
+      if (t.mainzoneHeightPct === undefined || t.mainzoneHeightPct <= 0) return;
+      recordedCount++;
+      const pct = t.mainzoneHeightPct;
+      const bracket = brackets.find(b => pct >= b.min && pct < b.max) || brackets[brackets.length - 1];
+
+      bracket.trades += 1;
+      if (t.rMultiple > 0) bracket.wins += 1;
+      bracket.netR = Number((bracket.netR + t.rMultiple).toFixed(2));
+
+      const mae = parseExcursionR(t.mae, t, true);
+      bracket.totalMae += mae;
+    });
+
+    return {
+      recordedCount,
+      brackets: brackets.map(b => ({
+        ...b,
+        wr: b.trades > 0 ? Math.round((b.wins / b.trades) * 100) : 0,
+        avgMae: b.trades > 0 ? Number((b.totalMae / b.trades).toFixed(2)) : 0
+      }))
+    };
+  }, [normalizedTrades]);
+
+  // 3. Setup Realization Edge with Exit Capture Efficiency
   const setupEdge = useMemo(() => {
     const getBaseModelName = (name: string): string => {
       const clean = displaySetupName(name);
@@ -446,6 +485,7 @@ export function MatrixView({ collections, trades, onOpenInspector }: MatrixViewP
     }).sort((a, b) => b.netR - a.netR);
   }, [collections, normalizedTrades]);
 
+  // Overall Exit Efficiency
   const globalEfficiencyStats = useMemo(() => {
     let totalRealizedWinR = 0;
     let totalPeakWinMfe = 0;
@@ -465,6 +505,7 @@ export function MatrixView({ collections, trades, onOpenInspector }: MatrixViewP
     return { efficiency, unclaimedR };
   }, [normalizedTrades]);
 
+  // 4. Duration Stats
   const durationStats = useMemo(() => {
     let totalWinDuration = 0;
     let winCount = 0;
@@ -510,6 +551,7 @@ export function MatrixView({ collections, trades, onOpenInspector }: MatrixViewP
     };
   }, [normalizedTrades]);
 
+  // 5. Drawdown Depth Curve
   const drawdownData = useMemo(() => {
     if (!normalizedTrades.length) return { data: [], maxDrawdown: 0 };
     const sorted = [...normalizedTrades].sort((a, b) => parseDateToTimestamp(a.tradeDate) - parseDateToTimestamp(b.tradeDate));
@@ -536,6 +578,7 @@ export function MatrixView({ collections, trades, onOpenInspector }: MatrixViewP
     return { data, maxDrawdown: Number(maxDrawdown.toFixed(2)) };
   }, [normalizedTrades]);
 
+  // 6. Global Time Edge
   const timeEdgeAnalysis = useMemo(() => {
     const timeSlots = [
       { label: '09:15 - 10:00 AM', startMin: 9 * 60 + 15, endMin: 10 * 60 - 1 },
@@ -594,6 +637,7 @@ export function MatrixView({ collections, trades, onOpenInspector }: MatrixViewP
     };
   }, [normalizedTrades]);
 
+  // 7. Asset Edge
   const assetEdge = useMemo(() => {
     const map = new Map<string, { total: number; wins: number; netR: number }>();
 
@@ -617,6 +661,7 @@ export function MatrixView({ collections, trades, onOpenInspector }: MatrixViewP
       .sort((a, b) => b.netR - a.netR);
   }, [normalizedTrades]);
 
+  // 8. Day of Week Edge
   const dayEdge = useMemo(() => {
     const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
     const dayStats = days.map(d => ({ day: d, trades: 0, wins: 0, netR: 0 }));
@@ -937,7 +982,80 @@ export function MatrixView({ collections, trades, onOpenInspector }: MatrixViewP
         )}
       </div>
 
-      {/* 3. DURATION VS PROFITABILITY MATRIX & HOLDING EFFICIENCY */}
+      {/* 3. MAINZONE HEIGHT (%) SWEET-SPOT EDGE MATRIX */}
+      <div className="p-4 sm:p-6 rounded-2xl bg-[#090A10] border border-white/[0.06] space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-3 border-b border-white/[0.06] gap-2">
+          <div className="flex items-center gap-2">
+            <Ruler className="w-5 h-5 text-cyan-400" />
+            <div>
+              <h3 className="font-mono text-sm uppercase tracking-wider text-white font-bold">
+                Mainzone Height (%) Sweet-Spot Edge Matrix
+              </h3>
+              <p className="text-[11px] font-mono text-zinc-400">
+                Statistical correlation between structural zone width, win rate, harvested R, and MAE heat.
+              </p>
+            </div>
+          </div>
+          <span className="text-[10px] font-mono text-zinc-400 px-2.5 py-1 rounded-lg bg-white/[0.03] border border-white/[0.06]">
+            {zoneHeightAnalytics.recordedCount} Trades with Zone Height
+          </span>
+        </div>
+
+        {zoneHeightAnalytics.recordedCount === 0 ? (
+          <div className="py-8 text-center text-xs font-mono text-zinc-500">
+            No trade executions logged with Mainzone Height (%) yet. They will automatically populate as you record them in November.
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 font-mono text-xs">
+            {zoneHeightAnalytics.brackets.map(bracket => {
+              const isProfit = bracket.netR >= 0;
+              const hasData = bracket.trades > 0;
+
+              return (
+                <div 
+                  key={bracket.key}
+                  className={`p-3.5 rounded-xl border flex flex-col justify-between space-y-3 ${
+                    bracket.key === 'void' 
+                      ? 'bg-rose-950/15 border-rose-500/30' 
+                      : bracket.key === 'golden' 
+                        ? 'bg-cyan-500/10 border-cyan-500/30' 
+                        : 'bg-white/[0.02] border-white/[0.06]'
+                  }`}
+                >
+                  <div className="flex items-center justify-between pb-1.5 border-b border-white/[0.04]">
+                    <span className={`text-[11px] font-bold ${
+                      bracket.key === 'void' ? 'text-rose-400' :
+                      bracket.key === 'golden' ? 'text-cyan-300' : 'text-zinc-200'
+                    }`}>
+                      {bracket.label}
+                    </span>
+                    <span className="text-[10px] px-1.5 py-0.2 rounded bg-black/40 text-zinc-400">
+                      {bracket.trades} Trades
+                    </span>
+                  </div>
+
+                  <div className="space-y-1">
+                    <span className="text-[9px] text-zinc-500 uppercase block">Harvested Yield</span>
+                    <div className={`text-xl font-black ${
+                      !hasData ? 'text-zinc-600' :
+                      isProfit ? 'text-emerald-400' : 'text-rose-400'
+                    }`}>
+                      {!hasData ? '—' : `${isProfit ? '+' : ''}${bracket.netR.toFixed(2)}R`}
+                    </div>
+                  </div>
+
+                  <div className="pt-2 border-t border-white/[0.04] text-[10px] text-zinc-400 flex items-center justify-between">
+                    <span>Win Rate: <strong className="text-white">{bracket.wr}%</strong></span>
+                    <span>Avg Heat: <strong className="text-rose-400">{hasData ? `-${bracket.avgMae}R` : '—'}</strong></span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* 4. DURATION VS PROFITABILITY MATRIX & HOLDING EFFICIENCY */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6">
         <div className="lg:col-span-2 p-4 sm:p-5 rounded-2xl bg-[#090A10] border border-white/[0.06] flex flex-col justify-between space-y-3">
           <div className="flex items-center justify-between">
@@ -1092,7 +1210,7 @@ export function MatrixView({ collections, trades, onOpenInspector }: MatrixViewP
         </div>
       </div>
 
-      {/* 4. UNDERWATER DRAWDOWN & GLOBAL TIME EDGE */}
+      {/* 5. UNDERWATER DRAWDOWN & GLOBAL TIME EDGE */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6">
         <div className="lg:col-span-2 p-4 sm:p-5 rounded-2xl bg-[#090A10] border border-white/[0.06] flex flex-col justify-between">
           <div className="flex items-center justify-between mb-3 sm:mb-4">
@@ -1202,7 +1320,7 @@ export function MatrixView({ collections, trades, onOpenInspector }: MatrixViewP
         </div>
       </div>
 
-      {/* 5. DAY-OF-WEEK EDGE & ASSET EDGE */}
+      {/* 6. DAY-OF-WEEK EDGE & ASSET EDGE */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
         {/* Day-of-Week Edge */}
         <div className="p-4 sm:p-5 rounded-2xl bg-[#090A10] border border-white/[0.06] flex flex-col justify-between">
@@ -1260,7 +1378,7 @@ export function MatrixView({ collections, trades, onOpenInspector }: MatrixViewP
             </div>
 
             {assetEdge.length === 0 ? (
-              <div className="py-8 text-center text-xs font-mono text-zinc-500">
+              <div className="py-8 text-center text-xs font-mono text-zinc-600">
                 No ticker records yet.
               </div>
             ) : (
