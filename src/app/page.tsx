@@ -21,6 +21,7 @@ import { PulseView } from '@/components/views/PulseView';
 import { CodexView, sortSetupsSmartly } from '@/components/views/CodexView';
 import { MatrixView } from '@/components/views/MatrixView';
 import { HeatmapView } from '@/components/views/HeatmapView';
+import { EngineView } from '@/components/views/EngineView';
 import { SettingsView } from '@/components/views/SettingsView';
 import { 
   Compass, 
@@ -37,7 +38,7 @@ import {
   Lock,
   Unlock,
   KeyRound,
-  ShieldCheck
+  Calculator
 } from 'lucide-react';
 
 const STORAGE_KEY = 'NIVARP_MASTER_STORAGE';
@@ -68,8 +69,8 @@ export default function NivarpOS() {
   const [categoryOrder, setCategoryOrder] = useState<string[]>(MASTER_CATEGORY_ORDER);
   const [studySpecimens, setStudySpecimens] = useState<ChartSpecimen[]>([]);
   const [defaultRiskPerTrade, setDefaultRiskPerTrade] = useState<number>(600);
-  const [tradingCapital, setTradingCapital] = useState<number>(70000); // Persistent Capital
-  const [activeTab, setActiveTab] = useState<'pulse' | 'codex' | 'matrix' | 'heatmap' | 'settings'>('pulse');
+  const [tradingCapital, setTradingCapital] = useState<number>(70000);
+  const [activeTab, setActiveTab] = useState<'pulse' | 'codex' | 'matrix' | 'heatmap' | 'engine' | 'settings'>('pulse');
   const [selectedCollection, setSelectedCollection] = useState<PlaybookCollection | null>(null);
 
   // Security Lock State
@@ -121,7 +122,7 @@ export default function NivarpOS() {
     setToast({ message, type });
   };
 
-  const handleTabChange = (tab: 'pulse' | 'codex' | 'matrix' | 'heatmap' | 'settings') => {
+  const handleTabChange = (tab: 'pulse' | 'codex' | 'matrix' | 'heatmap' | 'engine' | 'settings') => {
     setActiveTab(tab);
     setSelectedCollection(null);
     if (typeof window !== 'undefined') {
@@ -767,7 +768,7 @@ export default function NivarpOS() {
 
           {/* Desktop Navigation Tabs */}
           <nav className="hidden lg:flex items-center p-1 rounded-xl bg-white/[0.03] border border-white/[0.05]">
-            {(['pulse', 'codex', 'matrix', 'heatmap', 'settings'] as const).map(tab => (
+            {(['pulse', 'codex', 'matrix', 'heatmap', 'engine', 'settings'] as const).map(tab => (
               <button 
                 key={tab} 
                 onClick={() => handleTabChange(tab)} 
@@ -779,6 +780,7 @@ export default function NivarpOS() {
                 {tab === 'codex' && <BookMarked className="w-3.5 h-3.5 text-cyan-400" />}
                 {tab === 'matrix' && <Binary className="w-3.5 h-3.5 text-purple-400" />}
                 {tab === 'heatmap' && <Flame className="w-3.5 h-3.5 text-amber-400" />}
+                {tab === 'engine' && <Calculator className="w-3.5 h-3.5 text-emerald-400" />}
                 {tab === 'settings' && <SettingsIcon className="w-3.5 h-3.5 text-zinc-400" />}
                 <span>{tab}</span>
               </button>
@@ -809,7 +811,7 @@ export default function NivarpOS() {
 
       {/* MOBILE BOTTOM NAVIGATION DOCK */}
       <nav className="lg:hidden fixed bottom-0 inset-x-0 z-40 bg-[#08090D]/95 backdrop-blur-2xl border-t border-white/[0.08] px-3 py-2 flex items-center justify-around safe-bottom-padding shadow-[0_-10px_25px_rgba(0,0,0,0.5)]">
-        {(['pulse', 'codex', 'matrix', 'heatmap', 'settings'] as const).map(tab => {
+        {(['pulse', 'codex', 'matrix', 'heatmap', 'engine', 'settings'] as const).map(tab => {
           const isActive = activeTab === tab;
           return (
             <button
@@ -824,6 +826,7 @@ export default function NivarpOS() {
                 {tab === 'codex' && <BookMarked className={`w-4 h-4 ${isActive ? 'text-cyan-400' : ''}`} />}
                 {tab === 'matrix' && <Binary className={`w-4 h-4 ${isActive ? 'text-purple-400' : ''}`} />}
                 {tab === 'heatmap' && <Flame className={`w-4 h-4 ${isActive ? 'text-amber-400' : ''}`} />}
+                {tab === 'engine' && <Calculator className={`w-4 h-4 ${isActive ? 'text-emerald-400' : ''}`} />}
                 {tab === 'settings' && <SettingsIcon className={`w-4 h-4 ${isActive ? 'text-zinc-300' : ''}`} />}
               </div>
               <span className="text-[10px] font-mono capitalize tracking-wide">{tab}</span>
@@ -904,10 +907,19 @@ export default function NivarpOS() {
           />
         )}
         {activeTab === 'heatmap' && <HeatmapView trades={trades} />}
+        {activeTab === 'engine' && (
+          <EngineView 
+            defaultRisk={defaultRiskPerTrade}
+            tradingCapital={tradingCapital}
+            onChangeTradingCapital={(val: number) => {
+              setTradingCapital(val);
+              showToast(`Account Capital updated to ₹${val.toLocaleString('en-IN')}`, "info");
+            }}
+          />
+        )}
         {activeTab === 'settings' && (
           <SettingsView
             defaultRisk={defaultRiskPerTrade}
-            tradingCapital={tradingCapital}
             currentUser={currentUser}
             securityPin={securityPin}
             isLockEnabled={isLockEnabled}
@@ -918,10 +930,6 @@ export default function NivarpOS() {
               setDefaultRiskPerTrade(val);
               showToast(`1R Risk updated to ₹${val.toLocaleString('en-IN')}`, "success");
             }} 
-            onChangeTradingCapital={(val: number) => {
-              setTradingCapital(val);
-              showToast(`Account Capital updated to ₹${val.toLocaleString('en-IN')}`, "info");
-            }}
             onExport={handleExportBackup}
             onRestore={handleRestoreBackup}
             onReset={handlePurgeAll}
