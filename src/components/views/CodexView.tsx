@@ -349,6 +349,15 @@ export function CodexView({
                                 <img
                                   src={previewImage}
                                   alt={col.name}
+                                  referrerPolicy="no-referrer"
+                                  crossOrigin="anonymous"
+                                  onError={(e) => {
+                                    const target = e.currentTarget;
+                                    if (!target.dataset.retried && previewImage && !previewImage.includes('wsrv.nl')) {
+                                      target.dataset.retried = 'true';
+                                      target.src = `https://wsrv.nl/?url=${encodeURIComponent(previewImage)}`;
+                                    }
+                                  }}
                                   className="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition-opacity"
                                 />
                               ) : (
@@ -552,6 +561,15 @@ export function CodexView({
                       <img 
                         src={specimen.imageUrl} 
                         alt={specimen.title} 
+                        referrerPolicy="no-referrer"
+                        crossOrigin="anonymous"
+                        onError={(e) => {
+                          const target = e.currentTarget;
+                          if (!target.dataset.retried && specimen.imageUrl && !specimen.imageUrl.includes('wsrv.nl')) {
+                            target.dataset.retried = 'true';
+                            target.src = `https://wsrv.nl/?url=${encodeURIComponent(specimen.imageUrl)}`;
+                          }
+                        }}
                         className="w-full h-full object-cover opacity-90 group-hover:opacity-100 transition-opacity" 
                         onClick={() => onOpenInspector(specimen.imageUrl, specimen.title, idx, currentSetupGallery)} 
                       />

@@ -151,7 +151,6 @@ export function ChartInspector({
       if (currentUrl.startsWith('http://') || currentUrl.startsWith('https://')) {
         await navigator.clipboard.writeText(currentUrl);
         setCopiedAction('link');
-        // Fast snap close in 350ms
         setTimeout(() => {
           setCopiedAction(null);
           setIsMenuOpen(false);
@@ -182,7 +181,6 @@ export function ChartInspector({
         }
 
         setCopiedAction('link');
-        // Fast snap close in 350ms
         setTimeout(() => {
           setCopiedAction(null);
           setIsMenuOpen(false);
@@ -203,7 +201,6 @@ export function ChartInspector({
       await navigator.clipboard.write([
         new ClipboardItem({ [blob.type || 'image/png']: blob })
       ]);
-      // Fast snap close in 350ms
       setTimeout(() => {
         setCopiedAction(null);
         setIsMenuOpen(false);
@@ -524,6 +521,15 @@ export function ChartInspector({
           <img
             src={currentUrl}
             alt={currentTitle}
+            referrerPolicy="no-referrer"
+            crossOrigin="anonymous"
+            onError={(e) => {
+              const target = e.currentTarget;
+              if (!target.dataset.retried && currentUrl && !currentUrl.includes('wsrv.nl')) {
+                target.dataset.retried = 'true';
+                target.src = `https://wsrv.nl/?url=${encodeURIComponent(currentUrl)}`;
+              }
+            }}
             className="max-h-[82vh] max-w-[95vw] object-contain rounded-lg shadow-2xl"
             draggable={false}
           />

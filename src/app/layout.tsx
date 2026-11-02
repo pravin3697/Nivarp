@@ -17,6 +17,7 @@ export const metadata: Metadata = {
   title: "Nivarp — Rules-Based System",
   description: "Disciplined execution and setup vault for the Indian Stock Market.",
   manifest: "/manifest.json",
+  referrer: "no-referrer",
   appleWebApp: {
     capable: true,
     statusBarStyle: "black-translucent",
@@ -35,6 +36,10 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" className="dark bg-[#050608]">
+      <head>
+        {/* Prevents ImgBB from blocking hotlinked images on mobile */}
+        <meta name="referrer" content="no-referrer" />
+      </head>
       <body className={`${inter.className} bg-[#050608] text-zinc-100 antialiased min-h-screen flex flex-col`}>
         {children}
       </body>
