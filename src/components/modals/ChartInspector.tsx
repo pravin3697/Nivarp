@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { uploadScreenshotToCloud } from '@/lib/cloudSync';
 import { 
   X, 
   ZoomIn, 
@@ -145,7 +146,7 @@ export function ChartInspector({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isOpen, onClose, handlePrev, handleNext]);
 
-  // Smart Copy Media Link (Converts base64 to real ImgBB URL on-the-fly)
+  // Smart Copy Media Link (Uploads base64 to permanent free cloud on-the-fly)
   const handleCopyMediaLink = async () => {
     try {
       if (currentUrl.startsWith('http://') || currentUrl.startsWith('https://')) {
@@ -158,27 +159,16 @@ export function ChartInspector({
         return;
       }
 
-      // Convert legacy base64 to real ImgBB image
+      // Convert local base64 screenshot to permanent cloud URL
       if (currentUrl.startsWith('data:image')) {
         setIsConverting(true);
         const resBlob = await fetch(currentUrl).then(r => r.blob());
-        const formData = new FormData();
-        formData.append('image', resBlob);
-
-        const uploadRes = await fetch(`https://api.imgbb.com/1/upload?key=ef3caf5880f01c4c57d0ebc97cdaac10`, {
-          method: 'POST',
-          body: formData
-        });
-
-        const data = await uploadRes.json();
+        const cloudUrl = await uploadScreenshotToCloud(resBlob);
         setIsConverting(false);
 
-        if (data?.data?.url) {
-          setCurrentUrl(data.data.url);
-          await navigator.clipboard.writeText(data.data.url);
-        } else {
-          await navigator.clipboard.writeText(currentUrl);
-        }
+        const targetUrl = cloudUrl || currentUrl;
+        if (cloudUrl) setCurrentUrl(cloudUrl);
+        await navigator.clipboard.writeText(targetUrl);
 
         setCopiedAction('link');
         setTimeout(() => {
@@ -378,7 +368,6 @@ export function ChartInspector({
             {isMenuOpen && (
               <div className="absolute right-0 top-full mt-2 w-56 bg-[#0E1019]/95 border border-white/15 rounded-2xl shadow-2xl backdrop-blur-2xl py-1.5 z-50 font-mono text-xs divide-y divide-white/[0.05] animate-in fade-in zoom-in-95 duration-100">
                 <div className="p-1 space-y-0.5">
-                  {/* Copy Image */}
                   <button
                     onClick={handleCopyImage}
                     className="w-full px-3 py-2 rounded-xl flex items-center justify-between hover:bg-white/[0.06] text-zinc-200 hover:text-white transition-colors text-left"
@@ -390,7 +379,6 @@ export function ChartInspector({
                     {copiedAction === 'image' && <Check className="w-3.5 h-3.5 text-emerald-400" />}
                   </button>
 
-                  {/* Copy Media Link */}
                   <button
                     onClick={handleCopyMediaLink}
                     disabled={isConverting}
@@ -398,7 +386,7 @@ export function ChartInspector({
                   >
                     <span className="flex items-center gap-2.5">
                       <Link2 className="w-3.5 h-3.5 text-cyan-400" />
-                      <span>{isConverting ? 'Uploading to CDN...' : 'Copy Media Link'}</span>
+                      <span>{isConverting ? 'Uploading to Cloud...' : 'Copy Media Link'}</span>
                     </span>
                     {isConverting ? (
                       <Loader2 className="w-3.5 h-3.5 text-cyan-400 animate-spin" />
@@ -407,7 +395,6 @@ export function ChartInspector({
                     )}
                   </button>
 
-                  {/* Download Image */}
                   <button
                     onClick={handleDownload}
                     className="w-full px-3 py-2 rounded-xl flex items-center gap-2.5 hover:bg-white/[0.06] text-zinc-200 hover:text-white transition-colors text-left"
@@ -416,7 +403,6 @@ export function ChartInspector({
                     <span>Download Image</span>
                   </button>
 
-                  {/* Open in New Tab */}
                   <a
                     href={currentUrl}
                     target="_blank"
@@ -458,7 +444,7 @@ export function ChartInspector({
                       <div>
                         <span className="text-[10px] text-zinc-500 uppercase block">Host Source</span>
                         <span className="text-zinc-400 truncate block">
-                          {currentUrl.startsWith('data:') ? 'Local Screenshot' : 'Cloud CDN (ImgBB)'}
+                          {currentUrl.startsWith('data:') ? 'Local Screenshot' : 'Cloud CDN (Permanent)'}
                         </span>
                       </div>
                     </div>
@@ -521,15 +507,6 @@ export function ChartInspector({
           <img
             src={currentUrl}
             alt={currentTitle}
-            referrerPolicy="no-referrer"
-            crossOrigin="anonymous"
-            onError={(e) => {
-              const target = e.currentTarget;
-              if (!target.dataset.retried && currentUrl && !currentUrl.includes('wsrv.nl')) {
-                target.dataset.retried = 'true';
-                target.src = `https://wsrv.nl/?url=${encodeURIComponent(currentUrl)}`;
-              }
-            }}
             className="max-h-[82vh] max-w-[95vw] object-contain rounded-lg shadow-2xl"
             draggable={false}
           />

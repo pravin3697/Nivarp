@@ -12,25 +12,115 @@ export const MASTER_CATEGORY_ORDER = [
   'EXECUTION STOPPED OUT/ BAD ENTRY'
 ];
 
+/**
+ * Compresses raw screenshots down to ~80KB WebP before uploading.
+ * Bypasses file size limits and ensures rapid uploads.
+ */
+async function compressImageToWebP(fileOrBlob: File | Blob, maxWidth = 1920, quality = 0.82): Promise<Blob> {
+  return new Promise((resolve) => {
+    if (typeof window === 'undefined') {
+      resolve(fileOrBlob);
+      return;
+    }
+
+    const img = new Image();
+    const objectUrl = URL.createObjectURL(fileOrBlob);
+
+    img.onload = () => {
+      URL.revokeObjectURL(objectUrl);
+      let { width, height } = img;
+
+      if (width > maxWidth) {
+        height = Math.round((height * maxWidth) / width);
+        width = maxWidth;
+      }
+
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d');
+
+      if (ctx) {
+        ctx.drawImage(img, 0, 0, width, height);
+        canvas.toBlob(
+          (blob) => resolve(blob || fileOrBlob),
+          'image/webp',
+          quality
+        );
+      } else {
+        resolve(fileOrBlob);
+      }
+    };
+
+    img.onerror = () => {
+      URL.revokeObjectURL(objectUrl);
+      resolve(fileOrBlob);
+    };
+
+    img.src = objectUrl;
+  });
+}
+
+/**
+ * Permanent 100% Free Cloud Upload Pipeline.
+ * 1. FreeImage.host (Permanent, never deletes)
+ * 2. Catbox.moe (Permanent, never expires)
+ * 3. Fail-safe: Direct compressed WebP Base64 stored in your own Firebase/IndexedDB
+ */
 export async function uploadScreenshotToCloud(fileOrBlob: File | Blob): Promise<string | null> {
   try {
-    const formData = new FormData();
-    formData.append('image', fileOrBlob);
+    const compressedBlob = await compressImageToWebP(fileOrBlob);
 
-    const IMGBB_KEY = 'ef3caf5880f01c4c57d0ebc97cdaac10';
+    // 1. Try FreeImage.host (Permanent, never deletes)
+    try {
+      const formData = new FormData();
+      formData.append('key', '6d207e02198a847423850aa0091c5215');
+      formData.append('action', 'upload');
+      formData.append('source', compressedBlob, 'chart.webp');
+      formData.append('format', 'json');
 
-    const res = await fetch(`https://api.imgbb.com/1/upload?key=${IMGBB_KEY}`, {
-      method: 'POST',
-      body: formData
+      const res = await fetch('https://freeimage.host/api/1/upload', {
+        method: 'POST',
+        body: formData
+      });
+
+      const data = await res.json();
+      if (data?.image?.url) {
+        return data.image.url;
+      }
+    } catch {
+      // Fall through to Catbox
+    }
+
+    // 2. Try Catbox.moe (Permanent, files kept forever)
+    try {
+      const catboxData = new FormData();
+      catboxData.append('reqtype', 'fileupload');
+      catboxData.append('fileToUpload', compressedBlob, 'chart.webp');
+
+      const catboxRes = await fetch('https://catbox.moe/user/api.php', {
+        method: 'POST',
+        body: catboxData
+      });
+
+      const catboxUrl = await catboxRes.text();
+      if (catboxUrl && catboxUrl.startsWith('http')) {
+        return catboxUrl.trim();
+      }
+    } catch {
+      // Fall through to Base64
+    }
+
+    // 3. Fail-safe: Save compressed WebP directly in your Firebase & IndexedDB
+    return new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onloadend = () => resolve(reader.result as string);
+      reader.onerror = () => resolve(null);
+      reader.readAsDataURL(compressedBlob);
     });
 
-    const data = await res.json();
-    if (data && data.data && data.data.url) {
-      return data.data.url;
-    }
-    return null;
   } catch (err) {
-    console.warn('Screenshot upload error:', err);
+    console.warn('Screenshot upload notice:', err);
     return null;
   }
 }
@@ -50,7 +140,7 @@ export async function syncMasterToCloud(
     studySpecimens: ChartSpecimen[];
     categoryOrder: string[];
     defaultRiskPerTrade: number;
-    tradingCapital?: number; // Persistent Account Capital
+    tradingCapital?: number;
     securityPin?: string;
     isLockEnabled?: boolean;
     engineWatchlist?: Record<string, { high: string; low: string }>;
@@ -60,7 +150,7 @@ export async function syncMasterToCloud(
   try {
     const scope = userId || 'master';
 
-    // 1. Save Meta & Collections for this user
+    // 1. Save Meta & Collections
     await setDoc(doc(db, `users_${scope}`, 'meta'), sanitizeForFirestore({
       collections: payload.collections,
       categoryOrder: payload.categoryOrder,
@@ -72,7 +162,7 @@ export async function syncMasterToCloud(
       updatedAt: Date.now()
     }), { merge: true });
 
-    // 2. Save Trades for this user
+    // 2. Save Trades
     await setDoc(doc(db, `users_${scope}`, 'trades'), sanitizeForFirestore({
       trades: payload.trades,
       updatedAt: Date.now()

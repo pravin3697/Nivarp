@@ -299,7 +299,6 @@ export function CodexView({
                         return cleanStr(s.collectionName) === colClean;
                       });
 
-                      // Deduplicate chart count strictly by URL / Specimen ID so edited specimens aren't double-counted
                       const uniqueChartUrls = new Set<string>();
                       studyForThis.forEach(s => {
                         if (s.imageUrl) uniqueChartUrls.add(s.imageUrl.trim());
@@ -349,15 +348,6 @@ export function CodexView({
                                 <img
                                   src={previewImage}
                                   alt={col.name}
-                                  referrerPolicy="no-referrer"
-                                  crossOrigin="anonymous"
-                                  onError={(e) => {
-                                    const target = e.currentTarget;
-                                    if (!target.dataset.retried && previewImage && !previewImage.includes('wsrv.nl')) {
-                                      target.dataset.retried = 'true';
-                                      target.src = `https://wsrv.nl/?url=${encodeURIComponent(previewImage)}`;
-                                    }
-                                  }}
                                   className="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition-opacity"
                                 />
                               ) : (
@@ -413,7 +403,7 @@ export function CodexView({
             </button>
           </div>
 
-          {/* Trigger Variant Filter Bar: ONLY SHOWN INSIDE BEARISH TO BULLISH (Mobile Responsive & No Side-Scrolling) */}
+          {/* Trigger Variant Filter Bar: BEARISH TO BULLISH */}
           {isBearToBullCollection && (
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 p-1.5 sm:p-2 rounded-xl bg-[#090A10] border border-white/[0.06] w-full overflow-hidden">
               <div className="grid grid-cols-1 sm:flex items-center gap-1 sm:gap-1.5 font-mono text-xs w-full sm:w-auto">
@@ -466,7 +456,7 @@ export function CodexView({
             </div>
           )}
 
-          {/* Trigger Variant Filter Bar: ONLY SHOWN INSIDE LIQUIDITY SPRING (Mobile Responsive 2-Row Grid, No Side-Scrolling) */}
+          {/* Trigger Variant Filter Bar: LIQUIDITY SPRING */}
           {isLiquiditySpringCollection && (
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 p-1.5 sm:p-2 rounded-xl bg-[#090A10] border border-white/[0.06] w-full overflow-hidden">
               <div className="grid grid-cols-2 sm:grid-cols-4 sm:flex items-center gap-1 sm:gap-1.5 font-mono text-xs w-full sm:w-auto">
@@ -561,20 +551,11 @@ export function CodexView({
                       <img 
                         src={specimen.imageUrl} 
                         alt={specimen.title} 
-                        referrerPolicy="no-referrer"
-                        crossOrigin="anonymous"
-                        onError={(e) => {
-                          const target = e.currentTarget;
-                          if (!target.dataset.retried && specimen.imageUrl && !specimen.imageUrl.includes('wsrv.nl')) {
-                            target.dataset.retried = 'true';
-                            target.src = `https://wsrv.nl/?url=${encodeURIComponent(specimen.imageUrl)}`;
-                          }
-                        }}
                         className="w-full h-full object-cover opacity-90 group-hover:opacity-100 transition-opacity" 
                         onClick={() => onOpenInspector(specimen.imageUrl, specimen.title, idx, currentSetupGallery)} 
                       />
 
-                      {/* Subtype Badge Top Left: Context Aware Rendering */}
+                      {/* Subtype Badge Top Left */}
                       {specimen.subtype && specimen.subtype !== 'General' && (
                         <div className="absolute top-2 left-2 z-10 pointer-events-none">
                           {specimen.subtype === 'Resistance' && (
