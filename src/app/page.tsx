@@ -21,7 +21,7 @@ import { PulseView } from '@/components/views/PulseView';
 import { CodexView, sortSetupsSmartly } from '@/components/views/CodexView';
 import { MatrixView } from '@/components/views/MatrixView';
 import { HeatmapView } from '@/components/views/HeatmapView';
-import { EngineView } from '@/components/views/EngineView';
+import { EngineView, WATCHLIST_TICKERS } from '@/components/views/EngineView';
 import { SettingsView } from '@/components/views/SettingsView';
 import { 
   Compass, 
@@ -46,6 +46,7 @@ const STUDY_STORAGE_KEY = 'NIVARP_STUDY_SPECIMENS';
 const CATEGORY_ORDER_KEY = 'NIVARP_CATEGORY_ORDER';
 const SECURITY_LOCK_KEY = 'NIVARP_SECURITY_LOCK';
 const SESSION_UNLOCKED_KEY = 'NIVARP_SESSION_UNLOCKED';
+const ENGINE_WATCHLIST_KEY = 'NIVARP_ENGINE_WATCHLIST';
 
 interface ToastState {
   message: string;
@@ -61,6 +62,13 @@ const sanitizeTrades = (tradesList: Trade[]): Trade[] => {
   }));
 };
 
+const DEFAULT_WATCHLIST_DATA: Record<string, { high: string; low: string }> = {
+  DLF: { high: '', low: '' },
+  HINDALCO: { high: '', low: '' },
+  SBIN: { high: '', low: '' },
+  TATAMOTORS: { high: '', low: '' }
+};
+
 export default function NivarpOS() {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
 
@@ -72,6 +80,10 @@ export default function NivarpOS() {
   const [tradingCapital, setTradingCapital] = useState<number>(70000);
   const [activeTab, setActiveTab] = useState<'pulse' | 'codex' | 'matrix' | 'heatmap' | 'engine' | 'settings'>('pulse');
   const [selectedCollection, setSelectedCollection] = useState<PlaybookCollection | null>(null);
+
+  // Engine Multi-Stock Watchlist Coordinates
+  const [engineWatchlist, setEngineWatchlist] = useState<Record<string, { high: string; low: string }>>(DEFAULT_WATCHLIST_DATA);
+  const [activeEngineTicker, setActiveEngineTicker] = useState<string>('DLF');
 
   // Security Lock State
   const [securityPin, setSecurityPin] = useState<string>('');
@@ -149,6 +161,9 @@ export default function NivarpOS() {
           setCategoryOrder(cloudData.categoryOrder || MASTER_CATEGORY_ORDER);
           if (cloudData.defaultRiskPerTrade) setDefaultRiskPerTrade(cloudData.defaultRiskPerTrade);
           if (cloudData.tradingCapital) setTradingCapital(cloudData.tradingCapital);
+          if (cloudData.engineWatchlist) {
+            setEngineWatchlist(prev => ({ ...prev, ...cloudData.engineWatchlist }));
+          }
           
           if (cloudData.securityPin !== undefined) {
             setSecurityPin(cloudData.securityPin);
@@ -245,11 +260,12 @@ export default function NivarpOS() {
 
     async function loadData() {
       try {
-        const [idbMaster, idbStudy, idbCatOrder, idbSecurity] = await Promise.all([
+        const [idbMaster, idbStudy, idbCatOrder, idbSecurity, idbWatchlist] = await Promise.all([
           idbGet<any>(STORAGE_KEY),
           idbGet<ChartSpecimen[]>(STUDY_STORAGE_KEY),
           idbGet<string[]>(CATEGORY_ORDER_KEY),
-          idbGet<any>(SECURITY_LOCK_KEY)
+          idbGet<any>(SECURITY_LOCK_KEY),
+          idbGet<Record<string, { high: string; low: string }>>(ENGINE_WATCHLIST_KEY)
         ]);
 
         if (idbSecurity) {
@@ -260,6 +276,10 @@ export default function NivarpOS() {
               setIsVaultLocked(true);
             }
           }
+        }
+
+        if (idbWatchlist) {
+          setEngineWatchlist(prev => ({ ...prev, ...idbWatchlist }));
         }
 
         if (idbMaster) {
@@ -284,6 +304,9 @@ export default function NivarpOS() {
           setStudySpecimens(cloudData.studySpecimens);
           setCategoryOrder(cloudData.categoryOrder);
           if (cloudData.tradingCapital) setTradingCapital(cloudData.tradingCapital);
+          if (cloudData.engineWatchlist) {
+            setEngineWatchlist(prev => ({ ...prev, ...cloudData.engineWatchlist }));
+          }
           if (cloudData.securityPin !== undefined) {
             setSecurityPin(cloudData.securityPin);
             setIsLockEnabled(!!cloudData.isLockEnabled);
@@ -322,6 +345,7 @@ export default function NivarpOS() {
       securityPin,
       isLockEnabled
     });
+    idbSet(ENGINE_WATCHLIST_KEY, engineWatchlist);
 
     const timer = setTimeout(async () => {
       await syncMasterToCloud({
@@ -332,12 +356,24 @@ export default function NivarpOS() {
         defaultRiskPerTrade,
         tradingCapital,
         securityPin,
-        isLockEnabled
+        isLockEnabled,
+        engineWatchlist
       }, currentUser?.uid || 'master');
     }, 2000);
 
     return () => clearTimeout(timer);
-  }, [isLoaded, trades, deduplicatedCollections, categoryOrder, studySpecimens, defaultRiskPerTrade, tradingCapital, securityPin, isLockEnabled, currentUser]);
+  }, [isLoaded, trades, deduplicatedCollections, categoryOrder, studySpecimens, defaultRiskPerTrade, tradingCapital, securityPin, isLockEnabled, engineWatchlist, currentUser]);
+
+  const handleUpdateTickerZone = (ticker: string, high: string, low: string) => {
+    setEngineWatchlist(prev => {
+      const updated = {
+        ...prev,
+        [ticker]: { high, low }
+      };
+      idbSet(ENGINE_WATCHLIST_KEY, updated);
+      return updated;
+    });
+  };
 
   const handleUpdateSecurityPin = (newPin: string, enabled: boolean) => {
     setSecurityPin(newPin);
@@ -389,6 +425,7 @@ export default function NivarpOS() {
         tradingCapital,
         securityPin,
         isLockEnabled,
+        engineWatchlist,
         exportedAt: new Date().toISOString()
       };
       const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
@@ -419,11 +456,13 @@ export default function NivarpOS() {
           ? d.categoryOrder.map((c: string) => c.trim().toUpperCase()) 
           : MASTER_CATEGORY_ORDER;
         const restoredStudy = Array.isArray(d.studySpecimens) ? d.studySpecimens : [];
+        const restoredWatchlist = d.engineWatchlist && typeof d.engineWatchlist === 'object' ? d.engineWatchlist : DEFAULT_WATCHLIST_DATA;
 
         setTrades(restoredTrades);
         setCollections(restoredCols);
         setCategoryOrder(restoredCats);
         setStudySpecimens(restoredStudy);
+        setEngineWatchlist(restoredWatchlist);
         if (d.defaultRiskPerTrade) setDefaultRiskPerTrade(d.defaultRiskPerTrade);
         if (d.tradingCapital) setTradingCapital(d.tradingCapital);
         if (d.securityPin) setSecurityPin(d.securityPin);
@@ -442,7 +481,8 @@ export default function NivarpOS() {
           idbSet(SECURITY_LOCK_KEY, {
             securityPin: d.securityPin || '',
             isLockEnabled: !!d.isLockEnabled
-          })
+          }),
+          idbSet(ENGINE_WATCHLIST_KEY, restoredWatchlist)
         ]);
 
         showToast("Restoring backup...", "info");
@@ -454,7 +494,8 @@ export default function NivarpOS() {
           defaultRiskPerTrade: d.defaultRiskPerTrade || 600,
           tradingCapital: d.tradingCapital || 70000,
           securityPin: d.securityPin,
-          isLockEnabled: d.isLockEnabled
+          isLockEnabled: d.isLockEnabled,
+          engineWatchlist: restoredWatchlist
         }, currentUser?.uid || 'master');
 
         showToast(`Restored & synced: ${restoredTrades.length} trades, ${restoredCols.length} setups.`, "success");
@@ -588,15 +629,12 @@ export default function NivarpOS() {
   };
 
   const handlePurgeAll = async () => {
-    if (!confirm("Are you sure you want to completely erase all trades and collections? This cannot be undone.")) {
-      return;
-    }
-
     setTrades([]);
     setCollections([]);
     setCategoryOrder(MASTER_CATEGORY_ORDER);
     setStudySpecimens([]);
     setSelectedCollection(null);
+    setEngineWatchlist(DEFAULT_WATCHLIST_DATA);
 
     await Promise.all([
       idbClear(),
@@ -911,6 +949,10 @@ export default function NivarpOS() {
           <EngineView 
             defaultRisk={defaultRiskPerTrade}
             tradingCapital={tradingCapital}
+            watchlistData={engineWatchlist}
+            activeTicker={activeEngineTicker}
+            onSelectTicker={(ticker) => setActiveEngineTicker(ticker)}
+            onUpdateTickerZone={handleUpdateTickerZone}
             onChangeTradingCapital={(val: number) => {
               setTradingCapital(val);
               showToast(`Account Capital updated to ₹${val.toLocaleString('en-IN')}`, "info");

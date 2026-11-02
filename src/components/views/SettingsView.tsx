@@ -18,7 +18,9 @@ import {
   Shield, 
   KeyRound, 
   Eye, 
-  EyeOff
+  EyeOff,
+  AlertTriangle,
+  X
 } from 'lucide-react';
 
 interface SettingsViewProps {
@@ -56,6 +58,11 @@ export function SettingsView({
   const [enabledToggle, setEnabledToggle] = useState(isLockEnabled);
   const [pinSavedFeedback, setPinSavedFeedback] = useState(false);
 
+  // Red Warning Wipe Modal State
+  const [isWipeModalOpen, setIsWipeModalOpen] = useState(false);
+  const [wipePasswordInput, setWipePasswordInput] = useState('');
+  const [wipeError, setWipeError] = useState('');
+
   const handleManualSync = async () => {
     setIsSyncing(true);
     await onForceSync();
@@ -67,6 +74,30 @@ export function SettingsView({
     onUpdateSecurityPin(pinInput.trim(), enabledToggle);
     setPinSavedFeedback(true);
     setTimeout(() => setPinSavedFeedback(false), 3000);
+  };
+
+  const handleConfirmWipe = (e: React.FormEvent) => {
+    e.preventDefault();
+    setWipeError('');
+
+    // If security pin is configured, require exact match.
+    // If no security pin exists, require typing 'CONFIRM' or 'DELETE'.
+    if (securityPin && securityPin.trim() !== '') {
+      if (wipePasswordInput.trim() !== securityPin.trim()) {
+        setWipeError('Incorrect security password / PIN.');
+        return;
+      }
+    } else {
+      if (wipePasswordInput.trim().toUpperCase() !== 'DELETE') {
+        setWipeError('Please type DELETE to confirm.');
+        return;
+      }
+    }
+
+    setIsWipeModalOpen(false);
+    setWipePasswordInput('');
+    setWipeError('');
+    onReset();
   };
 
   return (
@@ -262,13 +293,99 @@ export function SettingsView({
           <p className="text-[11px] text-zinc-500">Permanently clears trades, playbook setups, and chart specimens.</p>
         </div>
         <button 
-          onClick={onReset} 
+          onClick={() => {
+            setWipePasswordInput('');
+            setWipeError('');
+            setIsWipeModalOpen(true);
+          }} 
           className="flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg bg-rose-950 border border-rose-800 text-rose-400 hover:bg-rose-900 text-xs font-mono transition-colors shrink-0"
         >
           <Trash2 className="w-3.5 h-3.5" />
           <span>Wipe Clean</span>
         </button>
       </div>
+
+      {/* RED DANGER WARNING POPUP MODAL WITH PASSWORD CHECK */}
+      {isWipeModalOpen && (
+        <div className="fixed inset-0 z-50 bg-black/90 backdrop-blur-md flex items-center justify-center p-4">
+          <div className="bg-[#0D0507] border-2 border-rose-600/80 rounded-2xl max-w-md w-full p-5 sm:p-6 space-y-4 shadow-[0_0_50px_rgba(225,29,72,0.35)] animate-in fade-in zoom-in-95 duration-150">
+            
+            <div className="flex items-start justify-between">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 rounded-xl bg-rose-600/20 text-rose-400 border border-rose-600/40">
+                  <AlertTriangle className="w-6 h-6 text-rose-400" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-rose-300 font-mono">
+                    Permanent Purge Warning
+                  </h3>
+                  <span className="text-[10px] font-mono text-rose-400/80 uppercase tracking-widest font-bold">
+                    Irreversible Action
+                  </span>
+                </div>
+              </div>
+
+              <button 
+                onClick={() => setIsWipeModalOpen(false)}
+                className="text-zinc-500 hover:text-white p-1"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-3 rounded-xl bg-rose-950/40 border border-rose-600/30 text-rose-200/90 text-xs font-mono space-y-1.5">
+              <p className="font-bold text-rose-300">
+                Are you absolutely sure you want to wipe all records?
+              </p>
+              <p className="text-[11px] text-rose-200/70 leading-relaxed">
+                This will irreversibly delete all executed trades, custom playbook collections, chart studies, and local database cache.
+              </p>
+            </div>
+
+            <form onSubmit={handleConfirmWipe} className="space-y-4 font-mono text-xs">
+              <div>
+                <label className="text-zinc-300 block mb-1 text-[11px]">
+                  {securityPin ? 'Enter Master Security PIN / Password to authorize:' : 'Type DELETE in capital letters to confirm:'}
+                </label>
+                <div className="relative">
+                  <KeyRound className="w-4 h-4 text-rose-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="password"
+                    autoFocus
+                    value={wipePasswordInput}
+                    onChange={(e) => setWipePasswordInput(e.target.value)}
+                    placeholder={securityPin ? 'Enter Security PIN' : 'Type DELETE'}
+                    className="w-full bg-[#18080C] border border-rose-600/50 focus:border-rose-500 rounded-xl pl-9 pr-3 py-2.5 text-white outline-none font-bold text-xs"
+                  />
+                </div>
+                {wipeError && (
+                  <p className="text-rose-400 text-[11px] mt-1.5 font-bold animate-in fade-in">
+                    ⚠️ {wipeError}
+                  </p>
+                )}
+              </div>
+
+              <div className="flex items-center justify-end gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setIsWipeModalOpen(false)}
+                  className="px-4 py-2 rounded-xl bg-zinc-800 text-zinc-300 hover:text-white transition-colors text-xs font-bold"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-black transition-colors shadow-lg shadow-rose-600/30 flex items-center gap-1.5 text-xs"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>Authorize & Wipe Everything</span>
+                </button>
+              </div>
+            </form>
+
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -53,6 +53,7 @@ export async function syncMasterToCloud(
     tradingCapital?: number; // Persistent Account Capital
     securityPin?: string;
     isLockEnabled?: boolean;
+    engineWatchlist?: Record<string, { high: string; low: string }>;
   },
   userId: string = 'master'
 ): Promise<{ success: boolean; error?: string }> {
@@ -67,6 +68,7 @@ export async function syncMasterToCloud(
       tradingCapital: payload.tradingCapital,
       securityPin: payload.securityPin,
       isLockEnabled: payload.isLockEnabled,
+      engineWatchlist: payload.engineWatchlist,
       updatedAt: Date.now()
     }), { merge: true });
 
@@ -110,6 +112,7 @@ export async function fetchMasterFromCloud(userId: string = 'master'): Promise<{
   tradingCapital?: number;
   securityPin?: string;
   isLockEnabled?: boolean;
+  engineWatchlist?: Record<string, { high: string; low: string }>;
 } | null> {
   try {
     const scope = userId || 'master';
@@ -156,7 +159,8 @@ export async function fetchMasterFromCloud(userId: string = 'master'): Promise<{
       defaultRiskPerTrade: metaData.defaultRiskPerTrade || 600,
       tradingCapital: metaData.tradingCapital || 70000,
       securityPin: metaData.securityPin || '',
-      isLockEnabled: !!metaData.isLockEnabled
+      isLockEnabled: !!metaData.isLockEnabled,
+      engineWatchlist: metaData.engineWatchlist || undefined
     };
   } catch (err) {
     console.warn('Failed to fetch from Firebase:', err);
