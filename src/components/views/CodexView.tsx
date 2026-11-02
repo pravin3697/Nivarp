@@ -404,65 +404,67 @@ export function CodexView({
             </button>
           </div>
 
-          {/* Trigger Variant Filter Bar: ONLY SHOWN INSIDE BEARISH TO BULLISH */}
+          {/* Trigger Variant Filter Bar: ONLY SHOWN INSIDE BEARISH TO BULLISH (Mobile Responsive & No Side-Scrolling) */}
           {isBearToBullCollection && (
-            <div className="flex items-center justify-between flex-wrap gap-2 p-2 rounded-xl bg-[#090A10] border border-white/[0.06]">
-              <div className="flex items-center gap-1.5 font-mono text-xs">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 p-1.5 sm:p-2 rounded-xl bg-[#090A10] border border-white/[0.06] w-full overflow-hidden">
+              <div className="grid grid-cols-1 sm:flex items-center gap-1 sm:gap-1.5 font-mono text-xs w-full sm:w-auto">
                 <button
                   type="button"
                   onClick={() => setSelectedSubtypeFilter('all')}
-                  className={`px-3 py-1.5 rounded-lg font-bold border transition-colors ${
+                  className={`px-3 py-1.5 rounded-lg font-bold border transition-colors text-center truncate ${
                     selectedSubtypeFilter === 'all'
                       ? 'bg-zinc-800 text-white border-zinc-700 shadow-sm'
                       : 'bg-transparent text-zinc-400 border-transparent hover:text-white'
                   }`}
                 >
-                  All Charts ({variantCounts.total})
+                  All ({variantCounts.total})
                 </button>
 
                 <button
                   type="button"
                   onClick={() => setSelectedSubtypeFilter('Resistance')}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-bold border transition-colors ${
+                  className={`flex items-center justify-center sm:justify-start gap-1.5 px-3 py-1.5 rounded-lg font-bold border transition-colors text-center truncate ${
                     selectedSubtypeFilter === 'Resistance'
                       ? 'bg-cyan-500/20 text-cyan-300 border-cyan-500/40 shadow-sm'
                       : 'bg-transparent text-zinc-400 border-transparent hover:text-white'
                   }`}
                 >
                   <ShieldCheck className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
-                  <span>Resistance (Mainzone)</span>
+                  <span className="truncate">Resistance</span>
+                  <span className="hidden lg:inline text-[10px] text-zinc-400 font-normal">Mainzone</span>
                   <span className="text-[10px] opacity-80">({variantCounts.resCount})</span>
                 </button>
 
                 <button
                   type="button"
                   onClick={() => setSelectedSubtypeFilter('No Resistance')}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-bold border transition-colors ${
+                  className={`flex items-center justify-center sm:justify-start gap-1.5 px-3 py-1.5 rounded-lg font-bold border transition-colors text-center truncate ${
                     selectedSubtypeFilter === 'No Resistance'
                       ? 'bg-purple-500/20 text-purple-300 border-purple-500/40 shadow-sm'
                       : 'bg-transparent text-zinc-400 border-transparent hover:text-white'
                   }`}
                 >
                   <Zap className="w-3.5 h-3.5 text-purple-400 shrink-0" />
-                  <span>No Resistance (Liquidity Sweep)</span>
+                  <span className="truncate">No Resistance</span>
+                  <span className="hidden lg:inline text-[10px] text-zinc-400 font-normal">Sweep</span>
                   <span className="text-[10px] opacity-80">({variantCounts.noResCount})</span>
                 </button>
               </div>
 
-              <span className="text-[10px] font-mono text-zinc-500 hidden md:inline">
+              <span className="text-[10px] font-mono text-zinc-500 hidden md:inline shrink-0">
                 Hover chart & click pencil to edit tag
               </span>
             </div>
           )}
 
-          {/* Trigger Variant Filter Bar: ONLY SHOWN INSIDE LIQUIDITY SPRING */}
+          {/* Trigger Variant Filter Bar: ONLY SHOWN INSIDE LIQUIDITY SPRING (Mobile Responsive 2-Row Grid, No Side-Scrolling) */}
           {isLiquiditySpringCollection && (
-            <div className="flex items-center justify-between flex-wrap gap-2 p-2 rounded-xl bg-[#090A10] border border-white/[0.06]">
-              <div className="flex items-center gap-1.5 font-mono text-xs">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 p-1.5 sm:p-2 rounded-xl bg-[#090A10] border border-white/[0.06] w-full overflow-hidden">
+              <div className="grid grid-cols-2 sm:grid-cols-4 sm:flex items-center gap-1 sm:gap-1.5 font-mono text-xs w-full sm:w-auto">
                 <button
                   type="button"
                   onClick={() => setSelectedSubtypeFilter('all')}
-                  className={`px-3 py-1.5 rounded-lg font-bold border transition-colors ${
+                  className={`px-2.5 py-1.5 rounded-lg font-bold border transition-colors text-center truncate ${
                     selectedSubtypeFilter === 'all'
                       ? 'bg-zinc-800 text-white border-zinc-700 shadow-sm'
                       : 'bg-transparent text-zinc-400 border-transparent hover:text-white'
@@ -474,47 +476,47 @@ export function CodexView({
                 <button
                   type="button"
                   onClick={() => setSelectedSubtypeFilter('Standard Spring')}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-bold border transition-colors ${
+                  className={`flex items-center justify-center gap-1 px-2 py-1.5 rounded-lg font-bold border transition-colors text-center truncate ${
                     selectedSubtypeFilter === 'Standard Spring'
                       ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40 shadow-sm'
                       : 'bg-transparent text-zinc-400 border-transparent hover:text-white'
                   }`}
                 >
                   <Zap className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-                  <span>Standard Spring</span>
+                  <span className="truncate">Standard</span>
                   <span className="text-[10px] opacity-80">({variantCounts.stdSpringCount})</span>
                 </button>
 
                 <button
                   type="button"
                   onClick={() => setSelectedSubtypeFilter('Extended Spring')}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-bold border transition-colors ${
+                  className={`flex items-center justify-center gap-1 px-2 py-1.5 rounded-lg font-bold border transition-colors text-center truncate ${
                     selectedSubtypeFilter === 'Extended Spring'
                       ? 'bg-cyan-500/20 text-cyan-300 border-cyan-500/40 shadow-sm'
                       : 'bg-transparent text-zinc-400 border-transparent hover:text-white'
                   }`}
                 >
                   <Waves className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
-                  <span>Extended Spring</span>
+                  <span className="truncate">Extended</span>
                   <span className="text-[10px] opacity-80">({variantCounts.extSpringCount})</span>
                 </button>
 
                 <button
                   type="button"
                   onClick={() => setSelectedSubtypeFilter('Pre 10AM')}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-bold border transition-colors ${
+                  className={`flex items-center justify-center gap-1 px-2 py-1.5 rounded-lg font-bold border transition-colors text-center truncate ${
                     selectedSubtypeFilter === 'Pre 10AM'
                       ? 'bg-amber-500/20 text-amber-300 border-amber-500/40 shadow-sm'
                       : 'bg-transparent text-zinc-400 border-transparent hover:text-white'
                   }`}
                 >
                   <Clock className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-                  <span>Pre 10 AM</span>
+                  <span className="truncate">Pre 10 AM</span>
                   <span className="text-[10px] opacity-80">({variantCounts.pre10Count})</span>
                 </button>
               </div>
 
-              <span className="text-[10px] font-mono text-zinc-500 hidden md:inline">
+              <span className="text-[10px] font-mono text-zinc-500 hidden md:inline shrink-0">
                 Hover chart & click pencil to edit tag
               </span>
             </div>
