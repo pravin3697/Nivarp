@@ -3,6 +3,8 @@
 import React, { useState } from 'react';
 import { CustomNumberInput } from '@/components/ui/CustomControls';
 import { User } from 'firebase/auth';
+import { Trade, PlaybookCollection, ChartSpecimen } from '@/types/trade';
+import { runGlobalChartBackup } from '@/lib/chartBackup';
 import { 
   Sliders, 
   Database, 
@@ -19,6 +21,8 @@ import {
   Eye, 
   EyeOff,
   AlertTriangle,
+  FolderArchive,
+  Loader2,
   X
 } from 'lucide-react';
 
@@ -27,6 +31,10 @@ interface SettingsViewProps {
   currentUser: User | null;
   securityPin: string;
   isLockEnabled: boolean;
+  trades: Trade[];
+  collections: PlaybookCollection[];
+  studySpecimens: ChartSpecimen[];
+  onShowToast: (message: string, type?: 'success' | 'info' | 'error') => void;
   onUpdateSecurityPin: (newPin: string, enabled: boolean) => void;
   onGoogleLogin: () => Promise<void>;
   onLogout: () => Promise<void>;
@@ -42,6 +50,10 @@ export function SettingsView({
   currentUser,
   securityPin,
   isLockEnabled,
+  trades,
+  collections,
+  studySpecimens,
+  onShowToast,
   onUpdateSecurityPin,
   onGoogleLogin,
   onLogout,
@@ -56,6 +68,14 @@ export function SettingsView({
   const [showPin, setShowPin] = useState(false);
   const [enabledToggle, setEnabledToggle] = useState(isLockEnabled);
   const [pinSavedFeedback, setPinSavedFeedback] = useState(false);
+
+  // Global Chart Backup Progress State
+  const [isExportingCharts, setIsExportingCharts] = useState(false);
+  const [exportProgress, setExportProgress] = useState<{ current: number; total: number; message: string }>({
+    current: 0,
+    total: 0,
+    message: ''
+  });
 
   // Red Warning Wipe Modal State
   const [isWipeModalOpen, setIsWipeModalOpen] = useState(false);
@@ -73,6 +93,30 @@ export function SettingsView({
     onUpdateSecurityPin(pinInput.trim(), enabledToggle);
     setPinSavedFeedback(true);
     setTimeout(() => setPinSavedFeedback(false), 3000);
+  };
+
+  const handleGlobalChartExport = async () => {
+    if (isExportingCharts) return;
+
+    setIsExportingCharts(true);
+    setExportProgress({ current: 0, total: 0, message: 'Indexing chart specimens & executions...' });
+
+    const result = await runGlobalChartBackup(
+      trades,
+      collections,
+      studySpecimens,
+      (current, total, message) => {
+        setExportProgress({ current, total, message });
+      }
+    );
+
+    setIsExportingCharts(false);
+
+    if (result.success) {
+      onShowToast(`Exported ${result.totalExported} charts into structured folders.`, 'success');
+    } else if (result.error && result.error !== 'Export canceled by user.') {
+      onShowToast(`Export error: ${result.error}`, 'error');
+    }
   };
 
   const handleConfirmWipe = (e: React.FormEvent) => {
@@ -258,7 +302,7 @@ export function SettingsView({
         </div>
       </div>
 
-      {/* 4. DATABASE BACKUP & PORTABILITY (CLEAN & RELIABLE) */}
+      {/* 4. DATABASE BACKUP & GLOBAL CHART PORTABILITY */}
       <div className="p-4 sm:p-5 rounded-2xl bg-[#090A10] border border-white/[0.06] space-y-3">
         <div className="flex items-center gap-3">
           <div className="p-2 rounded-xl bg-purple-500/10 text-purple-400 shrink-0">
@@ -266,20 +310,59 @@ export function SettingsView({
           </div>
           <div>
             <h3 className="font-bold text-sm text-white">Database Backup & Portability</h3>
-            <p className="text-xs text-zinc-500">Download or restore complete JSON data snapshot.</p>
+            <p className="text-xs text-zinc-500">Download or restore JSON data snapshot & global chart folders.</p>
           </div>
         </div>
+
+        {/* JSON Import/Export Buttons */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
           <button
             onClick={onExport}
             className="p-2.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-white text-xs font-mono flex items-center justify-center gap-2 transition-colors border border-white/5"
           >
-            <Download className="w-3.5 h-3.5 text-cyan-400" /><span>Download JSON Backup</span>
+            <Download className="w-3.5 h-3.5 text-cyan-400" />
+            <span>Download JSON Backup</span>
           </button>
+          
           <label className="cursor-pointer p-2.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-white text-xs font-mono flex items-center justify-center gap-2 transition-colors border border-white/5">
-            <Upload className="w-3.5 h-3.5 text-emerald-400" /><span>Upload & Restore Backup</span>
+            <Upload className="w-3.5 h-3.5 text-emerald-400" />
+            <span>Upload & Restore Backup</span>
             <input type="file" accept=".json" onChange={onRestore} className="hidden" />
           </label>
+        </div>
+
+        {/* Global Chart Backup Button */}
+        <div className="pt-2 border-t border-white/[0.04]">
+          <button
+            type="button"
+            onClick={handleGlobalChartExport}
+            disabled={isExportingCharts}
+            className="w-full p-3 rounded-xl bg-white/[0.02] hover:bg-white/[0.05] border border-white/[0.08] hover:border-cyan-500/40 text-zinc-300 hover:text-white text-xs font-mono flex items-center justify-between transition-all disabled:opacity-40 group"
+          >
+            <div className="flex items-center gap-2.5 truncate pr-2">
+              <FolderArchive className="w-4 h-4 text-cyan-400 shrink-0" />
+              <div className="text-left truncate">
+                <span className="block font-bold text-white group-hover:text-cyan-300 transition-colors truncate">
+                  {isExportingCharts 
+                    ? `Exporting Global Charts (${exportProgress.current} / ${exportProgress.total})...` 
+                    : 'Export Global Chart Backup (Folders & Subfolders)'}
+                </span>
+                <span className="text-[10px] text-zinc-500 block truncate">
+                  {isExportingCharts && exportProgress.message
+                    ? exportProgress.message
+                    : 'Collections/[Category]/[Setup]/[Variant] & Executed Trades/[Year]/[Month]'}
+                </span>
+              </div>
+            </div>
+
+            <div className="shrink-0 flex items-center gap-1.5 font-bold text-cyan-400">
+              {isExportingCharts ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <Download className="w-4 h-4 text-zinc-400 group-hover:text-cyan-300" />
+              )}
+            </div>
+          </button>
         </div>
       </div>
 

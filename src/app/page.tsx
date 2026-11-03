@@ -155,7 +155,6 @@ export default function NivarpOS() {
         showToast(`Signed in: ${user.email}`, 'success');
         const cloudData = await fetchMasterFromCloud(user.uid);
         if (cloudData && (cloudData.trades.length > 0 || cloudData.collections.length > 0)) {
-          // Merge trades by ID
           setTrades(prev => {
             const map = new Map<string, Trade>();
             prev.forEach(t => { if (t?.id) map.set(String(t.id), t); });
@@ -165,7 +164,6 @@ export default function NivarpOS() {
 
           if (cloudData.collections?.length) setCollections(cloudData.collections);
 
-          // Merge specimens by ID so local charts are NEVER lost
           setStudySpecimens(prev => {
             const map = new Map<string, ChartSpecimen>();
             prev.forEach(s => { if (s?.id) map.set(String(s.id), s); });
@@ -269,7 +267,7 @@ export default function NivarpOS() {
     });
   }, [deduplicatedCollections, categoryOrder]);
 
-  // Initial Load: Safe Multi-Source Merge so Nothing is ever Overwritten or Lost
+  // Initial Load: Safe Multi-Source Merge
   useEffect(() => {
     let isMounted = true;
 
@@ -320,7 +318,6 @@ export default function NivarpOS() {
 
         const cloudData = await fetchMasterFromCloud(currentUser?.uid || 'master');
         if (isMounted && cloudData && (cloudData.trades.length > 0 || cloudData.collections.length > 0)) {
-          // Merge Trades by unique ID
           const tradeMap = new Map<string, Trade>();
           localTrades.forEach(t => { if (t?.id) tradeMap.set(String(t.id), t); });
           (cloudData.trades || []).forEach(t => { if (t?.id) tradeMap.set(String(t.id), t); });
@@ -328,7 +325,6 @@ export default function NivarpOS() {
 
           if (cloudData.collections?.length) setCollections(cloudData.collections);
 
-          // Merge Specimens by unique ID so local charts are NEVER lost
           const specMap = new Map<string, ChartSpecimen>();
           localSpecimens.forEach(s => { if (s?.id) specMap.set(String(s.id), s); });
           (cloudData.studySpecimens || []).forEach(s => { if (s?.id) specMap.set(String(s.id), s); });
@@ -475,7 +471,6 @@ export default function NivarpOS() {
     }
   };
 
-  // 1-Click Restore: Restores 100% of trades, specimens, and setups from your backup file
   const handleRestoreBackup = (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0];
     if (!f) return;
@@ -707,7 +702,6 @@ export default function NivarpOS() {
     });
   }, [trades]);
 
-  // Unified Canonical Matcher: Collects all charts for this collection regardless of "1 - " prefix
   const activeCollectionSpecimens = useMemo(() => {
     if (!selectedCollection) return [];
     const specs: ChartSpecimen[] = [];
@@ -868,7 +862,7 @@ export default function NivarpOS() {
           </nav>
         </div>
 
-        {/* Right side: Lock Button & Clean Import Button */}
+        {/* Right side: Lock Button & Import Button */}
         <div className="flex items-center gap-2 md:gap-3">
           <button
             onClick={handleManualLock}
@@ -1007,6 +1001,10 @@ export default function NivarpOS() {
             currentUser={currentUser}
             securityPin={securityPin}
             isLockEnabled={isLockEnabled}
+            trades={trades}
+            collections={deduplicatedCollections}
+            studySpecimens={studySpecimens}
+            onShowToast={showToast}
             onUpdateSecurityPin={handleUpdateSecurityPin}
             onGoogleLogin={handleGoogleLogin}
             onLogout={handleLogout}

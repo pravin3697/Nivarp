@@ -509,17 +509,17 @@ export function CodexView({
             </div>
             
             <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
-              {/* Minimalist Icon-Only Download Button */}
+              {/* Subtle Minimalist Icon-Only Download Button */}
               {filteredSpecimens.length > 0 && (
                 <button
                   type="button"
                   onClick={handleDownloadCollectionOneByOne}
                   disabled={isDownloadingCollection}
-                  className="p-2 rounded-xl bg-white/[0.04] hover:bg-white/[0.08] border border-white/10 hover:border-cyan-400 text-cyan-400 hover:text-cyan-300 transition-all disabled:opacity-40"
+                  className="p-2 rounded-xl bg-white/[0.02] hover:bg-white/[0.06] border border-white/[0.08] hover:border-white/20 text-zinc-400 hover:text-zinc-200 transition-colors disabled:opacity-30"
                   title={
                     isDownloadingCollection 
                       ? `Saving (${downloadStep}/${filteredSpecimens.length}) to chosen folder...` 
-                      : `Save ${filteredSpecimens.length} charts to folder (Select folder on click)`
+                      : `Save ${filteredSpecimens.length} charts to folder`
                   }
                 >
                   {isDownloadingCollection ? (
