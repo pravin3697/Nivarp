@@ -17,7 +17,9 @@ import {
   ShieldCheck, 
   Zap,
   Waves,
-  Clock
+  Clock,
+  Download,
+  Loader2
 } from 'lucide-react';
 
 export interface CodexViewProps {
@@ -94,6 +96,8 @@ export function CodexView({
   const [dragOverCatIdx, setDragOverCatIdx] = useState<number | null>(null);
 
   const [selectedSubtypeFilter, setSelectedSubtypeFilter] = useState<string>('all');
+  const [isDownloadingCollection, setIsDownloadingCollection] = useState(false);
+  const [downloadStep, setDownloadStep] = useState(0);
 
   const isBearToBullCollection = useMemo(() => {
     if (!selectedCollection) return false;
@@ -130,6 +134,71 @@ export function CodexView({
       total: activeCollectionSpecimens.length 
     };
   }, [activeCollectionSpecimens]);
+
+  // 1-by-1 Collection Downloader
+  const handleDownloadCollectionOneByOne = async () => {
+    if (isDownloadingCollection || filteredSpecimens.length === 0) return;
+    setIsDownloadingCollection(true);
+    setDownloadStep(0);
+
+    const safeCollection = (selectedCollection?.name || 'Collection').replace(/[^a-zA-Z0-9_\-]/g, '_');
+
+    for (let i = 0; i < filteredSpecimens.length; i++) {
+      const s = filteredSpecimens[i];
+      setDownloadStep(i + 1);
+
+      const cleanTitle = (s.title || `Chart_${i + 1}`).replace(/[^a-zA-Z0-9_\-]/g, '_');
+      const cleanDate = (s.date || '').replace(/[^a-zA-Z0-9_\-]/g, '_');
+      const filename = `${safeCollection}_${cleanTitle}_${cleanDate || i + 1}.png`.replace(/_+/g, '_');
+
+      try {
+        if (s.imageUrl.startsWith('data:image')) {
+          const res = await fetch(s.imageUrl);
+          const blob = await res.blob();
+          const blobUrl = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = blobUrl;
+          a.download = filename;
+          document.body.appendChild(a);
+          a.click();
+          a.remove();
+          URL.revokeObjectURL(blobUrl);
+        } else {
+          let res = await fetch(s.imageUrl).catch(() => null);
+          if (!res || !res.ok) {
+            res = await fetch(`https://wsrv.nl/?url=${encodeURIComponent(s.imageUrl)}&output=png`).catch(() => null);
+          }
+          if (res && res.ok) {
+            const blob = await res.blob();
+            const blobUrl = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = blobUrl;
+            a.download = filename;
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            URL.revokeObjectURL(blobUrl);
+          } else {
+            const a = document.createElement('a');
+            a.href = s.imageUrl;
+            a.download = filename;
+            a.target = '_blank';
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+          }
+        }
+      } catch {
+        // Continue downloading remaining charts
+      }
+
+      // Small 300ms pause so browser downloads them cleanly one-by-one
+      await new Promise(r => setTimeout(r, 300));
+    }
+
+    setIsDownloadingCollection(false);
+    setDownloadStep(0);
+  };
 
   // Specimen Drag Handlers
   const handleDragStart = (e: React.DragEvent, index: number) => {
@@ -395,12 +464,37 @@ export function CodexView({
               </div>
             </div>
             
-            <button 
-              onClick={onOpenAddStudy} 
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-400/10 border border-amber-400/30 text-amber-400 text-xs font-mono font-bold hover:bg-amber-400/20 transition-all w-full sm:w-auto justify-center"
-            >
-              <ImagePlus className="w-3.5 h-3.5" /><span>Add Specimen</span>
-            </button>
+            <div className="flex items-center gap-2 w-full sm:w-auto justify-end flex-wrap">
+              {/* 1-by-1 Download Collection Button */}
+              {filteredSpecimens.length > 0 && (
+                <button
+                  type="button"
+                  onClick={handleDownloadCollectionOneByOne}
+                  disabled={isDownloadingCollection}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/[0.04] hover:bg-white/[0.08] border border-white/10 hover:border-cyan-400 text-zinc-300 hover:text-white text-xs font-mono font-bold transition-all disabled:opacity-40"
+                  title="Download all charts in this collection to your Downloads folder"
+                >
+                  {isDownloadingCollection ? (
+                    <>
+                      <Loader2 className="w-3.5 h-3.5 animate-spin text-cyan-400" />
+                      <span>Saving ({downloadStep}/{filteredSpecimens.length})...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Download className="w-3.5 h-3.5 text-cyan-400" />
+                      <span>Download All ({filteredSpecimens.length})</span>
+                    </>
+                  )}
+                </button>
+              )}
+
+              <button 
+                onClick={onOpenAddStudy} 
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-400/10 border border-amber-400/30 text-amber-400 text-xs font-mono font-bold hover:bg-amber-400/20 transition-all"
+              >
+                <ImagePlus className="w-3.5 h-3.5" /><span>Add Specimen</span>
+              </button>
+            </div>
           </div>
 
           {/* Trigger Variant Filter Bar: BEARISH TO BULLISH */}

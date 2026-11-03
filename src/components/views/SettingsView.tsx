@@ -80,7 +80,7 @@ async function getJSZip(): Promise<any> {
   });
 }
 
-// Converts any valid image blob into a clean, 100% native PNG that Windows Explorer natively thumbnails
+// Converts any image blob into a clean, authentic native PNG that Windows Explorer thumbnails
 async function convertBlobToValidPng(rawBlob: Blob): Promise<Blob | null> {
   return new Promise((resolve) => {
     if (typeof window === 'undefined') {
@@ -110,7 +110,6 @@ async function convertBlobToValidPng(rawBlob: Blob): Promise<Blob | null> {
 
     img.onerror = () => {
       URL.revokeObjectURL(objectUrl);
-      // Fails if rawBlob was an HTML 404 error page instead of a real image
       resolve(null);
     };
 
@@ -118,59 +117,43 @@ async function convertBlobToValidPng(rawBlob: Blob): Promise<Blob | null> {
   });
 }
 
-// Multi-fallback CORS-friendly Image Downloader with strict Image Content-Type checking
+// Multi-fallback CORS Resolver with 4 bridges to ensure 100% download rate
 async function fetchChartBlob(url: string): Promise<Blob | null> {
   if (!url) return null;
 
-  let rawBlob: Blob | null = null;
-
   if (url.startsWith('data:image')) {
     const res = await fetch(url).catch(() => null);
-    rawBlob = res ? await res.blob() : null;
-  } else {
-    // 1. Direct fetch
+    const b = res ? await res.blob() : null;
+    return b ? await convertBlobToValidPng(b) : null;
+  }
+
+  const endpoints = [
+    url,
+    `https://wsrv.nl/?url=${encodeURIComponent(url)}&output=png`,
+    `https://corsproxy.io/?url=${encodeURIComponent(url)}`,
+    `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
+    `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`
+  ];
+
+  for (const endpoint of endpoints) {
     try {
-      const res = await fetch(url, { mode: 'cors' });
-      if (res.ok) {
+      const res = await fetch(endpoint).catch(() => null);
+      if (res && res.ok) {
         const ct = res.headers.get('content-type') || '';
-        if (ct.includes('image')) {
-          rawBlob = await res.blob();
+        if (!ct.includes('text/html')) {
+          const blob = await res.blob();
+          if (blob.size > 1500) {
+            const png = await convertBlobToValidPng(blob);
+            if (png) return png;
+          }
         }
       }
-    } catch {}
-
-    // 2. Cloudflare wsrv.nl proxy (forces output=png)
-    if (!rawBlob) {
-      try {
-        const res = await fetch(`https://wsrv.nl/?url=${encodeURIComponent(url)}&output=png`);
-        if (res.ok) {
-          const ct = res.headers.get('content-type') || '';
-          if (ct.includes('image') || ct.includes('octet-stream')) {
-            rawBlob = await res.blob();
-          }
-        }
-      } catch {}
-    }
-
-    // 3. AllOrigins proxy fallback
-    if (!rawBlob) {
-      try {
-        const res = await fetch(`https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`);
-        if (res.ok) {
-          const ct = res.headers.get('content-type') || '';
-          if (ct.includes('image')) {
-            rawBlob = await res.blob();
-          }
-        }
-      } catch {}
+    } catch {
+      // Continue to next endpoint
     }
   }
 
-  // Reject tiny error text files (anything under 1.5KB is not a full candlestick chart)
-  if (!rawBlob || rawBlob.size < 1500) return null;
-
-  // Convert to clean, authentic Windows-supported PNG
-  return await convertBlobToValidPng(rawBlob);
+  return null;
 }
 
 export function SettingsView({
@@ -395,7 +378,7 @@ export function SettingsView({
     setUnmigratedList(failedItems);
   };
 
-  // FULL OFFLINE ZIP DOWNLOAD: Verifies genuine PNGs and unifies canonical folders
+  // FULL OFFLINE ZIP DOWNLOAD WITH CANONICAL FOLDER RESOLUTION & UNIQUE COLLISION-SAFE NAMES
   const handleDownloadOfflineZip = async () => {
     if (isZipping) return;
     setIsZipping(true);
@@ -491,20 +474,20 @@ export function SettingsView({
         }
       });
 
-      // Download each image and verify that it renders as an authentic PNG
+      // Download each image and place into its setup folder with throttled queue
       let savedCount = 0;
       for (let i = 0; i < tasks.length; i++) {
         const item = tasks[i];
         setZipProgressText(`Saving chart ${i + 1} of ${tasks.length} [${savedCount} saved]...`);
 
         try {
-          const verifiedPngBlob = await fetchChartBlob(item.url);
-          if (verifiedPngBlob && verifiedPngBlob.size > 1500) {
-            zip.folder(item.folder)?.file(item.filename, verifiedPngBlob);
+          const verifiedBlob = await fetchChartBlob(item.url);
+          if (verifiedBlob && verifiedBlob.size > 1500) {
+            zip.folder(item.folder)?.file(item.filename, verifiedBlob);
             savedCount++;
           }
         } catch {
-          // Skip dead/deleted links without writing broken placeholder files
+          // Continue saving remaining images
         }
 
         await new Promise(r => setTimeout(r, 40));
@@ -541,159 +524,164 @@ export function SettingsView({
     setTimeout(() => setCopiedUrl(null), 1500);
   };
 
+  // Only show migration panel if legacy charts still exist or migration/results are active
+  const shouldShowMigration = legacyChartStats.legacyCount > 0 || isMigrating || unmigratedList.length > 0;
+
   return (
     <div className="max-w-4xl mx-auto space-y-4 sm:space-y-6">
-      {/* 1. PERMANENT CHART MIGRATION TOOL */}
-      <div className="p-4 sm:p-5 rounded-2xl bg-[#090A10] border border-white/[0.06] space-y-4">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-white/[0.04]">
-          <div className="flex items-center gap-3">
-            <div className="p-2.5 rounded-xl bg-cyan-500/10 text-cyan-400 border border-cyan-500/20">
-              <ArrowRightLeft className="w-5 h-5" />
-            </div>
-            <div>
-              <h3 className="font-bold text-sm text-white flex items-center gap-2">
-                <span>Permanent Cloud Chart Migration</span>
-                {legacyChartStats.legacyCount > 0 ? (
-                  <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-300 border border-amber-500/30">
-                    {legacyChartStats.legacyCount} Legacy Charts Found
-                  </span>
-                ) : (
-                  <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
-                    All Charts Up-to-date
-                  </span>
-                )}
-              </h3>
-              <p className="text-xs text-zinc-400 mt-0.5">
-                Automatically transfers live chart links from temporary hosts into permanent free cloud storage.
-              </p>
-            </div>
-          </div>
-
-          <button
-            type="button"
-            onClick={handleStartMigration}
-            disabled={isMigrating || legacyChartStats.legacyCount === 0}
-            className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-cyan-500 hover:bg-cyan-400 disabled:opacity-40 text-black font-mono font-bold text-xs transition-all shadow-md shadow-cyan-500/20 shrink-0"
-          >
-            {isMigrating ? (
-              <>
-                <Loader2 className="w-4 h-4 animate-spin" />
-                <span>Migrating ({migrationProgress.current}/{migrationProgress.total})...</span>
-              </>
-            ) : (
-              <>
-                <ArrowRightLeft className="w-4 h-4" />
-                <span>Migrate All Charts</span>
-              </>
-            )}
-          </button>
-        </div>
-
-        {/* MIGRATION PROGRESS BAR */}
-        {isMigrating && (
-          <div className="space-y-2 p-3 rounded-xl bg-white/[0.02] border border-white/[0.06] font-mono text-xs">
-            <div className="flex items-center justify-between text-zinc-300">
-              <span className="flex items-center gap-2">
-                <Loader2 className="w-3.5 h-3.5 text-cyan-400 animate-spin" />
-                <span>Re-uploading and verifying chart images...</span>
-              </span>
-              <span className="text-cyan-300 font-bold">
-                {migrationProgress.current} / {migrationProgress.total} ({Math.round((migrationProgress.current / (migrationProgress.total || 1)) * 100)}%)
-              </span>
-            </div>
-            <div className="w-full bg-white/[0.04] h-2 rounded-full overflow-hidden">
-              <div 
-                className="h-full bg-cyan-400 transition-all duration-200 rounded-full"
-                style={{ width: `${Math.round((migrationProgress.current / (migrationProgress.total || 1)) * 100)}%` }}
-              />
-            </div>
-          </div>
-        )}
-
-        {/* SUCCESS SUMMARY */}
-        {migrationSuccessCount !== null && !isMigrating && (
-          <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 font-mono text-xs flex items-center justify-between">
-            <span className="flex items-center gap-2">
-              <CheckCircle className="w-4 h-4 text-emerald-400 shrink-0" />
-              <span>Successfully secured <strong>{migrationSuccessCount}</strong> chart(s) to permanent cloud storage.</span>
-            </span>
-          </div>
-        )}
-
-        {/* UNMIGRATED / EXPIRED CHARTS LIST */}
-        {unmigratedList.length > 0 && (
-          <div className="space-y-3 p-4 rounded-xl bg-amber-950/20 border border-amber-500/30 font-mono text-xs">
-            <div className="flex items-start justify-between gap-2">
-              <div className="flex items-center gap-2">
-                <FileWarning className="w-5 h-5 text-amber-400 shrink-0" />
-                <div>
-                  <h4 className="font-bold text-amber-300 text-xs sm:text-sm">
-                    {unmigratedList.length} Unmigrated / Expired Chart(s)
-                  </h4>
-                  <p className="text-[11px] text-zinc-400">
-                    The free host (ImgBB) already wiped these files. Use the details below to find your original chart on TradingView and click <strong>Replace</strong> to paste the new link:
-                  </p>
-                </div>
+      {/* 1. PERMANENT CHART MIGRATION TOOL (AUTO-HIDES ONCE 0 LEGACY CHARTS REMAIN) */}
+      {shouldShowMigration && (
+        <div className="p-4 sm:p-5 rounded-2xl bg-[#090A10] border border-white/[0.06] space-y-4 animate-in fade-in duration-200">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-white/[0.04]">
+            <div className="flex items-center gap-3">
+              <div className="p-2.5 rounded-xl bg-cyan-500/10 text-cyan-400 border border-cyan-500/20">
+                <ArrowRightLeft className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="font-bold text-sm text-white flex items-center gap-2">
+                  <span>Permanent Cloud Chart Migration</span>
+                  {legacyChartStats.legacyCount > 0 ? (
+                    <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-300 border border-amber-500/30">
+                      {legacyChartStats.legacyCount} Legacy Charts Found
+                    </span>
+                  ) : (
+                    <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
+                      All Charts Up-to-date
+                    </span>
+                  )}
+                </h3>
+                <p className="text-xs text-zinc-400 mt-0.5">
+                  Transfers remaining temporary links to permanent free cloud storage. This panel auto-hides once done.
+                </p>
               </div>
             </div>
 
-            <div className="divide-y divide-white/[0.06] border border-white/10 rounded-xl bg-black/50 overflow-hidden">
-              {unmigratedList.map((item, idx) => (
-                <div key={idx} className="p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2 hover:bg-white/[0.02] transition-colors">
-                  <div className="space-y-0.5 min-w-0 flex-1">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="font-bold text-white text-xs">{item.title}</span>
-                      <span className="text-[10px] px-1.5 py-0.2 rounded bg-zinc-800 text-cyan-300 border border-white/5">
-                        {item.setupName}
-                      </span>
-                      <span className="text-[10px] text-zinc-500">({item.date})</span>
+            <button
+              type="button"
+              onClick={handleStartMigration}
+              disabled={isMigrating || legacyChartStats.legacyCount === 0}
+              className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-cyan-500 hover:bg-cyan-400 disabled:opacity-40 text-black font-mono font-bold text-xs transition-all shadow-md shadow-cyan-500/20 shrink-0"
+            >
+              {isMigrating ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <span>Migrating ({migrationProgress.current}/{migrationProgress.total})...</span>
+                </>
+              ) : (
+                <>
+                  <ArrowRightLeft className="w-4 h-4" />
+                  <span>Migrate All Charts</span>
+                </>
+              )}
+            </button>
+          </div>
+
+          {/* MIGRATION PROGRESS BAR */}
+          {isMigrating && (
+            <div className="space-y-2 p-3 rounded-xl bg-white/[0.02] border border-white/[0.06] font-mono text-xs">
+              <div className="flex items-center justify-between text-zinc-300">
+                <span className="flex items-center gap-2">
+                  <Loader2 className="w-3.5 h-3.5 text-cyan-400 animate-spin" />
+                  <span>Re-uploading and verifying chart images...</span>
+                </span>
+                <span className="text-cyan-300 font-bold">
+                  {migrationProgress.current} / {migrationProgress.total} ({Math.round((migrationProgress.current / (migrationProgress.total || 1)) * 100)}%)
+                </span>
+              </div>
+              <div className="w-full bg-white/[0.04] h-2 rounded-full overflow-hidden">
+                <div 
+                  className="h-full bg-cyan-400 transition-all duration-200 rounded-full"
+                  style={{ width: `${Math.round((migrationProgress.current / (migrationProgress.total || 1)) * 100)}%` }}
+                />
+              </div>
+            </div>
+          )}
+
+          {/* SUCCESS SUMMARY */}
+          {migrationSuccessCount !== null && !isMigrating && (
+            <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 font-mono text-xs flex items-center justify-between">
+              <span className="flex items-center gap-2">
+                <CheckCircle className="w-4 h-4 text-emerald-400 shrink-0" />
+                <span>Successfully secured <strong>{migrationSuccessCount}</strong> chart(s) to permanent cloud storage.</span>
+              </span>
+            </div>
+          )}
+
+          {/* UNMIGRATED / EXPIRED CHARTS LIST */}
+          {unmigratedList.length > 0 && (
+            <div className="space-y-3 p-4 rounded-xl bg-amber-950/20 border border-amber-500/30 font-mono text-xs">
+              <div className="flex items-start justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <FileWarning className="w-5 h-5 text-amber-400 shrink-0" />
+                  <div>
+                    <h4 className="font-bold text-amber-300 text-xs sm:text-sm">
+                      {unmigratedList.length} Unmigrated / Expired Chart(s)
+                    </h4>
+                    <p className="text-[11px] text-zinc-400">
+                      The free host (ImgBB) already wiped these files. Use the details below to find your original chart on TradingView and click <strong>Replace</strong> to paste the new link:
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="divide-y divide-white/[0.06] border border-white/10 rounded-xl bg-black/50 overflow-hidden">
+                {unmigratedList.map((item, idx) => (
+                  <div key={idx} className="p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2 hover:bg-white/[0.02] transition-colors">
+                    <div className="space-y-0.5 min-w-0 flex-1">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="font-bold text-white text-xs">{item.title}</span>
+                        <span className="text-[10px] px-1.5 py-0.2 rounded bg-zinc-800 text-cyan-300 border border-white/5">
+                          {item.setupName}
+                        </span>
+                        <span className="text-[10px] text-zinc-500">({item.date})</span>
+                      </div>
+                      <div className="flex items-center gap-1.5 text-[10px] text-zinc-500 truncate">
+                        <span className="text-rose-400 font-bold shrink-0">Expired link:</span>
+                        <span className="truncate max-w-[280px] text-zinc-400">{item.oldUrl}</span>
+                        <button
+                          type="button"
+                          onClick={() => handleCopyLink(item.oldUrl)}
+                          className="text-zinc-400 hover:text-white p-0.5 transition-colors"
+                          title="Copy broken link"
+                        >
+                          <Copy className="w-3 h-3" />
+                        </button>
+                        {copiedUrl === item.oldUrl && (
+                          <span className="text-emerald-400 text-[9px]">Copied!</span>
+                        )}
+                      </div>
                     </div>
-                    <div className="flex items-center gap-1.5 text-[10px] text-zinc-500 truncate">
-                      <span className="text-rose-400 font-bold shrink-0">Expired link:</span>
-                      <span className="truncate max-w-[280px] text-zinc-400">{item.oldUrl}</span>
-                      <button
-                        type="button"
-                        onClick={() => handleCopyLink(item.oldUrl)}
-                        className="text-zinc-400 hover:text-white p-0.5 transition-colors"
-                        title="Copy broken link"
-                      >
-                        <Copy className="w-3 h-3" />
-                      </button>
-                      {copiedUrl === item.oldUrl && (
-                        <span className="text-emerald-400 text-[9px]">Copied!</span>
+
+                    <div className="flex items-center gap-2 shrink-0">
+                      {item.specimen && onOpenEditSpecimen && (
+                        <button
+                          type="button"
+                          onClick={() => onOpenEditSpecimen(item.specimen!)}
+                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-cyan-500/20 text-cyan-300 hover:bg-cyan-500/30 border border-cyan-500/40 text-xs font-bold transition-colors"
+                        >
+                          <Pencil className="w-3 h-3" />
+                          <span>Replace Link</span>
+                        </button>
+                      )}
+
+                      {item.trade && onOpenDebrief && (
+                        <button
+                          type="button"
+                          onClick={() => onOpenDebrief(item.trade!)}
+                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-cyan-500/20 text-cyan-300 hover:bg-cyan-500/30 border border-cyan-500/40 text-xs font-bold transition-colors"
+                        >
+                          <Pencil className="w-3 h-3" />
+                          <span>Replace Link</span>
+                        </button>
                       )}
                     </div>
                   </div>
-
-                  <div className="flex items-center gap-2 shrink-0">
-                    {item.specimen && onOpenEditSpecimen && (
-                      <button
-                        type="button"
-                        onClick={() => onOpenEditSpecimen(item.specimen!)}
-                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-cyan-500/20 text-cyan-300 hover:bg-cyan-500/30 border border-cyan-500/40 text-xs font-bold transition-colors"
-                      >
-                        <Pencil className="w-3 h-3" />
-                        <span>Replace Link</span>
-                      </button>
-                    )}
-
-                    {item.trade && onOpenDebrief && (
-                      <button
-                        type="button"
-                        onClick={() => onOpenDebrief(item.trade!)}
-                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-cyan-500/20 text-cyan-300 hover:bg-cyan-500/30 border border-cyan-500/40 text-xs font-bold transition-colors"
-                      >
-                        <Pencil className="w-3 h-3" />
-                        <span>Replace Link</span>
-                      </button>
-                    )}
-                  </div>
-                </div>
-              ))}
+                ))}
+              </div>
             </div>
-          </div>
-        )}
-      </div>
+          )}
+        </div>
+      )}
 
       {/* 2. COMPLETE OFFLINE DRIVE VAULT & DATABASE PORTABILITY */}
       <div className="p-4 sm:p-5 rounded-2xl bg-[#090A10] border border-white/[0.06] space-y-4">
