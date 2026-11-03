@@ -1,5 +1,21 @@
 import { Trade, PlaybookCollection } from '@/types/trade';
 
+// Converts TradingView share links (https://www.tradingview.com/x/ZeyXDHRy/) into direct PNG image files
+export function resolveDirectImageUrl(rawUrl?: string): string {
+  if (!rawUrl) return '';
+  const clean = rawUrl.trim();
+
+  // Match TradingView snapshot IDs
+  const tvMatch = clean.match(/tradingview\.com\/x\/([a-zA-Z0-9]+)/i);
+  if (tvMatch && tvMatch[1]) {
+    const id = tvMatch[1];
+    const firstChar = id.charAt(0).toLowerCase();
+    return `https://s3.tradingview.com/snapshots/${firstChar}/${id}.png`;
+  }
+
+  return clean;
+}
+
 // Institutional security name sanitizer for Indian NSE/BSE equities
 export function cleanSecurityName(rawName: string): string {
   if (!rawName) return 'INSTRUMENT';
@@ -183,7 +199,6 @@ export function parseKotakNeoCsv(
   let matchCounter = 0;
 
   grouped.forEach((execList) => {
-    // Sort strictly chronologically by exact execution time
     execList.sort((a, b) => a.time.localeCompare(b.time));
 
     let openSide: 'BUY' | 'SELL' | null = null;
@@ -194,16 +209,13 @@ export function parseKotakNeoCsv(
 
     for (const exec of execList) {
       if (openSide === null) {
-        // First order in time defines position side (BUY = Long, SELL = Short)
         openSide = exec.side;
         entryFills.push(exec);
         openQty += exec.qty;
       } else if (exec.side === openSide) {
-        // Additional fills on position entry
         entryFills.push(exec);
         openQty += exec.qty;
       } else {
-        // Exit fills
         exitFills.push(exec);
         closedQty += exec.qty;
 
@@ -211,14 +223,12 @@ export function parseKotakNeoCsv(
           const isLong = openSide === 'BUY';
           const totalQty = openQty;
 
-          // Volume-weighted execution prices
           const totalEntryCost = entryFills.reduce((acc, f) => acc + (f.price * f.qty), 0);
           const avgEntryPrice = Number((totalEntryCost / totalQty).toFixed(2));
 
           const totalExitCost = exitFills.reduce((acc, f) => acc + (f.price * f.qty), 0);
           const avgExitPrice = Number((totalExitCost / closedQty).toFixed(2));
 
-          // Actual brokerage + taxes deducted by Kotak
           const totalFees = Number(
             (entryFills.reduce((acc, f) => acc + f.charges, 0) + exitFills.reduce((acc, f) => acc + f.charges, 0)).toFixed(2)
           );
@@ -232,15 +242,11 @@ export function parseKotakNeoCsv(
 
           const formattedTimeRange = `${convertTo12Hour(entryTimeEarliest)} - ${convertTo12Hour(exitTimeLatest)}`;
 
-          // Real Raw Gross P&L
           const grossPnl = isLong 
             ? (avgExitPrice - avgEntryPrice) * totalQty 
             : (avgEntryPrice - avgExitPrice) * totalQty;
 
-          // Real Net P&L (Directly matching Kotak statement after all taxes & brokerage)
           const netPnl = Number((grossPnl - totalFees).toFixed(2));
-
-          // Normalized R Multiple: 1R is strictly a visual unit = netPnl / defaultRisk
           const effectiveRisk = defaultRisk > 0 ? defaultRisk : 600;
           const rMultiple = Number((netPnl / effectiveRisk).toFixed(2));
 
@@ -259,7 +265,6 @@ export function parseKotakNeoCsv(
             quantity: totalQty,
             entryPrice: avgEntryPrice,
             exitPrice: avgExitPrice,
-            // SL price defaults to an initial placeholder of 0 until user fills debrief
             slPrice: undefined,
             netPnl,
             fees: totalFees,

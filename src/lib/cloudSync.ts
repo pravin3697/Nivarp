@@ -31,7 +31,6 @@ async function compressImageToWebP(fileOrBlob: File | Blob, maxWidth = 2560, qua
       URL.revokeObjectURL(objectUrl);
       let { width, height } = img;
 
-      // Preserve native resolution up to 2560px (2K / Retina)
       if (width > maxWidth) {
         height = Math.round((height * maxWidth) / width);
         width = maxWidth;
@@ -167,14 +166,25 @@ export async function syncMasterToCloud(
       updatedAt: Date.now()
     }), { merge: true });
 
-    // 2. Save Trades
-    await setDoc(doc(db, `users_${scope}`, 'trades'), sanitizeForFirestore({
-      trades: payload.trades,
-      updatedAt: Date.now()
-    }), { merge: true });
+    // 2. Save Trades CHUNKED in buckets of 15 to stay safely under Firestore's 1MB limit
+    const tradeChunkSize = 15;
+    const totalTradeChunks = Math.ceil(payload.trades.length / tradeChunkSize) || 1;
 
-    // 3. Chunk Specimens into buckets of 30
-    const chunkSize = 30;
+    for (let i = 0; i < totalTradeChunks; i++) {
+      const slice = payload.trades.slice(i * tradeChunkSize, (i + 1) * tradeChunkSize);
+      await setDoc(doc(db, `users_${scope}`, `trades_${i}`), sanitizeForFirestore({
+        items: slice,
+        updatedAt: Date.now()
+      }));
+    }
+
+    await setDoc(doc(db, `users_${scope}`, 'trades_meta'), {
+      totalChunks: totalTradeChunks,
+      updatedAt: Date.now()
+    });
+
+    // 3. Chunk Specimens into buckets of 25
+    const chunkSize = 25;
     const totalChunks = Math.ceil(payload.studySpecimens.length / chunkSize) || 1;
 
     for (let i = 0; i < totalChunks; i++) {
@@ -185,7 +195,6 @@ export async function syncMasterToCloud(
       }));
     }
 
-    // Record total chunk count
     await setDoc(doc(db, `users_${scope}`, 'specimens_meta'), {
       totalChunks,
       updatedAt: Date.now()
@@ -218,12 +227,30 @@ export async function fetchMasterFromCloud(userId: string = 'master'): Promise<{
     }
     const metaData = metaSnap.exists() ? metaSnap.data() : {};
 
-    let tradesSnap = await getDoc(doc(db, `users_${scope}`, 'trades'));
-    if (!tradesSnap.exists() && scope === 'master') {
-      tradesSnap = await getDoc(doc(db, 'journal', 'trades'));
-    }
-    const tradesData = tradesSnap.exists() ? tradesSnap.data() : {};
+    // 1. Fetch Chunked Trades (with legacy single-doc fallback)
+    let tradesMetaSnap = await getDoc(doc(db, `users_${scope}`, 'trades_meta'));
+    let allTrades: Trade[] = [];
 
+    if (tradesMetaSnap.exists()) {
+      const totalTradeChunks = tradesMetaSnap.data()?.totalChunks || 1;
+      for (let i = 0; i < totalTradeChunks; i++) {
+        let chunkSnap = await getDoc(doc(db, `users_${scope}`, `trades_${i}`));
+        if (chunkSnap.exists() && Array.isArray(chunkSnap.data()?.items)) {
+          allTrades.push(...chunkSnap.data().items);
+        }
+      }
+    } else {
+      // Legacy unchunked trades fallback
+      let legacyTradesSnap = await getDoc(doc(db, `users_${scope}`, 'trades'));
+      if (!legacyTradesSnap.exists() && scope === 'master') {
+        legacyTradesSnap = await getDoc(doc(db, 'journal', 'trades'));
+      }
+      if (legacyTradesSnap.exists() && Array.isArray(legacyTradesSnap.data()?.trades)) {
+        allTrades = legacyTradesSnap.data()?.trades;
+      }
+    }
+
+    // 2. Fetch Chunked Specimens
     let specMetaSnap = await getDoc(doc(db, `users_${scope}`, 'specimens_meta'));
     if (!specMetaSnap.exists() && scope === 'master') {
       specMetaSnap = await getDoc(doc(db, 'journal', 'specimens_meta'));
@@ -247,7 +274,7 @@ export async function fetchMasterFromCloud(userId: string = 'master'): Promise<{
     });
 
     return {
-      trades: Array.isArray(tradesData.trades) ? tradesData.trades : [],
+      trades: allTrades,
       collections: Array.isArray(metaData.collections) ? metaData.collections : [],
       studySpecimens: Array.from(uniqueSpecimensMap.values()),
       categoryOrder: Array.isArray(metaData.categoryOrder) ? metaData.categoryOrder : MASTER_CATEGORY_ORDER,
@@ -282,7 +309,7 @@ export async function purgeCloudData(userId: string = 'master'): Promise<boolean
   try {
     const scope = userId || 'master';
     await deleteDoc(doc(db, `users_${scope}`, 'meta'));
-    await deleteDoc(doc(db, `users_${scope}`, 'trades'));
+    await deleteDoc(doc(db, `users_${scope}`, 'trades_meta'));
     await deleteDoc(doc(db, `users_${scope}`, 'specimens_meta'));
     return true;
   } catch (err) {
