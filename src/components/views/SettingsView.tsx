@@ -258,7 +258,7 @@ export function SettingsView({
         </div>
       </div>
 
-      {/* 4. DATABASE BACKUP & PORTABILITY */}
+      {/* 4. DATABASE BACKUP & PORTABILITY (CLEAN & RELIABLE) */}
       <div className="p-4 sm:p-5 rounded-2xl bg-[#090A10] border border-white/[0.06] space-y-3">
         <div className="flex items-center gap-3">
           <div className="p-2 rounded-xl bg-purple-500/10 text-purple-400 shrink-0">

@@ -2,7 +2,7 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
 import { Trade, PlaybookCollection, ChartSpecimen, SetupVariantTag } from '@/types/trade';
-import { parseKotakNeoCsv, parseDateToTimestamp, cleanSecurityName } from '@/lib/parser';
+import { parseKotakNeoCsv, parseDateToTimestamp, cleanSecurityName, displaySetupName } from '@/lib/parser';
 import { 
   syncMasterToCloud,
   fetchMasterFromCloud,
@@ -147,7 +147,7 @@ export default function NivarpOS() {
     return sessionStorage.getItem(SESSION_UNLOCKED_KEY) === 'true';
   };
 
-  // Auth State Listener
+  // Auth State Listener with Safe Merging
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       setCurrentUser(user);
@@ -155,9 +155,24 @@ export default function NivarpOS() {
         showToast(`Signed in: ${user.email}`, 'success');
         const cloudData = await fetchMasterFromCloud(user.uid);
         if (cloudData && (cloudData.trades.length > 0 || cloudData.collections.length > 0)) {
-          setTrades(sanitizeTrades(cloudData.trades || []));
-          setCollections(cloudData.collections || []);
-          setStudySpecimens(cloudData.studySpecimens || []);
+          // Merge trades by ID
+          setTrades(prev => {
+            const map = new Map<string, Trade>();
+            prev.forEach(t => { if (t?.id) map.set(String(t.id), t); });
+            (cloudData.trades || []).forEach(t => { if (t?.id) map.set(String(t.id), t); });
+            return sanitizeTrades(Array.from(map.values()));
+          });
+
+          if (cloudData.collections?.length) setCollections(cloudData.collections);
+
+          // Merge specimens by ID so local charts are NEVER lost
+          setStudySpecimens(prev => {
+            const map = new Map<string, ChartSpecimen>();
+            prev.forEach(s => { if (s?.id) map.set(String(s.id), s); });
+            (cloudData.studySpecimens || []).forEach(s => { if (s?.id) map.set(String(s.id), s); });
+            return Array.from(map.values());
+          });
+
           setCategoryOrder(cloudData.categoryOrder || MASTER_CATEGORY_ORDER);
           if (cloudData.defaultRiskPerTrade) setDefaultRiskPerTrade(cloudData.defaultRiskPerTrade);
           if (cloudData.tradingCapital) setTradingCapital(cloudData.tradingCapital);
@@ -254,7 +269,7 @@ export default function NivarpOS() {
     });
   }, [deduplicatedCollections, categoryOrder]);
 
-  // Initial Load: IndexedDB First, then Cloud
+  // Initial Load: Safe Multi-Source Merge so Nothing is ever Overwritten or Lost
   useEffect(() => {
     let isMounted = true;
 
@@ -282,15 +297,21 @@ export default function NivarpOS() {
           setEngineWatchlist(prev => ({ ...prev, ...idbWatchlist }));
         }
 
+        let localTrades: Trade[] = [];
         if (idbMaster) {
-          if (idbMaster.trades?.length) setTrades(sanitizeTrades(idbMaster.trades));
+          if (idbMaster.trades?.length) {
+            localTrades = sanitizeTrades(idbMaster.trades);
+            setTrades(localTrades);
+          }
           if (idbMaster.collections?.length) setCollections(idbMaster.collections);
           if (idbMaster.defaultRiskPerTrade) setDefaultRiskPerTrade(idbMaster.defaultRiskPerTrade);
           if (idbMaster.tradingCapital) setTradingCapital(idbMaster.tradingCapital);
         }
 
+        let localSpecimens: ChartSpecimen[] = [];
         if (idbStudy && Array.isArray(idbStudy)) {
-          setStudySpecimens(idbStudy);
+          localSpecimens = idbStudy;
+          setStudySpecimens(localSpecimens);
         }
 
         if (idbCatOrder && Array.isArray(idbCatOrder) && idbCatOrder.length > 0) {
@@ -299,10 +320,21 @@ export default function NivarpOS() {
 
         const cloudData = await fetchMasterFromCloud(currentUser?.uid || 'master');
         if (isMounted && cloudData && (cloudData.trades.length > 0 || cloudData.collections.length > 0)) {
-          setTrades(sanitizeTrades(cloudData.trades));
-          setCollections(cloudData.collections);
-          setStudySpecimens(cloudData.studySpecimens);
-          setCategoryOrder(cloudData.categoryOrder);
+          // Merge Trades by unique ID
+          const tradeMap = new Map<string, Trade>();
+          localTrades.forEach(t => { if (t?.id) tradeMap.set(String(t.id), t); });
+          (cloudData.trades || []).forEach(t => { if (t?.id) tradeMap.set(String(t.id), t); });
+          setTrades(sanitizeTrades(Array.from(tradeMap.values())));
+
+          if (cloudData.collections?.length) setCollections(cloudData.collections);
+
+          // Merge Specimens by unique ID so local charts are NEVER lost
+          const specMap = new Map<string, ChartSpecimen>();
+          localSpecimens.forEach(s => { if (s?.id) specMap.set(String(s.id), s); });
+          (cloudData.studySpecimens || []).forEach(s => { if (s?.id) specMap.set(String(s.id), s); });
+          setStudySpecimens(Array.from(specMap.values()));
+
+          setCategoryOrder(cloudData.categoryOrder || MASTER_CATEGORY_ORDER);
           if (cloudData.tradingCapital) setTradingCapital(cloudData.tradingCapital);
           if (cloudData.engineWatchlist) {
             setEngineWatchlist(prev => ({ ...prev, ...cloudData.engineWatchlist }));
@@ -443,6 +475,7 @@ export default function NivarpOS() {
     }
   };
 
+  // 1-Click Restore: Restores 100% of trades, specimens, and setups from your backup file
   const handleRestoreBackup = (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0];
     if (!f) return;
@@ -498,7 +531,7 @@ export default function NivarpOS() {
           engineWatchlist: restoredWatchlist
         }, currentUser?.uid || 'master');
 
-        showToast(`Restored & synced: ${restoredTrades.length} trades, ${restoredCols.length} setups.`, "success");
+        showToast(`Restored & synced: ${restoredTrades.length} trades, ${restoredStudy.length} charts.`, "success");
       } catch (err: any) {
         showToast(`Failed to parse backup: ${err.message}`, "error");
       }
@@ -674,14 +707,23 @@ export default function NivarpOS() {
     });
   }, [trades]);
 
+  // Unified Canonical Matcher: Collects all charts for this collection regardless of "1 - " prefix
   const activeCollectionSpecimens = useMemo(() => {
     if (!selectedCollection) return [];
     const specs: ChartSpecimen[] = [];
     const targetColId = selectedCollection.id;
     const targetNameClean = cleanStr(selectedCollection.name);
+    const targetStripped = cleanStr(displaySetupName(selectedCollection.name));
+
+    const matchesThisCollection = (rawName?: string) => {
+      if (!rawName) return false;
+      const c = cleanStr(rawName);
+      const s = cleanStr(displaySetupName(rawName));
+      return c === targetNameClean || s === targetStripped || c === targetStripped || s === targetNameClean;
+    };
 
     trades
-      .filter(t => cleanStr(t.setupType) === targetNameClean)
+      .filter(t => matchesThisCollection(t.setupType))
       .forEach(t => {
         const ltf = t.image2 || t.image1;
         if (ltf) {
@@ -707,7 +749,7 @@ export default function NivarpOS() {
       .filter(s => {
         if (s.id.startsWith('ltf-')) return false;
         if (s.collectionId && targetColId && s.collectionId === targetColId) return true;
-        return cleanStr(s.collectionName) === targetNameClean;
+        return matchesThisCollection(s.collectionName);
       })
       .forEach(s => {
         const parsedEpoch = s.createdAt || parseDateToTimestamp(s.date) || 0;

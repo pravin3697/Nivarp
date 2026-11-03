@@ -3,7 +3,7 @@
 import React, { useState, useMemo } from 'react';
 import { Trade, PlaybookCollection, ChartSpecimen, SetupVariantTag } from '@/types/trade';
 import { ChartGalleryItem } from '@/components/modals/ChartInspector';
-import { resolveDirectImageUrl } from '@/lib/parser';
+import { resolveDirectImageUrl, displaySetupName } from '@/lib/parser';
 import { 
   BookMarked, 
   FolderOpen, 
@@ -18,7 +18,9 @@ import {
   ShieldCheck, 
   Zap,
   Waves,
-  Clock
+  Clock,
+  Download,
+  Loader2
 } from 'lucide-react';
 
 export interface CodexViewProps {
@@ -95,6 +97,8 @@ export function CodexView({
   const [dragOverCatIdx, setDragOverCatIdx] = useState<number | null>(null);
 
   const [selectedSubtypeFilter, setSelectedSubtypeFilter] = useState<string>('all');
+  const [isDownloadingCollection, setIsDownloadingCollection] = useState(false);
+  const [downloadStep, setDownloadStep] = useState(0);
 
   const isBearToBullCollection = useMemo(() => {
     if (!selectedCollection) return false;
@@ -131,6 +135,104 @@ export function CodexView({
       total: activeCollectionSpecimens.length 
     };
   }, [activeCollectionSpecimens]);
+
+  // 1-by-1 Collection Downloader: Asks user for target folder and names duplicates with _(1), _(2)
+  const handleDownloadCollectionOneByOne = async () => {
+    if (isDownloadingCollection || filteredSpecimens.length === 0) return;
+
+    let dirHandle: any = null;
+
+    // 1. Ask user where to save on local drive using native File System Access API
+    if (typeof window !== 'undefined' && 'showDirectoryPicker' in window) {
+      try {
+        dirHandle = await (window as any).showDirectoryPicker({
+          mode: 'readwrite',
+          startIn: 'documents'
+        });
+      } catch (err: any) {
+        if (err.name === 'AbortError') return;
+      }
+    }
+
+    setIsDownloadingCollection(true);
+    setDownloadStep(0);
+
+    const safeCollection = (selectedCollection?.name || 'Collection').replace(/[^a-zA-Z0-9_\-]/g, '_');
+    const usedNames = new Map<string, number>();
+
+    for (let i = 0; i < filteredSpecimens.length; i++) {
+      const s = filteredSpecimens[i];
+      setDownloadStep(i + 1);
+
+      const cleanTitle = (s.title || `Chart_${i + 1}`).replace(/[^a-zA-Z0-9_\-]/g, '_');
+      const cleanDate = (s.date || '').replace(/[^a-zA-Z0-9_\-]/g, '_');
+      const baseName = `${safeCollection}_${cleanTitle}_${cleanDate}`.replace(/_+/g, '_').replace(/_$/, '');
+
+      // Automatically add (1), (2), (3)... for charts with the same name
+      const count = (usedNames.get(baseName) || 0) + 1;
+      usedNames.set(baseName, count);
+      const filename = `${baseName}_(${count}).png`;
+
+      const directImageUrl = resolveDirectImageUrl(s.imageUrl);
+
+      try {
+        let blob: Blob | null = null;
+
+        if (directImageUrl.startsWith('data:image')) {
+          const res = await fetch(directImageUrl);
+          blob = await res.blob();
+        } else {
+          const endpoints = [
+            `https://corsproxy.io/?url=${encodeURIComponent(directImageUrl)}`,
+            `https://wsrv.nl/?url=${encodeURIComponent(directImageUrl)}&output=png`,
+            `https://api.allorigins.win/raw?url=${encodeURIComponent(directImageUrl)}`,
+            directImageUrl
+          ];
+
+          for (const ep of endpoints) {
+            try {
+              const res = await fetch(ep);
+              if (res.ok) {
+                const ct = res.headers.get('content-type') || '';
+                if (!ct.includes('text/html')) {
+                  const b = await res.blob();
+                  if (b.size > 1500) {
+                    blob = b;
+                    break;
+                  }
+                }
+              }
+            } catch {}
+          }
+        }
+
+        if (blob) {
+          if (dirHandle) {
+            const fileHandle = await dirHandle.getFileHandle(filename, { create: true });
+            const writable = await fileHandle.createWritable();
+            await writable.write(blob);
+            await writable.close();
+          } else {
+            const blobUrl = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = blobUrl;
+            a.download = filename;
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            URL.revokeObjectURL(blobUrl);
+          }
+        }
+      } catch {
+        // Continue downloading remaining charts
+      }
+
+      await new Promise(r => setTimeout(r, 250));
+    }
+
+    setIsDownloadingCollection(false);
+    setDownloadStep(0);
+  };
 
   // Specimen Drag Handlers
   const handleDragStart = (e: React.DragEvent, index: number) => {
@@ -294,10 +396,20 @@ export function CodexView({
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
                     {catCollections.map(col => {
                       const colClean = cleanStr(col.name);
-                      const tradedForThis = trades.filter(t => cleanStr(t.setupType) === colClean);
+                      const colStripped = cleanStr(displaySetupName(col.name));
+
+                      // Smart setup matcher: matches "1 - Liquidity Spring", "Liquidity Spring", etc.
+                      const matchesCol = (rawName?: string) => {
+                        if (!rawName) return false;
+                        const c = cleanStr(rawName);
+                        const s = cleanStr(displaySetupName(rawName));
+                        return c === colClean || s === colStripped || c === colStripped || s === colClean;
+                      };
+
+                      const tradedForThis = trades.filter(t => matchesCol(t.setupType));
                       const studyForThis = studySpecimens.filter(s => {
                         if (s.collectionId && col.id && s.collectionId === col.id) return true;
-                        return cleanStr(s.collectionName) === colClean;
+                        return matchesCol(s.collectionName);
                       });
 
                       const uniqueChartUrls = new Set<string>();
@@ -397,6 +509,27 @@ export function CodexView({
             </div>
             
             <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
+              {/* Minimalist Icon-Only Download Button */}
+              {filteredSpecimens.length > 0 && (
+                <button
+                  type="button"
+                  onClick={handleDownloadCollectionOneByOne}
+                  disabled={isDownloadingCollection}
+                  className="p-2 rounded-xl bg-white/[0.04] hover:bg-white/[0.08] border border-white/10 hover:border-cyan-400 text-cyan-400 hover:text-cyan-300 transition-all disabled:opacity-40"
+                  title={
+                    isDownloadingCollection 
+                      ? `Saving (${downloadStep}/${filteredSpecimens.length}) to chosen folder...` 
+                      : `Save ${filteredSpecimens.length} charts to folder (Select folder on click)`
+                  }
+                >
+                  {isDownloadingCollection ? (
+                    <Loader2 className="w-4 h-4 animate-spin text-cyan-400" />
+                  ) : (
+                    <Download className="w-4 h-4" />
+                  )}
+                </button>
+              )}
+
               <button 
                 onClick={onOpenAddStudy} 
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-400/10 border border-amber-400/30 text-amber-400 text-xs font-mono font-bold hover:bg-amber-400/20 transition-all"
