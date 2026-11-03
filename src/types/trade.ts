@@ -12,6 +12,25 @@ export type SetupVariantTag =
   | 'Pre 10AM' 
   | 'General';
 
+export interface GatekeeperCheckItem {
+  id: string;
+  text: string;
+}
+
+export interface GatekeeperSetupConfig {
+  setupKey: 'spring' | 'b2b' | 'origin' | 'pivot';
+  label: string;
+  tag: string;
+  tagColor: string;
+  trailingRule: string;
+  items: GatekeeperCheckItem[];
+}
+
+export interface GatekeeperConfig {
+  globalConstraints: GatekeeperCheckItem[];
+  setups: Record<'spring' | 'b2b' | 'origin' | 'pivot', GatekeeperSetupConfig>;
+}
+
 export interface Trade {
   id: string;
   symbol: string;

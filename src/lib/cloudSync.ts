@@ -148,13 +148,14 @@ export async function syncMasterToCloud(
     securityPin?: string;
     isLockEnabled?: boolean;
     engineWatchlist?: Record<string, { high: string; low: string }>;
+    gatekeeperConfig?: any;
   },
   userId: string = 'master'
 ): Promise<{ success: boolean; error?: string }> {
   try {
     const scope = userId || 'master';
 
-    // 1. Save Meta & Collections
+    // 1. Save Meta, Collections & Gatekeeper Rules
     await setDoc(doc(db, `users_${scope}`, 'meta'), sanitizeForFirestore({
       collections: payload.collections,
       categoryOrder: payload.categoryOrder,
@@ -163,10 +164,11 @@ export async function syncMasterToCloud(
       securityPin: payload.securityPin,
       isLockEnabled: payload.isLockEnabled,
       engineWatchlist: payload.engineWatchlist,
+      gatekeeperConfig: payload.gatekeeperConfig,
       updatedAt: Date.now()
     }), { merge: true });
 
-    // 2. Save Trades CHUNKED in buckets of 15 to stay safely under Firestore's 1MB limit
+    // 2. Save Trades CHUNKED in buckets of 15
     const tradeChunkSize = 15;
     const totalTradeChunks = Math.ceil(payload.trades.length / tradeChunkSize) || 1;
 
@@ -217,6 +219,7 @@ export async function fetchMasterFromCloud(userId: string = 'master'): Promise<{
   securityPin?: string;
   isLockEnabled?: boolean;
   engineWatchlist?: Record<string, { high: string; low: string }>;
+  gatekeeperConfig?: any;
 } | null> {
   try {
     const scope = userId || 'master';
@@ -227,7 +230,7 @@ export async function fetchMasterFromCloud(userId: string = 'master'): Promise<{
     }
     const metaData = metaSnap.exists() ? metaSnap.data() : {};
 
-    // 1. Fetch Chunked Trades (with legacy single-doc fallback)
+    // 1. Fetch Chunked Trades
     let tradesMetaSnap = await getDoc(doc(db, `users_${scope}`, 'trades_meta'));
     let allTrades: Trade[] = [];
 
@@ -240,7 +243,6 @@ export async function fetchMasterFromCloud(userId: string = 'master'): Promise<{
         }
       }
     } else {
-      // Legacy unchunked trades fallback
       let legacyTradesSnap = await getDoc(doc(db, `users_${scope}`, 'trades'));
       if (!legacyTradesSnap.exists() && scope === 'master') {
         legacyTradesSnap = await getDoc(doc(db, 'journal', 'trades'));
@@ -282,7 +284,8 @@ export async function fetchMasterFromCloud(userId: string = 'master'): Promise<{
       tradingCapital: metaData.tradingCapital || 70000,
       securityPin: metaData.securityPin || '',
       isLockEnabled: !!metaData.isLockEnabled,
-      engineWatchlist: metaData.engineWatchlist || undefined
+      engineWatchlist: metaData.engineWatchlist || undefined,
+      gatekeeperConfig: metaData.gatekeeperConfig || undefined
     };
   } catch (err) {
     console.warn('Failed to fetch from Firebase:', err);

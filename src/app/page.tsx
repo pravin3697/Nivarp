@@ -167,7 +167,7 @@ export default function NivarpOS() {
           height: 640
         });
 
-        // Copy all active stylesheets into the PiP window so styling is 100% identical
+        // Copy stylesheets
         document.querySelectorAll('style, link[rel="stylesheet"]').forEach((styleEl) => {
           pip.document.head.appendChild(styleEl.cloneNode(true));
         });
@@ -185,7 +185,6 @@ export default function NivarpOS() {
         console.warn('PiP launch canceled or unsupported:', err);
       }
     } else {
-      // Fallback: Standalone popup window
       window.open(
         '/engine-widget',
         'NivarpEngineWidget',
@@ -195,7 +194,7 @@ export default function NivarpOS() {
     }
   };
 
-  // Auth State Listener with Safe Merging
+  // Auth State Listener
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       setCurrentUser(user);
@@ -315,7 +314,7 @@ export default function NivarpOS() {
     });
   }, [deduplicatedCollections, categoryOrder]);
 
-  // Initial Load: Safe Multi-Source Merge
+  // Initial Load
   useEffect(() => {
     let isMounted = true;
 
