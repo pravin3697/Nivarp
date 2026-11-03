@@ -13,10 +13,11 @@ export const MASTER_CATEGORY_ORDER = [
 ];
 
 /**
- * Compresses raw screenshots down to ~80KB WebP before uploading.
- * Bypasses file size limits and ensures rapid uploads.
+ * Ultra-High-Fidelity chart preservation.
+ * Keeps resolution up to 2560px (2K / Retina) and 95% WebP quality
+ * so 1px candle wicks, text, and price scales stay razor-sharp.
  */
-async function compressImageToWebP(fileOrBlob: File | Blob, maxWidth = 1920, quality = 0.82): Promise<Blob> {
+async function compressImageToWebP(fileOrBlob: File | Blob, maxWidth = 2560, quality = 0.95): Promise<Blob> {
   return new Promise((resolve) => {
     if (typeof window === 'undefined') {
       resolve(fileOrBlob);
@@ -30,6 +31,7 @@ async function compressImageToWebP(fileOrBlob: File | Blob, maxWidth = 1920, qua
       URL.revokeObjectURL(objectUrl);
       let { width, height } = img;
 
+      // Preserve native resolution up to 2560px (2K / Retina)
       if (width > maxWidth) {
         height = Math.round((height * maxWidth) / width);
         width = maxWidth;
@@ -41,7 +43,10 @@ async function compressImageToWebP(fileOrBlob: File | Blob, maxWidth = 1920, qua
       const ctx = canvas.getContext('2d');
 
       if (ctx) {
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = 'high';
         ctx.drawImage(img, 0, 0, width, height);
+
         canvas.toBlob(
           (blob) => resolve(blob || fileOrBlob),
           'image/webp',

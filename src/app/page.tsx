@@ -965,6 +965,41 @@ export default function NivarpOS() {
             currentUser={currentUser}
             securityPin={securityPin}
             isLockEnabled={isLockEnabled}
+            trades={trades}
+            studySpecimens={studySpecimens}
+            collections={deduplicatedCollections}
+            onUpdateMigratedData={(updatedTrades, updatedSpecimens) => {
+              setTrades(updatedTrades);
+              setStudySpecimens(updatedSpecimens);
+              idbSet(STORAGE_KEY, {
+                trades: updatedTrades,
+                collections: deduplicatedCollections,
+                categoryOrder,
+                defaultRiskPerTrade,
+                tradingCapital
+              });
+              idbSet(STUDY_STORAGE_KEY, updatedSpecimens);
+              syncMasterToCloud({
+                trades: updatedTrades,
+                collections: deduplicatedCollections,
+                studySpecimens: updatedSpecimens,
+                categoryOrder,
+                defaultRiskPerTrade,
+                tradingCapital,
+                securityPin,
+                isLockEnabled,
+                engineWatchlist
+              }, currentUser?.uid || 'master');
+              showToast("Permanent cloud migration saved and synced.", "success");
+            }}
+            onOpenEditSpecimen={(s) => {
+              setEditingSpecimen(s);
+              setIsEditStudyModalOpen(true);
+            }}
+            onOpenDebrief={(t) => {
+              setEditingTrade(t);
+              setIsDebriefModalOpen(true);
+            }}
             onUpdateSecurityPin={handleUpdateSecurityPin}
             onGoogleLogin={handleGoogleLogin}
             onLogout={handleLogout}
