@@ -6,7 +6,9 @@ import {
   AlertOctagon, 
   Copy, 
   Check, 
-  CheckCircle
+  CheckCircle,
+  PictureInPicture2,
+  X
 } from 'lucide-react';
 
 export const WATCHLIST_TICKERS = ['DLF', 'HINDALCO', 'SBIN', 'TATAMOTORS'] as const;
@@ -20,6 +22,9 @@ interface EngineViewProps {
   onSelectTicker: (ticker: string) => void;
   onUpdateTickerZone: (ticker: string, high: string, low: string) => void;
   onChangeTradingCapital: (val: number) => void;
+  isWidgetMode?: boolean;
+  onTogglePiP?: () => void;
+  isPiPActive?: boolean;
 }
 
 const roundToTick = (val: number): number => {
@@ -33,7 +38,10 @@ export function EngineView({
   activeTicker,
   onSelectTicker,
   onUpdateTickerZone,
-  onChangeTradingCapital
+  onChangeTradingCapital,
+  isWidgetMode = false,
+  onTogglePiP,
+  isPiPActive = false
 }: EngineViewProps) {
   const currentTickerData = watchlistData[activeTicker] || { high: '', low: '' };
   const [zoneHighInput, setZoneHighInput] = useState<string>(currentTickerData.high || '');
@@ -174,101 +182,110 @@ export function EngineView({
   }, [zoneMath, activeSetupTab]);
 
   return (
-    <div className="max-w-4xl mx-auto space-y-3 sm:space-y-3.5">
+    <div className={`mx-auto space-y-3 ${isWidgetMode ? 'w-full p-2.5 max-w-none' : 'max-w-4xl sm:space-y-3.5'}`}>
       {/* Main Terminal Frame */}
-      <div className="p-3.5 sm:p-5 rounded-2xl bg-[#090A10] border border-white/[0.06] space-y-3 sm:space-y-3.5 shadow-2xl overflow-hidden">
+      <div className={`rounded-2xl bg-[#090A10] border border-white/[0.08] shadow-2xl overflow-hidden ${
+        isWidgetMode ? 'p-3 space-y-2.5 border-cyan-500/30' : 'p-3.5 sm:p-5 space-y-3 sm:space-y-3.5'
+      }`}>
         
-        {/* RESPONSIVE HEADER: Smoothly stacks on mobile, single row on desktop */}
-        <div className="flex flex-col md:flex-row md:items-center justify-between pb-3 border-b border-white/[0.06] gap-2.5 sm:gap-3">
+        {/* HEADER */}
+        <div className="flex items-center justify-between pb-2.5 border-b border-white/[0.06] gap-2">
           
-          {/* Top Line on Mobile: Title + Live Badge (Left) & 1R Benchmark (Right) */}
-          <div className="flex items-center justify-between md:justify-start gap-2.5">
-            <div className="flex items-center gap-2">
-              <div className="p-1.5 sm:p-2 rounded-xl bg-white/[0.03] text-cyan-400 border border-white/[0.06] shadow-inner shrink-0">
-                <Calculator className="w-4 h-4 sm:w-5 sm:h-5" />
-              </div>
-              <div className="flex items-center gap-1.5">
-                <h2 className="font-bold text-xs sm:text-base text-white font-mono whitespace-nowrap">
-                  Execution Engine
-                </h2>
-                <span className="text-[9px] sm:text-[10px] font-mono px-1.5 py-0.2 sm:px-2 sm:py-0.5 rounded-full bg-cyan-500/10 text-cyan-300 border border-cyan-500/20 font-bold">
-                  Live
-                </span>
-              </div>
+          {/* Title & Live Indicator */}
+          <div className="flex items-center gap-2">
+            <div className="p-1.5 rounded-xl bg-white/[0.03] text-cyan-400 border border-white/[0.06] shadow-inner shrink-0">
+              <Calculator className="w-4 h-4" />
             </div>
+            <div className="flex items-center gap-1.5 truncate">
+              <h2 className="font-bold text-xs sm:text-sm text-white font-mono whitespace-nowrap truncate">
+                {isWidgetMode ? 'Nivarp Engine' : 'Execution Engine'}
+              </h2>
+              <span className="text-[9px] font-mono px-1.5 py-0.2 rounded-full bg-cyan-500/10 text-cyan-300 border border-cyan-500/20 font-bold shrink-0">
+                Live
+              </span>
+            </div>
+          </div>
 
-            {/* 1R benchmark visible on mobile header */}
-            <div className="md:hidden text-right font-mono text-xs text-zinc-400 shrink-0 flex items-center gap-1">
-              <span className="text-zinc-500 text-[10px] uppercase font-bold">1R:</span>
+          {/* Right Action: Pop Out Widget Toggle & 1R */}
+          <div className="flex items-center gap-2 font-mono text-xs shrink-0">
+            <div className="flex items-center gap-1 text-[11px] text-zinc-400">
+              <span className="text-zinc-500 uppercase text-[9px] font-bold">1R:</span>
               <span className="font-black text-emerald-400 text-xs">₹{defaultRisk}</span>
             </div>
-          </div>
 
-          {/* 4 Ticker Pill Switcher: 4 equal columns on mobile, clean fixed-width tabs on desktop */}
-          <div className="grid grid-cols-4 md:flex items-center p-0.5 sm:p-1 rounded-xl bg-white/[0.02] border border-white/10 font-mono text-xs gap-1 shadow-inner w-full md:w-auto">
-            {WATCHLIST_TICKERS.map((ticker) => {
-              const isSelected = activeTicker === ticker;
-
-              return (
-                <button
-                  type="button"
-                  key={ticker}
-                  onClick={() => onSelectTicker(ticker)}
-                  className={`py-1.5 px-1 md:w-24 lg:w-28 rounded-lg text-[11px] sm:text-xs font-mono font-bold text-center select-none border transition-colors truncate ${
-                    isSelected
-                      ? 'bg-cyan-500/20 text-cyan-300 border-cyan-500/50 shadow-md shadow-cyan-500/10'
-                      : 'text-zinc-400 hover:text-white border-transparent hover:bg-white/[0.04]'
-                  }`}
-                >
-                  {ticker}
-                </button>
-              );
-            })}
-          </div>
-
-          {/* 1R Benchmark on Desktop */}
-          <div className="hidden md:flex text-right font-mono text-xs text-zinc-400 shrink-0 items-center gap-1.5">
-            <span className="text-zinc-500 text-[10px] uppercase font-bold">1R:</span>
-            <span className="font-black text-emerald-400 text-sm">₹{defaultRisk}</span>
+            {onTogglePiP && (
+              <button
+                type="button"
+                onClick={onTogglePiP}
+                className={`flex items-center gap-1 px-2.5 py-1 rounded-xl text-[10px] font-bold border transition-all ${
+                  isPiPActive
+                    ? 'bg-rose-500/15 text-rose-300 border-rose-500/40 hover:bg-rose-500/25'
+                    : 'bg-cyan-500/10 text-cyan-300 border-cyan-500/30 hover:bg-cyan-500/20 shadow-sm'
+                }`}
+                title={isPiPActive ? "Dock back to website" : "Pop out as Always-On-Top Floating Window"}
+              >
+                {isPiPActive ? <X className="w-3 h-3" /> : <PictureInPicture2 className="w-3 h-3" />}
+                <span>{isPiPActive ? 'Dock' : 'Always On Top'}</span>
+              </button>
+            )}
           </div>
         </div>
 
+        {/* 4 Ticker Pill Switcher */}
+        <div className="grid grid-cols-4 items-center p-1 rounded-xl bg-white/[0.02] border border-white/10 font-mono text-xs gap-1 shadow-inner w-full">
+          {WATCHLIST_TICKERS.map((ticker) => {
+            const isSelected = activeTicker === ticker;
+
+            return (
+              <button
+                type="button"
+                key={ticker}
+                onClick={() => onSelectTicker(ticker)}
+                className={`py-1.5 px-1 rounded-lg text-[10px] sm:text-xs font-mono font-bold text-center select-none border transition-colors truncate ${
+                  isSelected
+                    ? 'bg-cyan-500/20 text-cyan-300 border-cyan-500/50 shadow-md shadow-cyan-500/10'
+                    : 'text-zinc-400 hover:text-white border-transparent hover:bg-white/[0.04]'
+                }`}
+              >
+                {ticker}
+              </button>
+            );
+          })}
+        </div>
+
         {/* 3 Parameter Inputs */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 sm:gap-3 font-mono text-xs">
+        <div className={`grid gap-2 font-mono text-xs ${isWidgetMode ? 'grid-cols-3' : 'grid-cols-1 sm:grid-cols-3'}`}>
           <div>
-            <label className="text-zinc-400 text-[11px] block mb-1 flex items-center justify-between">
-              <span>Zone High <span className="text-zinc-200 font-bold">(Top)</span></span>
-              <span className="text-[10px] text-cyan-400 font-bold">{activeTicker}</span>
+            <label className="text-zinc-400 text-[10px] block mb-0.5 truncate">
+              <span>Zone High <strong className="text-zinc-200">({activeTicker})</strong></span>
             </label>
             <input
               type="number"
               step="0.05"
               value={zoneHighInput}
               onChange={(e) => handleHighChange(e.target.value)}
-              placeholder="e.g. 261.00"
-              className="w-full bg-zinc-900 border border-white/10 focus:border-cyan-500/50 rounded-xl px-3 py-2 text-white font-bold outline-none text-xs placeholder:text-zinc-600 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none transition-colors"
+              placeholder="High"
+              className="w-full bg-zinc-900 border border-white/10 focus:border-cyan-500/50 rounded-xl px-2.5 py-1.5 text-white font-bold outline-none text-xs placeholder:text-zinc-600 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none transition-colors"
             />
           </div>
 
           <div>
-            <label className="text-zinc-400 text-[11px] block mb-1 flex items-center justify-between">
-              <span>Zone Low <span className="text-zinc-200 font-bold">(Bottom)</span></span>
-              <span className="text-[10px] text-cyan-400 font-bold">{activeTicker}</span>
+            <label className="text-zinc-400 text-[10px] block mb-0.5 truncate">
+              <span>Zone Low <strong className="text-zinc-200">({activeTicker})</strong></span>
             </label>
             <input
               type="number"
               step="0.05"
               value={zoneLowInput}
               onChange={(e) => handleLowChange(e.target.value)}
-              placeholder="e.g. 260.64"
-              className="w-full bg-zinc-900 border border-white/10 focus:border-cyan-500/50 rounded-xl px-3 py-2 text-white font-bold outline-none text-xs placeholder:text-zinc-600 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none transition-colors"
+              placeholder="Low"
+              className="w-full bg-zinc-900 border border-white/10 focus:border-cyan-500/50 rounded-xl px-2.5 py-1.5 text-white font-bold outline-none text-xs placeholder:text-zinc-600 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none transition-colors"
             />
           </div>
 
           <div>
-            <label className="text-zinc-400 text-[11px] block mb-1 flex items-center justify-between">
-              <span>Account Cash</span>
-              <span className="text-emerald-400 font-bold">5x MIS</span>
+            <label className="text-zinc-400 text-[10px] block mb-0.5 truncate">
+              <span>Account Cash <strong className="text-emerald-400">(5x)</strong></span>
             </label>
             <input
               type="number"
@@ -281,133 +298,133 @@ export function EngineView({
                 if (parsed && parsed > 0) onChangeTradingCapital(parsed);
               }}
               placeholder="70000"
-              className="w-full bg-zinc-900 border border-white/10 focus:border-emerald-500/50 rounded-xl px-3 py-2 text-emerald-300 font-black outline-none text-xs [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none transition-colors"
+              className="w-full bg-zinc-900 border border-white/10 focus:border-emerald-500/50 rounded-xl px-2.5 py-1.5 text-emerald-300 font-black outline-none text-xs [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none transition-colors"
             />
           </div>
         </div>
 
-        {/* ZONE VALIDATION STATUS BAR OR EMPTY HELPER */}
+        {/* ZONE VALIDATION STATUS BAR */}
         {zoneMath ? (
           <div>
             {zoneMath.isZoneTooWide ? (
-              <div className="p-2 sm:p-2.5 rounded-xl bg-rose-950/20 border border-rose-500/40 text-rose-300 font-mono text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-1.5">
-                <div className="flex items-center gap-2">
-                  <AlertOctagon className="w-4 h-4 text-rose-400 shrink-0" />
-                  <span className="font-bold">TRADE VOID: ZONE TOO WIDE ({zoneMath.zoneWidthPct}% &gt; 0.33%)</span>
+              <div className="p-2 rounded-xl bg-rose-950/20 border border-rose-500/40 text-rose-300 font-mono text-xs flex items-center justify-between gap-1">
+                <div className="flex items-center gap-1.5 truncate">
+                  <AlertOctagon className="w-3.5 h-3.5 text-rose-400 shrink-0" />
+                  <span className="font-bold text-[11px] truncate">ZONE TOO WIDE ({zoneMath.zoneWidthPct}% &gt; 0.33%)</span>
                 </div>
-                <span className="text-[10px] px-2 py-0.5 rounded bg-rose-500/20 text-rose-300 border border-rose-500/40 font-bold uppercase self-start sm:self-auto">Skip Trade</span>
+                <span className="text-[9px] px-1.5 py-0.2 rounded bg-rose-500/20 text-rose-300 border border-rose-500/40 font-bold uppercase shrink-0">Skip</span>
               </div>
             ) : (
-              <div className="p-2 sm:p-2.5 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 font-mono text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-1">
-                <div className="flex items-center gap-2">
-                  <CheckCircle className="w-4 h-4 text-emerald-400 shrink-0" />
-                  <span className="font-bold">ZONE VALID: {zoneMath.zoneWidthPct}%</span>
+              <div className="p-1.5 sm:p-2 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 font-mono text-xs flex items-center justify-between gap-1">
+                <div className="flex items-center gap-1.5">
+                  <CheckCircle className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                  <span className="font-bold text-[11px]">ZONE VALID: {zoneMath.zoneWidthPct}%</span>
                 </div>
-                <span className="text-[10px] sm:text-[11px] text-zinc-400">
-                  35% Retest Depth = ±{zoneMath.penetrationPct}%
+                <span className="text-[9px] text-zinc-400">
+                  Depth ±{zoneMath.penetrationPct}%
                 </span>
               </div>
             )}
           </div>
         ) : (
-          <div className="p-2.5 rounded-xl bg-white/[0.015] border border-white/[0.05] text-xs font-mono text-zinc-500 flex items-center justify-between">
-            <span className="flex items-center gap-2 text-[11px]">
+          <div className="p-2 rounded-xl bg-white/[0.015] border border-white/[0.05] text-[10px] font-mono text-zinc-500 flex items-center justify-between">
+            <span className="flex items-center gap-1.5">
               <span className="h-1.5 w-1.5 rounded-full bg-cyan-400 animate-pulse shrink-0" />
-              <span>Enter Zone High and Zone Low above for <strong className="text-zinc-300">{activeTicker}</strong> to activate calculations.</span>
+              <span>Enter Zone High & Low for <strong className="text-zinc-300">{activeTicker}</strong>.</span>
             </span>
           </div>
         )}
 
         {/* 4 PLAYBOOK SETUP TABS */}
         {zoneMath && activeData && (
-          <div className="space-y-3 pt-0.5">
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 font-mono text-xs">
+          <div className="space-y-2.5 pt-0.5">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 font-mono text-xs">
               <button
                 type="button"
                 onClick={() => setActiveSetupTab('spring')}
-                className={`p-2 sm:p-2.5 rounded-xl border text-center transition-all ${
+                className={`p-1.5 sm:p-2 rounded-xl border text-center transition-all ${
                   activeSetupTab === 'spring'
                     ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/40 font-bold shadow-sm'
-                    : 'bg-white/[0.02] border-white/[0.06] text-zinc-400 hover:text-white hover:border-white/15'
+                    : 'bg-white/[0.02] border-white/[0.06] text-zinc-400 hover:text-white'
                 }`}
               >
-                <span className="block text-xs font-bold leading-tight">⚡ Liquidity Spring</span>
-                <span className="text-[9px] sm:text-[10px] text-zinc-500">Reclaim</span>
+                <span className="block text-[11px] font-bold leading-tight">⚡ Spring</span>
+                <span className="text-[9px] text-zinc-500">Reclaim</span>
               </button>
 
               <button
                 type="button"
                 onClick={() => setActiveSetupTab('b2b')}
-                className={`p-2 sm:p-2.5 rounded-xl border text-center transition-all ${
+                className={`p-1.5 sm:p-2 rounded-xl border text-center transition-all ${
                   activeSetupTab === 'b2b'
                     ? 'bg-cyan-500/10 text-cyan-300 border-cyan-500/40 font-bold shadow-sm'
-                    : 'bg-white/[0.02] border-white/[0.06] text-zinc-400 hover:text-white hover:border-white/15'
+                    : 'bg-white/[0.02] border-white/[0.06] text-zinc-400 hover:text-white'
                 }`}
               >
-                <span className="block text-xs font-bold leading-tight">📈 Bearish To Bullish</span>
-                <span className="text-[9px] sm:text-[10px] text-zinc-500">35% Retest</span>
+                <span className="block text-[11px] font-bold leading-tight">📈 Bear→Bull</span>
+                <span className="text-[9px] text-zinc-500">35% Retest</span>
               </button>
 
               <button
                 type="button"
                 onClick={() => setActiveSetupTab('origin')}
-                className={`p-2 sm:p-2.5 rounded-xl border text-center transition-all ${
+                className={`p-1.5 sm:p-2 rounded-xl border text-center transition-all ${
                   activeSetupTab === 'origin'
                     ? 'bg-rose-500/10 text-rose-300 border-rose-500/40 font-bold shadow-sm'
-                    : 'bg-white/[0.02] border-white/[0.06] text-zinc-400 hover:text-white hover:border-white/15'
+                    : 'bg-white/[0.02] border-white/[0.06] text-zinc-400 hover:text-white'
                 }`}
               >
-                <span className="block text-xs font-bold leading-tight">🔄 Origin Retest</span>
-                <span className="text-[9px] sm:text-[10px] text-zinc-500">35% Short</span>
+                <span className="block text-[11px] font-bold leading-tight">🔄 Origin</span>
+                <span className="text-[9px] text-zinc-500">35% Short</span>
               </button>
 
               <button
                 type="button"
                 onClick={() => setActiveSetupTab('pivot')}
-                className={`p-2 sm:p-2.5 rounded-xl border text-center transition-all ${
+                className={`p-1.5 sm:p-2 rounded-xl border text-center transition-all ${
                   activeSetupTab === 'pivot'
                     ? 'bg-amber-500/10 text-amber-300 border-amber-500/40 font-bold shadow-sm'
-                    : 'bg-white/[0.02] border-white/[0.06] text-zinc-400 hover:text-white hover:border-white/15'
+                    : 'bg-white/[0.02] border-white/[0.06] text-zinc-400 hover:text-white'
                 }`}
               >
-                <span className="block text-xs font-bold leading-tight">🎯 Overextended Pivot</span>
-                <span className="text-[9px] sm:text-[10px] text-zinc-500">35% Short</span>
+                <span className="block text-[11px] font-bold leading-tight">🎯 Pivot</span>
+                <span className="text-[9px] text-zinc-500">35% Short</span>
               </button>
             </div>
 
             {/* FOCUSED SETUP COORDINATE CARD */}
-            <div className="p-3 sm:p-4 rounded-xl bg-white/[0.015] border border-white/[0.06] space-y-3 font-mono">
-              <div className="flex items-center justify-between pb-2 border-b border-white/[0.04] text-xs">
-                <span className="font-bold text-white flex items-center gap-1.5 text-xs sm:text-sm truncate max-w-[70%]">
+            <div className="p-2.5 sm:p-3 rounded-xl bg-white/[0.015] border border-white/[0.06] space-y-2.5 font-mono">
+              <div className="flex items-center justify-between pb-1.5 border-b border-white/[0.04] text-xs">
+                <span className="font-bold text-white flex items-center gap-1.5 text-xs truncate max-w-[70%]">
                   {activeData.label}
                 </span>
-                <span className="text-[11px] sm:text-xs text-zinc-400 shrink-0">
-                  Risk/Share: <strong className="text-white">₹{activeData.riskPerShare}</strong>
+                <span className="text-[10px] text-zinc-400 shrink-0">
+                  Risk/Sh: <strong className="text-white">₹{activeData.riskPerShare}</strong>
                 </span>
               </div>
 
-              <div className="grid grid-cols-2 gap-2 sm:gap-3 text-xs">
+              <div className="grid grid-cols-2 gap-2 text-xs">
                 {/* Entry Price Box */}
                 <div
                   onClick={() => handleCopy(activeData.entryPrice, 'entry')}
-                  className="p-3 sm:p-3.5 rounded-xl bg-black/40 border border-white/[0.08] hover:border-white/20 transition-all cursor-pointer group flex flex-col justify-between shadow-inner"
+                  className="p-2.5 rounded-xl bg-black/40 border border-white/[0.08] hover:border-white/20 transition-all cursor-pointer group flex flex-col justify-between shadow-inner"
                 >
                   <div>
-                    <div className="flex items-center justify-between text-[10px] sm:text-[11px] text-zinc-400 uppercase mb-1">
+                    <div className="flex items-center justify-between text-[10px] text-zinc-400 uppercase mb-0.5">
                       <span>Limit Entry</span>
-                      {copiedPrice === 'entry' ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5 text-zinc-500 group-hover:text-zinc-300" />}
+                      {copiedPrice === 'entry' ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3 text-zinc-500 group-hover:text-zinc-300" />}
                     </div>
-                    <div className="text-xl sm:text-3xl font-black text-white tracking-tight truncate">
+                    <div className="text-lg sm:text-2xl font-black text-white tracking-tight truncate">
                       ₹{activeData.entryPrice}
                     </div>
-                    <span className="text-[9px] sm:text-[10px] text-zinc-500 block mt-0.5 truncate">
+                    <span className="text-[9px] text-zinc-500 block truncate">
                       {activeData.rule}
                     </span>
                   </div>
 
-                  <div className="mt-2.5 pt-1.5 sm:mt-3 sm:pt-2 border-t border-white/[0.04] flex items-center justify-between">
-                    <span className="text-zinc-500 text-[10px] sm:text-[11px]">Size:</span>
-                    <span className="text-emerald-300 font-black px-1.5 sm:px-2 py-0.5 rounded bg-emerald-500/10 border border-emerald-500/20 text-[11px] sm:text-xs">
+                  <div className="mt-2 pt-1.5 border-t border-white/[0.04] flex items-center justify-between">
+                    <span className="text-zinc-500 text-[10px]">Size:</span>
+                    <span className="text-emerald-300 font-black px-1.5 py-0.2 rounded bg-emerald-500/10 border border-emerald-500/20 text-[11px]">
                       {activeData.cappedQty} QTY
                     </span>
                   </div>
@@ -416,48 +433,48 @@ export function EngineView({
                 {/* Stop Loss Price Box */}
                 <div
                   onClick={() => handleCopy(activeData.slPrice, 'sl')}
-                  className="p-3 sm:p-3.5 rounded-xl bg-rose-950/15 border border-rose-500/25 hover:border-rose-500/40 transition-all cursor-pointer group flex flex-col justify-between shadow-inner"
+                  className="p-2.5 rounded-xl bg-rose-950/15 border border-rose-500/25 hover:border-rose-500/40 transition-all cursor-pointer group flex flex-col justify-between shadow-inner"
                 >
                   <div>
-                    <div className="flex items-center justify-between text-[10px] sm:text-[11px] text-rose-400 uppercase mb-1">
+                    <div className="flex items-center justify-between text-[10px] text-rose-400 uppercase mb-0.5">
                       <span>Stop Loss (SL)</span>
-                      {copiedPrice === 'sl' ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5 text-rose-400" />}
+                      {copiedPrice === 'sl' ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3 text-rose-400" />}
                     </div>
-                    <div className="text-xl sm:text-3xl font-black text-rose-400 tracking-tight truncate">
+                    <div className="text-lg sm:text-2xl font-black text-rose-400 tracking-tight truncate">
                       ₹{activeData.slPrice}
                     </div>
-                    <span className="text-[9px] sm:text-[10px] text-zinc-500 block mt-0.5 truncate">
+                    <span className="text-[9px] text-zinc-500 block truncate">
                       Buffer (0.10%)
                     </span>
                   </div>
 
-                  <div className="mt-2.5 pt-1.5 sm:mt-3 sm:pt-2 border-t border-rose-500/20 text-[10px] sm:text-[11px] text-zinc-400 flex items-center justify-between">
+                  <div className="mt-2 pt-1.5 border-t border-rose-500/20 text-[10px] text-zinc-400 flex items-center justify-between">
                     <span>1R</span>
                     <span className="text-rose-400 font-bold">-₹{defaultRisk}</span>
                   </div>
                 </div>
               </div>
 
-              {/* DETAILED CAPITAL, MARGIN & REALIZED RISK STRIP */}
-              <div className="p-2.5 sm:p-3 rounded-xl bg-black/40 border border-white/[0.04] text-xs grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-2.5 pt-2">
+              {/* CAPITAL & MARGIN STRIP */}
+              <div className="p-2 rounded-xl bg-black/40 border border-white/[0.04] text-[10px] grid grid-cols-2 sm:grid-cols-4 gap-1.5">
                 <div>
-                  <span className="text-[9px] sm:text-[10px] text-zinc-500 block uppercase">Trade Value</span>
-                  <span className="text-zinc-200 font-bold text-xs truncate block">₹{activeData.totalTradeValue.toLocaleString('en-IN')}</span>
+                  <span className="text-zinc-500 block uppercase text-[8.5px]">Value</span>
+                  <span className="text-zinc-200 font-bold truncate block">₹{activeData.totalTradeValue.toLocaleString('en-IN')}</span>
                 </div>
 
                 <div>
-                  <span className="text-[9px] sm:text-[10px] text-zinc-500 block uppercase">Margin (5x)</span>
-                  <span className="text-cyan-300 font-bold text-xs truncate block">₹{activeData.marginUsed.toLocaleString('en-IN')}</span>
+                  <span className="text-zinc-500 block uppercase text-[8.5px]">Margin 5x</span>
+                  <span className="text-cyan-300 font-bold truncate block">₹{activeData.marginUsed.toLocaleString('en-IN')}</span>
                 </div>
 
                 <div>
-                  <span className="text-[9px] sm:text-[10px] text-zinc-500 block uppercase">Margin Left</span>
-                  <span className="text-zinc-400 font-bold text-xs truncate block">₹{activeData.marginFree.toLocaleString('en-IN')}</span>
+                  <span className="text-zinc-500 block uppercase text-[8.5px]">Margin Free</span>
+                  <span className="text-zinc-400 font-bold truncate block">₹{activeData.marginFree.toLocaleString('en-IN')}</span>
                 </div>
 
                 <div>
-                  <span className="text-[9px] sm:text-[10px] text-zinc-500 block uppercase">Actual Risk</span>
-                  <span className={`font-black text-xs truncate block ${activeData.isCapped ? 'text-amber-400' : 'text-emerald-400'}`}>
+                  <span className="text-zinc-500 block uppercase text-[8.5px]">Actual Risk</span>
+                  <span className={`font-black truncate block ${activeData.isCapped ? 'text-amber-400' : 'text-emerald-400'}`}>
                     ₹{activeData.actualRupeeRisk} ({activeData.actualREffective}R)
                   </span>
                 </div>
@@ -466,9 +483,9 @@ export function EngineView({
           </div>
         )}
 
-        <div className="pt-2 border-t border-white/[0.04] text-[10px] sm:text-[11px] font-mono text-zinc-500 flex flex-col sm:flex-row sm:items-center justify-between gap-1">
-          <span>Click any coordinate box to copy price • 5x MIS Margin Protection</span>
-          <span>Standard NSE 0.05 Tick</span>
+        <div className="pt-1.5 border-t border-white/[0.04] text-[9.5px] font-mono text-zinc-500 flex items-center justify-between">
+          <span>Click box to copy • 5x MIS Margin</span>
+          <span>NSE 0.05 Tick</span>
         </div>
 
       </div>

@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useMemo, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { Trade, PlaybookCollection, ChartSpecimen, SetupVariantTag } from '@/types/trade';
 import { parseKotakNeoCsv, parseDateToTimestamp, cleanSecurityName, displaySetupName } from '@/lib/parser';
 import { 
@@ -38,7 +39,8 @@ import {
   Lock,
   Unlock,
   KeyRound,
-  Calculator
+  Calculator,
+  PictureInPicture2
 } from 'lucide-react';
 
 const STORAGE_KEY = 'NIVARP_MASTER_STORAGE';
@@ -84,6 +86,9 @@ export default function NivarpOS() {
   // Engine Multi-Stock Watchlist Coordinates
   const [engineWatchlist, setEngineWatchlist] = useState<Record<string, { high: string; low: string }>>(DEFAULT_WATCHLIST_DATA);
   const [activeEngineTicker, setActiveEngineTicker] = useState<string>('DLF');
+
+  // Always-On-Top Document Picture-in-Picture State
+  const [pipWindow, setPipWindow] = useState<Window | null>(null);
 
   // Security Lock State
   const [securityPin, setSecurityPin] = useState<string>('');
@@ -145,6 +150,49 @@ export default function NivarpOS() {
   const isSessionAlreadyUnlocked = (): boolean => {
     if (typeof window === 'undefined') return false;
     return sessionStorage.getItem(SESSION_UNLOCKED_KEY) === 'true';
+  };
+
+  // Toggle OS-Level Always-On-Top Document Picture-in-Picture window
+  const handleToggleEnginePiP = async () => {
+    if (pipWindow) {
+      pipWindow.close();
+      setPipWindow(null);
+      return;
+    }
+
+    if (typeof window !== 'undefined' && 'documentPictureInPicture' in window) {
+      try {
+        const pip = await (window as any).documentPictureInPicture.requestWindow({
+          width: 440,
+          height: 640
+        });
+
+        // Copy all active stylesheets into the PiP window so styling is 100% identical
+        document.querySelectorAll('style, link[rel="stylesheet"]').forEach((styleEl) => {
+          pip.document.head.appendChild(styleEl.cloneNode(true));
+        });
+
+        pip.document.title = 'Nivarp Engine — Always on Top';
+        pip.document.body.className = 'bg-[#050608] text-zinc-100 font-sans antialiased m-0 p-2 select-none overflow-y-auto';
+
+        pip.addEventListener('pagehide', () => {
+          setPipWindow(null);
+        });
+
+        setPipWindow(pip);
+        showToast('Engine opened in Always-On-Top floating window.', 'success');
+      } catch (err: any) {
+        console.warn('PiP launch canceled or unsupported:', err);
+      }
+    } else {
+      // Fallback: Standalone popup window
+      window.open(
+        '/engine-widget',
+        'NivarpEngineWidget',
+        'width=440,height=640,resizable=yes,scrollbars=yes,status=no,toolbar=no,menubar=no'
+      );
+      showToast('Opened compact Engine window.', 'info');
+    }
   };
 
   // Auth State Listener with Safe Merging
@@ -862,8 +910,21 @@ export default function NivarpOS() {
           </nav>
         </div>
 
-        {/* Right side: Lock Button & Import Button */}
+        {/* Right side: Always-on-top Widget Launcher + Lock + Import Button */}
         <div className="flex items-center gap-2 md:gap-3">
+          <button
+            onClick={handleToggleEnginePiP}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-mono font-bold transition-all ${
+              pipWindow 
+                ? 'bg-rose-500/15 text-rose-300 border-rose-500/40 hover:bg-rose-500/25'
+                : 'bg-white/[0.03] hover:bg-white/[0.08] border-white/10 text-cyan-400 hover:text-cyan-300'
+            }`}
+            title="Pop out Engine as an Always-on-Top Floating Widget over your trading screen"
+          >
+            <PictureInPicture2 className="w-3.5 h-3.5 shrink-0" />
+            <span className="hidden sm:inline">{pipWindow ? 'Dock Widget' : 'Floating Widget'}</span>
+          </button>
+
           <button
             onClick={handleManualLock}
             className="p-2 rounded-xl bg-white/[0.03] hover:bg-white/[0.08] border border-white/10 text-zinc-400 hover:text-cyan-300 transition-colors"
@@ -982,18 +1043,37 @@ export default function NivarpOS() {
         )}
         {activeTab === 'heatmap' && <HeatmapView trades={trades} />}
         {activeTab === 'engine' && (
-          <EngineView 
-            defaultRisk={defaultRiskPerTrade}
-            tradingCapital={tradingCapital}
-            watchlistData={engineWatchlist}
-            activeTicker={activeEngineTicker}
-            onSelectTicker={(ticker) => setActiveEngineTicker(ticker)}
-            onUpdateTickerZone={handleUpdateTickerZone}
-            onChangeTradingCapital={(val: number) => {
-              setTradingCapital(val);
-              showToast(`Account Capital updated to ₹${val.toLocaleString('en-IN')}`, "info");
-            }}
-          />
+          <div className="space-y-4">
+            {pipWindow && (
+              <div className="p-3 rounded-2xl bg-cyan-950/20 border border-cyan-500/40 text-cyan-300 font-mono text-xs flex items-center justify-between gap-3 shadow-lg">
+                <div className="flex items-center gap-2">
+                  <span className="h-2 w-2 rounded-full bg-cyan-400 animate-pulse shrink-0" />
+                  <span>Floating Widget is active on your screen. You can also edit coordinates below.</span>
+                </div>
+                <button
+                  onClick={handleToggleEnginePiP}
+                  className="px-3 py-1 rounded-xl bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-200 border border-cyan-500/40 font-bold"
+                >
+                  Dock Widget
+                </button>
+              </div>
+            )}
+
+            <EngineView 
+              defaultRisk={defaultRiskPerTrade}
+              tradingCapital={tradingCapital}
+              watchlistData={engineWatchlist}
+              activeTicker={activeEngineTicker}
+              onSelectTicker={(ticker) => setActiveEngineTicker(ticker)}
+              onUpdateTickerZone={handleUpdateTickerZone}
+              onChangeTradingCapital={(val: number) => {
+                setTradingCapital(val);
+                showToast(`Account Capital updated to ₹${val.toLocaleString('en-IN')}`, "info");
+              }}
+              onTogglePiP={handleToggleEnginePiP}
+              isPiPActive={!!pipWindow}
+            />
+          </div>
         )}
         {activeTab === 'settings' && (
           <SettingsView
@@ -1019,6 +1099,28 @@ export default function NivarpOS() {
           />
         )}
       </main>
+
+      {/* OS-LEVEL ALWAYS-ON-TOP FLOATING WIDGET (PORTALED DIRECTLY TO PIP WINDOW) */}
+      {pipWindow && createPortal(
+        <div className="bg-[#050608] text-zinc-100 min-h-full p-1 select-none">
+          <EngineView 
+            defaultRisk={defaultRiskPerTrade}
+            tradingCapital={tradingCapital}
+            watchlistData={engineWatchlist}
+            activeTicker={activeEngineTicker}
+            onSelectTicker={(ticker) => setActiveEngineTicker(ticker)}
+            onUpdateTickerZone={handleUpdateTickerZone}
+            onChangeTradingCapital={(val: number) => {
+              setTradingCapital(val);
+              showToast(`Capital updated to ₹${val.toLocaleString('en-IN')}`, "info");
+            }}
+            isWidgetMode={true}
+            onTogglePiP={handleToggleEnginePiP}
+            isPiPActive={true}
+          />
+        </div>,
+        pipWindow.document.body
+      )}
 
       {/* FULLSCREEN INSPECTOR */}
       <ChartInspector
