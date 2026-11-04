@@ -61,33 +61,15 @@ const DEFAULT_CONTRACT_STATE: ExecutionContractState = {
   history: [
     {
       attemptNumber: 1,
-      startDate: '2026-10-26',
+      startDate: '2026-09-26',
       endDate: '2026-11-03',
       status: 'FAILED',
-      failedDay: 9,
+      failedDay: 39,
       failureReason: 'Left terminal during active trade (fell asleep). Allowed a +2R runner to reverse into full SL instead of trailing to BE.',
-      costNote: 'Surrendered winning mechanical setup because defense mechanism was abandoned.',
-      cleanTradesCount: 1
+      costNote: 'Surrendered winning mechanical setup (-1.22R) and severed a 39-day / 14-trade clean streak.',
+      cleanTradesCount: 14
     }
   ]
-};
-
-// Automatic sanitizer that ensures Attempt 1 is permanently Day 9 in cache
-const sanitizeContractState = (raw: ExecutionContractState): ExecutionContractState => {
-  return {
-    ...raw,
-    history: (raw.history || []).map(item => {
-      if (item.attemptNumber === 1) {
-        return {
-          ...item,
-          startDate: '2026-10-26',
-          endDate: '2026-11-03',
-          failedDay: 9
-        };
-      }
-      return item;
-    })
-  };
 };
 
 const DEFAULT_WATCHLIST_DATA: Record<string, { high: string; low: string }> = {
@@ -222,7 +204,7 @@ export default function NivarpOS() {
         });
 
         setPipWindow(pip);
-        showToast('Engine opened in Always-On-Top floating widget.', 'success');
+        showToast('Engine opened in Always-On-Top floating window.', 'success');
       } catch (err: any) {
         console.warn('PiP launch canceled or unsupported:', err);
       }
@@ -270,7 +252,6 @@ export default function NivarpOS() {
     showToast(`Contract breached. Reset to Day 1 (Attempt #${nextAttemptNumber}).`, 'error');
   };
 
-  // Auth State Listener
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       setCurrentUser(user);
@@ -301,7 +282,7 @@ export default function NivarpOS() {
             setEngineWatchlist(prev => ({ ...prev, ...cloudData.engineWatchlist }));
           }
           if (cloudData.executionContract) {
-            setContract(sanitizeContractState(cloudData.executionContract));
+            setContract(cloudData.executionContract);
           }
           if (cloudData.securityPin !== undefined) {
             setSecurityPin(cloudData.securityPin);
@@ -392,7 +373,6 @@ export default function NivarpOS() {
     });
   }, [deduplicatedCollections, categoryOrder]);
 
-  // Initial Load
   useEffect(() => {
     let isMounted = true;
 
@@ -408,9 +388,22 @@ export default function NivarpOS() {
         ]);
 
         if (idbContract) {
-          const sanitized = sanitizeContractState(idbContract);
-          setContract(sanitized);
-          idbSet(CONTRACT_STORAGE_KEY, sanitized);
+          const migratedHistory = (idbContract.history || []).map(h => {
+            if (h.attemptNumber === 1 && (h.startDate !== '2026-09-26' || h.failedDay !== 39)) {
+              return {
+                ...h,
+                startDate: '2026-09-26',
+                endDate: '2026-11-03',
+                failedDay: 39,
+                cleanTradesCount: 14,
+                costNote: 'Surrendered winning mechanical setup (-1.22R) and severed a 39-day / 14-trade clean streak.'
+              };
+            }
+            return h;
+          });
+          const updated = { ...idbContract, history: migratedHistory };
+          setContract(updated);
+          idbSet(CONTRACT_STORAGE_KEY, updated);
         }
 
         if (idbSecurity) {
@@ -468,9 +461,7 @@ export default function NivarpOS() {
             setEngineWatchlist(prev => ({ ...prev, ...cloudData.engineWatchlist }));
           }
           if (cloudData.executionContract) {
-            const sanitized = sanitizeContractState(cloudData.executionContract);
-            setContract(sanitized);
-            idbSet(CONTRACT_STORAGE_KEY, sanitized);
+            setContract(cloudData.executionContract);
           }
           if (cloudData.securityPin !== undefined) {
             setSecurityPin(cloudData.securityPin);
@@ -493,7 +484,6 @@ export default function NivarpOS() {
     return () => { isMounted = false; };
   }, [currentUser]);
 
-  // Auto-Sync
   useEffect(() => {
     if (!isLoaded) return;
 
@@ -625,7 +615,7 @@ export default function NivarpOS() {
           : MASTER_CATEGORY_ORDER;
         const restoredStudy = Array.isArray(d.studySpecimens) ? d.studySpecimens : [];
         const restoredWatchlist = d.engineWatchlist && typeof d.engineWatchlist === 'object' ? d.engineWatchlist : DEFAULT_WATCHLIST_DATA;
-        const restoredContract = sanitizeContractState(d.executionContract || DEFAULT_CONTRACT_STATE);
+        const restoredContract = d.executionContract || DEFAULT_CONTRACT_STATE;
 
         setTrades(restoredTrades);
         setCollections(restoredCols);
@@ -905,13 +895,11 @@ export default function NivarpOS() {
     });
   }, [selectedCollection, trades, studySpecimens]);
 
-  // Compute Contract Days for the header
   const contractDaysElapsed = useMemo(() => {
     const startTs = new Date(contract.startDate).getTime();
     return Math.max(1, Math.floor((Date.now() - startTs) / (1000 * 60 * 60 * 24)) + 1);
   }, [contract.startDate]);
 
-  // FULLSCREEN SECURITY VAULT LOCK OVERLAY
   if (isLockEnabled && isVaultLocked) {
     return (
       <div className="min-h-screen bg-[#050608] text-zinc-100 flex flex-col items-center justify-center p-4 selection:bg-cyan-500/20 antialiased font-mono">
@@ -986,76 +974,84 @@ export default function NivarpOS() {
         </div>
       )}
 
-      {/* TOP HEADER: CENTER-ALIGNED NAVIGATION TABS */}
-      <header className="border-b border-white/[0.06] bg-[#08090D]/90 backdrop-blur-xl sticky top-0 z-40 px-4 md:px-6 py-3 flex items-center justify-between relative">
-        {/* Left Side: Logo & Executioner Contract Badge */}
-        <div className="flex items-center gap-3 sm:gap-4 shrink-0">
-          <NivarpLogo size="md" />
+      {/* TOPBAR: STRICT 3-COLUMN LAYOUT (LEFT / LOCKED-CENTER / RIGHT) */}
+      <header className="border-b border-white/[0.06] bg-[#08090D]/90 backdrop-blur-xl sticky top-0 z-40 px-3 sm:px-6 py-2.5 sm:py-3">
+        <div className="max-w-[1600px] mx-auto flex sm:grid sm:grid-cols-[1fr_auto_1fr] items-center justify-between gap-2">
+          
+          {/* COLUMN 1: LEFT (LOGO + CONTRACT BADGE) */}
+          <div className="flex items-center gap-2 sm:gap-3.5 justify-self-start min-w-0 shrink">
+            <NivarpLogo size="md" />
 
-          {/* THE 180-DAY EXECUTIONER CONTRACT BADGE */}
-          <button
-            type="button"
-            onClick={() => setIsContractModalOpen(true)}
-            className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/30 text-emerald-300 font-mono text-xs font-black transition-all shadow-[0_0_15px_rgba(16,185,129,0.12)] group"
-            title="View 180-Day Executioner Contract, Sentinel & Graveyard"
-          >
-            <Swords className="w-3.5 h-3.5 text-emerald-400 group-hover:rotate-12 transition-transform" />
-            <span className="tracking-wider">ATTEMPT {contract.currentAttempt} • DAY {contractDaysElapsed}/180</span>
-            <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 shadow-[0_0_8px_#10b981] animate-pulse shrink-0" />
-          </button>
-        </div>
-
-        {/* Absolute Dead-Center: Desktop Navigation Tabs */}
-        <nav className="hidden lg:flex items-center p-1 rounded-xl bg-white/[0.03] border border-white/[0.05] absolute left-1/2 -translate-x-1/2">
-          {(['pulse', 'codex', 'matrix', 'heatmap', 'engine', 'settings'] as const).map(tab => (
-            <button 
-              key={tab} 
-              onClick={() => handleTabChange(tab)} 
-              className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-medium capitalize transition-all ${
-                activeTab === tab ? 'bg-zinc-800 text-white shadow-sm' : 'text-zinc-400 hover:text-white'
-              }`}
+            {/* THE 180-DAY EXECUTIONER CONTRACT BADGE */}
+            <button
+              type="button"
+              onClick={() => setIsContractModalOpen(true)}
+              className="flex items-center gap-1.5 px-2 sm:px-2.5 py-1 rounded-xl bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/30 text-emerald-300 font-mono text-[11px] sm:text-xs font-black transition-all shadow-[0_0_15px_rgba(16,185,129,0.12)] shrink-0"
+              title="View 180-Day Executioner Contract, Sentinel & Graveyard"
             >
-              {tab === 'pulse' && <Compass className="w-3.5 h-3.5 text-emerald-400" />}
-              {tab === 'codex' && <BookMarked className="w-3.5 h-3.5 text-cyan-400" />}
-              {tab === 'matrix' && <Binary className="w-3.5 h-3.5 text-purple-400" />}
-              {tab === 'heatmap' && <Flame className="w-3.5 h-3.5 text-amber-400" />}
-              {tab === 'engine' && <Calculator className="w-3.5 h-3.5 text-emerald-400" />}
-              {tab === 'settings' && <SettingsIcon className="w-3.5 h-3.5 text-zinc-400" />}
-              <span>{tab}</span>
+              <Swords className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+              <span className="tracking-wider hidden xs:inline">ATTEMPT {contract.currentAttempt} • D{contractDaysElapsed}/180</span>
+              <span className="tracking-wider xs:hidden">D{contractDaysElapsed}</span>
+              <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 shadow-[0_0_8px_#10b981] animate-pulse shrink-0" />
             </button>
-          ))}
-        </nav>
+          </div>
 
-        {/* Right Side: Subtle Icon-Only Floating Widget Launcher + Lock + Import Button */}
-        <div className="flex items-center gap-2 md:gap-3 shrink-0">
-          <button
-            onClick={handleToggleEnginePiP}
-            className={`p-2 rounded-xl border transition-all ${
-              pipWindow 
-                ? 'bg-rose-500/15 text-rose-300 border-rose-500/40 hover:bg-rose-500/25'
-                : 'bg-white/[0.02] hover:bg-white/[0.06] border-white/10 hover:border-white/20 text-zinc-400 hover:text-zinc-200'
-            }`}
-            title={pipWindow ? "Dock Floating Widget" : "Pop out Engine as an Always-on-Top Floating Widget over your trading screen"}
-          >
-            {pipWindow ? <X className="w-4 h-4 shrink-0" /> : <PictureInPicture2 className="w-4 h-4 shrink-0" />}
-          </button>
+          {/* COLUMN 2: DEAD-CENTER DESKTOP NAVIGATION TABS (NEVER SHIFTS LEFT OR RIGHT) */}
+          <div className="hidden lg:flex justify-self-center">
+            <nav className="flex items-center p-1 rounded-xl bg-white/[0.03] border border-white/[0.05]">
+              {(['pulse', 'codex', 'matrix', 'heatmap', 'engine', 'settings'] as const).map(tab => (
+                <button 
+                  key={tab} 
+                  onClick={() => handleTabChange(tab)} 
+                  className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-medium capitalize transition-all ${
+                    activeTab === tab ? 'bg-zinc-800 text-white shadow-sm' : 'text-zinc-400 hover:text-white'
+                  }`}
+                >
+                  {tab === 'pulse' && <Compass className="w-3.5 h-3.5 text-emerald-400" />}
+                  {tab === 'codex' && <BookMarked className="w-3.5 h-3.5 text-cyan-400" />}
+                  {tab === 'matrix' && <Binary className="w-3.5 h-3.5 text-purple-400" />}
+                  {tab === 'heatmap' && <Flame className="w-3.5 h-3.5 text-amber-400" />}
+                  {tab === 'engine' && <Calculator className="w-3.5 h-3.5 text-emerald-400" />}
+                  {tab === 'settings' && <SettingsIcon className="w-3.5 h-3.5 text-zinc-400" />}
+                  <span>{tab}</span>
+                </button>
+              ))}
+            </nav>
+          </div>
 
-          <button
-            onClick={handleManualLock}
-            className="p-2 rounded-xl bg-white/[0.03] hover:bg-white/[0.08] border border-white/10 text-zinc-400 hover:text-cyan-300 transition-colors"
-            title={isLockEnabled ? "Lock Terminal Now" : "Configure Lock in Settings"}
-          >
-            <Lock className="w-4 h-4" />
-          </button>
+          {/* COLUMN 3: RIGHT ACTIONS (SUBTLE FLOATING WIDGET + LOCK + IMPORT) */}
+          <div className="flex items-center gap-1.5 sm:gap-2.5 justify-self-end shrink-0">
+            {/* Subtle Minimalist Floating Widget Button */}
+            <button
+              onClick={handleToggleEnginePiP}
+              className={`p-2 rounded-xl border transition-all ${
+                pipWindow 
+                  ? 'bg-rose-500/15 text-rose-300 border-rose-500/40 hover:bg-rose-500/25'
+                  : 'bg-white/[0.02] hover:bg-white/[0.06] border-white/[0.08] hover:border-white/20 text-zinc-400 hover:text-zinc-200'
+              }`}
+              title={pipWindow ? "Dock Floating Widget" : "Pop out Engine as an Always-on-Top Floating Widget over your trading screen"}
+            >
+              {pipWindow ? <X className="w-4 h-4 shrink-0" /> : <PictureInPicture2 className="w-4 h-4 shrink-0" />}
+            </button>
 
-          <button 
-            onClick={() => setIsCsvModalOpen(true)} 
-            className="flex items-center gap-2 px-3 md:px-4 py-1.5 md:py-2 rounded-xl bg-emerald-500/10 border border-emerald-500/30 hover:bg-emerald-500/20 text-emerald-400 text-xs font-bold transition-all shadow-[0_0_20px_rgba(16,185,129,0.18)]"
-          >
-            <UploadCloud className="w-4 h-4 shrink-0" />
-            <span className="hidden sm:inline">Import Kotak Neo CSV</span>
-            <span className="sm:hidden">Import</span>
-          </button>
+            <button
+              onClick={handleManualLock}
+              className="p-2 rounded-xl bg-white/[0.02] hover:bg-white/[0.06] border border-white/[0.08] hover:border-white/20 text-zinc-400 hover:text-zinc-200 transition-colors"
+              title={isLockEnabled ? "Lock Terminal Now" : "Configure Lock in Settings"}
+            >
+              <Lock className="w-4 h-4 shrink-0" />
+            </button>
+
+            <button 
+              onClick={() => setIsCsvModalOpen(true)} 
+              className="flex items-center gap-1.5 px-2.5 sm:px-3.5 py-1.5 sm:py-2 rounded-xl bg-emerald-500/10 border border-emerald-500/30 hover:bg-emerald-500/20 text-emerald-400 text-xs font-bold transition-all shadow-[0_0_20px_rgba(16,185,129,0.18)] shrink-0"
+            >
+              <UploadCloud className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />
+              <span className="hidden md:inline">Import Kotak Neo CSV</span>
+              <span className="md:hidden">Import</span>
+            </button>
+          </div>
+
         </div>
       </header>
 

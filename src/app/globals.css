@@ -10,12 +10,21 @@
   --color-foreground: var(--foreground);
 }
 
-html, body {
+/* Force permanent scrollbar gutter so Chrome PWA never shifts horizontally between tabs */
+html {
+  overflow-y: scroll;
+  scrollbar-gutter: stable;
   background: #050608;
   color: #ededed;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   overscroll-behavior-y: none;
   -webkit-tap-highlight-color: transparent;
+}
+
+body {
+  background: #050608;
+  color: #ededed;
+  min-height: 100vh;
 }
 
 /* Custom scrollbars for cybernetic terminal aesthetic */

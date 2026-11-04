@@ -17,7 +17,7 @@ import {
   Trash2,
   Plus,
   RotateCcw,
-  Clock,
+  Target,
   X
 } from 'lucide-react';
 
@@ -25,13 +25,17 @@ export const WATCHLIST_TICKERS = ['DLF', 'HINDALCO', 'SBIN', 'TATAMOTORS'] as co
 export type WatchlistTicker = typeof WATCHLIST_TICKERS[number];
 
 const GATEKEEPER_STORAGE_KEY = 'NIVARP_GATEKEEPER_CONFIG';
+const TICKER_SETUPS_KEY = 'NIVARP_TICKER_SETUPS_MAP';
+const FOCUSED_TICKERS_KEY = 'NIVARP_ENGINE_FOCUSED_TICKERS';
 
-const SETUPS_LIST = [
+type SetupKey = 'origin' | 'spring' | 'pivot' | 'b2b';
+
+const SETUPS_LIST: { key: SetupKey; label: string; icon: string; subtext: string }[] = [
   { key: 'origin', label: 'Origin Retest', icon: '🔄', subtext: '35% Short' },
   { key: 'spring', label: 'Liquidity Spring', icon: '⚡', subtext: 'Reclaim' },
   { key: 'pivot', label: 'Overextended Pivot', icon: '🎯', subtext: '35% Short' },
   { key: 'b2b', label: 'Bearish To Bullish', icon: '📈', subtext: '35% Retest' }
-] as const;
+];
 
 export const DEFAULT_GATEKEEPER_CONFIG: GatekeeperConfig = {
   globalConstraints: [
@@ -163,12 +167,92 @@ export function EngineView({
   isPiPActive = false
 }: EngineViewProps) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const focusMenuRef = useRef<HTMLDivElement>(null);
 
   // Top Switch Mode: 'engine' | 'gatekeeper'
   const [viewMode, setViewMode] = useState<'engine' | 'gatekeeper'>('engine');
 
-  // Active Setup Tab ('origin' | 'spring' | 'pivot' | 'b2b')
-  const [activeSetupTab, setActiveSetupTab] = useState<'origin' | 'spring' | 'pivot' | 'b2b'>('origin');
+  // LIVE FOCUS STATE (Allows focusing only 1, 2, or 3 tickers to eliminate clutter)
+  const [focusedTickers, setFocusedTickers] = useState<string[]>([...WATCHLIST_TICKERS]);
+  const [isFocusSelectorOpen, setIsFocusSelectorOpen] = useState(false);
+
+  // Load focused tickers from storage
+  useEffect(() => {
+    idbGet<string[]>(FOCUSED_TICKERS_KEY).then(saved => {
+      if (Array.isArray(saved) && saved.length > 0) {
+        setFocusedTickers(saved);
+      }
+    });
+  }, []);
+
+  // Safe effect: If activeTicker was removed from focus, smoothly switch to the first focused ticker
+  useEffect(() => {
+    if (focusedTickers.length > 0 && !focusedTickers.includes(activeTicker)) {
+      onSelectTicker(focusedTickers[0]);
+    }
+  }, [focusedTickers, activeTicker, onSelectTicker]);
+
+  // Close focus popover when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (focusMenuRef.current && !focusMenuRef.current.contains(e.target as Node)) {
+        setIsFocusSelectorOpen(false);
+      }
+    };
+    if (isFocusSelectorOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [isFocusSelectorOpen]);
+
+  // Clean handler without set-state-in-render side effects
+  const handleToggleTickerFocus = (ticker: string) => {
+    let next: string[];
+    if (focusedTickers.includes(ticker)) {
+      if (focusedTickers.length <= 1) return; // Keep at least 1
+      next = focusedTickers.filter(t => t !== ticker);
+    } else {
+      next = [...focusedTickers, ticker];
+    }
+
+    setFocusedTickers(next);
+    idbSet(FOCUSED_TICKERS_KEY, next);
+  };
+
+  const handleResetAllFocus = () => {
+    const all = [...WATCHLIST_TICKERS];
+    setFocusedTickers(all);
+    idbSet(FOCUSED_TICKERS_KEY, all);
+  };
+
+  // Visible tickers based on focus filter
+  const visibleTickers = useMemo(() => {
+    return WATCHLIST_TICKERS.filter(t => focusedTickers.includes(t));
+  }, [focusedTickers]);
+
+  // INDEPENDENT SETUP MEMORY PER TICKER
+  const [tickerSetupMap, setTickerSetupMap] = useState<Record<string, SetupKey>>({
+    DLF: 'origin',
+    HINDALCO: 'spring',
+    SBIN: 'origin',
+    TATAMOTORS: 'origin'
+  });
+
+  const activeSetupTab: SetupKey = tickerSetupMap[activeTicker] || 'origin';
+
+  const handleSelectSetupForCurrentTicker = (setupKey: SetupKey) => {
+    const updated = { ...tickerSetupMap, [activeTicker]: setupKey };
+    setTickerSetupMap(updated);
+    idbSet(TICKER_SETUPS_KEY, updated);
+  };
+
+  useEffect(() => {
+    idbGet<Record<string, SetupKey>>(TICKER_SETUPS_KEY).then(saved => {
+      if (saved && typeof saved === 'object') {
+        setTickerSetupMap(prev => ({ ...prev, ...saved }));
+      }
+    });
+  }, []);
 
   const currentTickerData = watchlistData[activeTicker] || { high: '', low: '' };
   const [zoneHighInput, setZoneHighInput] = useState<string>(currentTickerData.high || '');
@@ -260,13 +344,32 @@ export function EngineView({
     onUpdateTickerZone(activeTicker, zoneHighInput, val);
   };
 
-  const handleCopy = (text: string | number, label: string) => {
-    navigator.clipboard.writeText(String(text));
+  // ROBUST CLIPBOARD COPY
+  const handleCopy = async (text: string | number, label: string) => {
+    const str = String(text);
+    try {
+      if (navigator?.clipboard?.writeText) {
+        await navigator.clipboard.writeText(str);
+      } else {
+        throw new Error('Fallback required');
+      }
+    } catch {
+      const el = document.createElement('textarea');
+      el.value = str;
+      el.setAttribute('readonly', '');
+      el.style.position = 'fixed';
+      el.style.left = '-9999px';
+      el.style.top = '0';
+      document.body.appendChild(el);
+      el.select();
+      document.execCommand('copy');
+      document.body.removeChild(el);
+    }
     setCopiedPrice(label);
     setTimeout(() => setCopiedPrice(null), 1500);
   };
 
-  // Mainzone Math with 35% Depth & Capital Margin Audit
+  // Mainzone Math
   const zoneMath = useMemo(() => {
     const high = parseFloat(zoneHighInput) || 0;
     const low = parseFloat(zoneLowInput) || 0;
@@ -350,7 +453,7 @@ export function EngineView({
     return { ...zoneMath.b2b, label: 'Bearish To Bullish (Long Retest)', rule: 'High - 35% Depth' };
   }, [zoneMath, activeSetupTab]);
 
-  // LIVE AUTOMATION HELPERS FOR GATEKEEPER
+  // Gatekeeper automation helpers
   const activeGatekeeperSetup = gatekeeperConfig.setups[activeSetupTab];
   const currentTickerCheckMap = tickerChecks[activeTicker] || {};
 
@@ -428,7 +531,6 @@ export function EngineView({
     }));
   };
 
-  // EDIT MODE HANDLERS (Website only)
   const handleUpdateGlobalItem = (id: string, text: string) => {
     saveGatekeeperConfig({
       ...gatekeeperConfig,
@@ -514,6 +616,12 @@ export function EngineView({
     });
   };
 
+  // Determine dynamic grid columns for the ticker row based on focused tickers count
+  const tickerGridColsClass = 
+    visibleTickers.length === 1 ? 'grid-cols-1' :
+    visibleTickers.length === 2 ? 'grid-cols-2' :
+    visibleTickers.length === 3 ? 'grid-cols-3' : 'grid-cols-4';
+
   return (
     <div ref={containerRef} className={`mx-auto space-y-3 ${isWidgetMode ? 'w-full p-2.5 max-w-none' : 'max-w-4xl sm:space-y-3.5'}`}>
       {/* Main Terminal Frame */}
@@ -521,7 +629,7 @@ export function EngineView({
         isWidgetMode ? 'p-3 space-y-2.5 border-cyan-500/30' : 'p-3.5 sm:p-5 space-y-3 sm:space-y-3.5'
       }`}>
         
-        {/* HEADER: MODE SWITCH TOGGLE */}
+        {/* HEADER: MODE SWITCH TOGGLE (HOTKEYS E & G) */}
         <div className="flex items-center justify-between pb-2.5 border-b border-white/[0.06] gap-2">
           
           {/* Switch Toggle Buttons */}
@@ -566,7 +674,7 @@ export function EngineView({
             </button>
           </div>
 
-          {/* Right Action: 1R & Subtle Floating Widget Toggle Button */}
+          {/* Right Action: 1R & Subtle Dock Button */}
           <div className="flex items-center gap-1.5 sm:gap-2 font-mono text-xs shrink-0">
             <div className="flex items-center gap-1 text-[10px] sm:text-[11px] text-zinc-400">
               <span className="text-zinc-500 uppercase text-[9px] font-bold">1R:</span>
@@ -577,10 +685,10 @@ export function EngineView({
               <button
                 type="button"
                 onClick={onTogglePiP}
-                className={`flex items-center gap-1 px-2 py-1 rounded-xl text-[10px] font-bold border transition-all ${
+                className={`flex items-center gap-1 px-2.5 py-1 rounded-xl text-[10px] font-bold border transition-all ${
                   isPiPActive
                     ? 'bg-rose-500/15 text-rose-300 border-rose-500/40 hover:bg-rose-500/25'
-                    : 'bg-white/[0.02] hover:bg-white/[0.06] border-white/10 hover:border-white/20 text-zinc-400 hover:text-zinc-200'
+                    : 'bg-white/[0.02] hover:bg-white/[0.06] border-white/[0.08] hover:border-white/20 text-zinc-400 hover:text-zinc-200'
                 }`}
                 title={isPiPActive ? "Dock back to website" : "Pop out as Always-On-Top Floating Window"}
               >
@@ -591,26 +699,98 @@ export function EngineView({
           </div>
         </div>
 
-        {/* 4 Ticker Pill Switcher (Shared between Engine and Gatekeeper) */}
-        <div className="grid grid-cols-4 items-center p-1 rounded-xl bg-white/[0.02] border border-white/10 font-mono text-xs gap-1 shadow-inner w-full">
-          {WATCHLIST_TICKERS.map((ticker) => {
-            const isSelected = activeTicker === ticker;
+        {/* TICKER SELECTOR BAR WITH LIVE FOCUS SELECTOR (Only shows your focused tickers!) */}
+        <div className="flex items-center gap-1.5">
+          <div className={`grid ${tickerGridColsClass} items-center p-1 rounded-xl bg-white/[0.02] border border-white/10 font-mono text-xs gap-1 shadow-inner flex-1`}>
+            {visibleTickers.map((ticker) => {
+              const isSelected = activeTicker === ticker;
 
-            return (
-              <button
-                type="button"
-                key={ticker}
-                onClick={() => onSelectTicker(ticker)}
-                className={`py-1.5 px-1 rounded-lg text-[10px] sm:text-xs font-mono font-bold text-center select-none border transition-colors truncate ${
-                  isSelected
-                    ? 'bg-cyan-500/20 text-cyan-300 border-cyan-500/50 shadow-md shadow-cyan-500/10'
-                    : 'text-zinc-400 hover:text-white border-transparent hover:bg-white/[0.04]'
-                }`}
-              >
-                {ticker}
-              </button>
-            );
-          })}
+              return (
+                <button
+                  type="button"
+                  key={ticker}
+                  onClick={() => onSelectTicker(ticker)}
+                  className={`py-1.5 px-1 rounded-lg text-[10px] sm:text-xs font-mono font-bold text-center select-none border transition-colors truncate ${
+                    isSelected
+                      ? 'bg-cyan-500/20 text-cyan-300 border-cyan-500/50 shadow-md shadow-cyan-500/10'
+                      : 'text-zinc-400 hover:text-white border-transparent hover:bg-white/[0.04]'
+                  }`}
+                >
+                  {ticker}
+                </button>
+              );
+            })}
+          </div>
+
+          {/* FOCUS FILTER POPOVER TOGGLE BUTTON */}
+          <div className="relative shrink-0" ref={focusMenuRef}>
+            <button
+              type="button"
+              onClick={() => setIsFocusSelectorOpen(prev => !prev)}
+              className={`p-1.5 sm:px-2.5 sm:py-1.5 rounded-xl border text-[11px] font-mono font-bold transition-all flex items-center gap-1 ${
+                focusedTickers.length < WATCHLIST_TICKERS.length
+                  ? 'bg-amber-500/15 text-amber-300 border-amber-500/40 shadow-sm'
+                  : 'bg-white/[0.02] hover:bg-white/[0.06] border-white/10 text-zinc-400 hover:text-white'
+              }`}
+              title="Focus 1 or 2 specific tickers for today's session"
+            >
+              <Target className={`w-3.5 h-3.5 ${focusedTickers.length < WATCHLIST_TICKERS.length ? 'text-amber-400 animate-pulse' : 'text-zinc-400'}`} />
+              <span className="hidden sm:inline">
+                {focusedTickers.length < WATCHLIST_TICKERS.length ? `Focus (${focusedTickers.length}/4)` : 'Focus'}
+              </span>
+              <span className="sm:hidden text-[10px] font-bold">
+                {focusedTickers.length < WATCHLIST_TICKERS.length ? focusedTickers.length : ''}
+              </span>
+            </button>
+
+            {/* FOCUS POPOVER MENU */}
+            {isFocusSelectorOpen && (
+              <div className="absolute right-0 top-full mt-1.5 z-50 w-52 bg-[#0B0D14]/95 border border-white/15 rounded-2xl shadow-[0_16px_40px_rgba(0,0,0,0.85)] backdrop-blur-2xl p-2.5 font-mono text-xs space-y-2 animate-in fade-in zoom-in-95 duration-100">
+                <div className="flex items-center justify-between pb-1.5 border-b border-white/[0.06]">
+                  <span className="text-[10px] text-zinc-400 uppercase font-bold flex items-center gap-1">
+                    <Target className="w-3 h-3 text-cyan-400" />
+                    <span>Watchlist Focus</span>
+                  </span>
+                  <button
+                    type="button"
+                    onClick={handleResetAllFocus}
+                    className="text-[10px] text-cyan-400 hover:text-white underline"
+                  >
+                    All (4)
+                  </button>
+                </div>
+
+                <div className="space-y-1">
+                  {WATCHLIST_TICKERS.map(ticker => {
+                    const isFocused = focusedTickers.includes(ticker);
+                    return (
+                      <button
+                        key={ticker}
+                        type="button"
+                        onClick={() => handleToggleTickerFocus(ticker)}
+                        className={`w-full px-2.5 py-1.5 rounded-lg flex items-center justify-between text-left transition-all ${
+                          isFocused
+                            ? 'bg-cyan-500/15 text-cyan-200 border border-cyan-500/40 font-bold'
+                            : 'bg-white/[0.02] text-zinc-500 hover:text-zinc-300 border border-transparent'
+                        }`}
+                      >
+                        <span>{ticker}</span>
+                        {isFocused ? (
+                          <Check className="w-3.5 h-3.5 text-cyan-400" />
+                        ) : (
+                          <span className="text-[9px] text-zinc-600">Hidden</span>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                <p className="text-[9px] text-zinc-500 pt-1 border-t border-white/[0.04] leading-normal">
+                  Focus only 1 or 2 active charts to eliminate distractions during live execution.
+                </p>
+              </div>
+            )}
+          </div>
         </div>
 
         {/* ========================================================= */}
@@ -700,7 +880,7 @@ export function EngineView({
               </div>
             )}
 
-            {/* 4 PLAYBOOK SETUP TABS */}
+            {/* 4 PLAYBOOK SETUP TABS (INDEPENDENT PER TICKER) */}
             {zoneMath && activeData && (
               <div className="space-y-2.5 pt-0.5">
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 font-mono text-xs">
@@ -708,7 +888,7 @@ export function EngineView({
                     <button
                       type="button"
                       key={key}
-                      onClick={() => setActiveSetupTab(key)}
+                      onClick={() => handleSelectSetupForCurrentTicker(key)}
                       className={`p-1.5 sm:p-2 rounded-xl border text-center transition-all ${
                         activeSetupTab === key
                           ? 'bg-cyan-500/10 text-cyan-300 border-cyan-500/40 font-bold shadow-sm'
@@ -815,7 +995,7 @@ export function EngineView({
         )}
 
         {/* ========================================================= */}
-        {/* VIEW 2: TERMINAL GATEKEEPER CHECKLIST (Press G)           */}
+        {/* VIEW 2: TERMINAL GATEKEEPER PRE-TRADE CHECKLIST (Press G) */}
         {/* ========================================================= */}
         {viewMode === 'gatekeeper' && (
           <div className="space-y-3 font-mono animate-in fade-in duration-150">
@@ -826,7 +1006,7 @@ export function EngineView({
                   <button
                     type="button"
                     key={key}
-                    onClick={() => setActiveSetupTab(key)}
+                    onClick={() => handleSelectSetupForCurrentTicker(key)}
                     className={`px-2 py-1 rounded-lg text-[10px] font-bold border transition-colors truncate ${
                       activeSetupTab === key
                         ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40 shadow-sm'
@@ -838,6 +1018,7 @@ export function EngineView({
                 ))}
               </div>
 
+              {/* Edit Mode Toggle Button */}
               {!isWidgetMode && (
                 <button
                   type="button"
@@ -1022,7 +1203,7 @@ export function EngineView({
               </div>
             )}
 
-            {/* RESTORE DEFAULTS (IN EDIT MODE ON WEBSITE) */}
+            {/* RESTORE DEFAULTS */}
             {!isWidgetMode && isEditMode && (
               <div className="pt-1 flex justify-end">
                 <button
@@ -1083,7 +1264,7 @@ export function EngineView({
         )}
 
         <div className="pt-1.5 border-t border-white/[0.04] text-[9.5px] font-mono text-zinc-500 flex items-center justify-between">
-          <span>Shortcuts: Press <strong>E</strong> (Engine) or <strong>G</strong> (Gatekeeper)</span>
+          <span>Click box to copy • 5x MIS Margin</span>
           <span>NSE 0.05 Tick</span>
         </div>
 
