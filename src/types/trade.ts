@@ -1,7 +1,9 @@
 export type BehavioralTag = 
   | 'Rules Followed' 
+  | 'SL Hunt (Clean Variance)' 
+  | 'SL Hunt (Defense Abandoned)' 
+  | 'SL Hunt / Slippage Hunt' // backward compatibility
   | 'No Confirmation Entry' 
-  | 'SL Hunt / Slippage Hunt' 
   | 'Hallucinated Trade';
 
 export type SetupVariantTag = 
@@ -29,6 +31,25 @@ export interface GatekeeperSetupConfig {
 export interface GatekeeperConfig {
   globalConstraints: GatekeeperCheckItem[];
   setups: Record<'spring' | 'b2b' | 'origin' | 'pivot', GatekeeperSetupConfig>;
+}
+
+export interface ContractAttempt {
+  attemptNumber: number;
+  startDate: string;
+  endDate: string;
+  status: 'ACTIVE' | 'FAILED' | 'COMPLETED';
+  failedDay?: number;
+  failureReason?: string;
+  costNote?: string;
+  cleanTradesCount: number;
+}
+
+export interface ExecutionContractState {
+  currentAttempt: number;
+  startDate: string; // e.g. "2026-11-04"
+  targetEndDate: string; // e.g. "2027-05-04"
+  totalTargetDays: number; // 180
+  history: ContractAttempt[];
 }
 
 export interface Trade {

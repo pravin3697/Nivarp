@@ -1,5 +1,5 @@
 import { db } from './firebaseClient';
-import { Trade, PlaybookCollection, ChartSpecimen } from '@/types/trade';
+import { Trade, PlaybookCollection, ChartSpecimen, ExecutionContractState } from '@/types/trade';
 import { doc, getDoc, setDoc, deleteDoc } from 'firebase/firestore';
 
 export const MASTER_CATEGORY_ORDER = [
@@ -14,8 +14,6 @@ export const MASTER_CATEGORY_ORDER = [
 
 /**
  * Ultra-High-Fidelity chart preservation.
- * Keeps resolution up to 2560px (2K / Retina) and 95% WebP quality
- * so 1px candle wicks, text, and price scales stay razor-sharp.
  */
 async function compressImageToWebP(fileOrBlob: File | Blob, maxWidth = 2560, quality = 0.95): Promise<Blob> {
   return new Promise((resolve) => {
@@ -65,17 +63,10 @@ async function compressImageToWebP(fileOrBlob: File | Blob, maxWidth = 2560, qua
   });
 }
 
-/**
- * Permanent 100% Free Cloud Upload Pipeline.
- * 1. FreeImage.host (Permanent, never deletes)
- * 2. Catbox.moe (Permanent, never expires)
- * 3. Fail-safe: Direct compressed WebP Base64 stored in your own Firebase/IndexedDB
- */
 export async function uploadScreenshotToCloud(fileOrBlob: File | Blob): Promise<string | null> {
   try {
     const compressedBlob = await compressImageToWebP(fileOrBlob);
 
-    // 1. Try FreeImage.host (Permanent, never deletes)
     try {
       const formData = new FormData();
       formData.append('key', '6d207e02198a847423850aa0091c5215');
@@ -92,11 +83,8 @@ export async function uploadScreenshotToCloud(fileOrBlob: File | Blob): Promise<
       if (data?.image?.url) {
         return data.image.url;
       }
-    } catch {
-      // Fall through to Catbox
-    }
+    } catch {}
 
-    // 2. Try Catbox.moe (Permanent, files kept forever)
     try {
       const catboxData = new FormData();
       catboxData.append('reqtype', 'fileupload');
@@ -111,25 +99,19 @@ export async function uploadScreenshotToCloud(fileOrBlob: File | Blob): Promise<
       if (catboxUrl && catboxUrl.startsWith('http')) {
         return catboxUrl.trim();
       }
-    } catch {
-      // Fall through to Base64
-    }
+    } catch {}
 
-    // 3. Fail-safe: Save compressed WebP directly in your Firebase & IndexedDB
     return new Promise((resolve) => {
       const reader = new FileReader();
       reader.onloadend = () => resolve(reader.result as string);
       reader.onerror = () => resolve(null);
       reader.readAsDataURL(compressedBlob);
     });
-
   } catch (err) {
     console.warn('Screenshot upload notice:', err);
     return null;
   }
 }
-
-// ------------------- USER-ISOLATED SEGMENTED FIRESTORE STORAGE -------------------
 
 function sanitizeForFirestore(obj: any): any {
   return JSON.parse(JSON.stringify(obj, (key, value) => {
@@ -149,13 +131,13 @@ export async function syncMasterToCloud(
     isLockEnabled?: boolean;
     engineWatchlist?: Record<string, { high: string; low: string }>;
     gatekeeperConfig?: any;
+    executionContract?: ExecutionContractState;
   },
   userId: string = 'master'
 ): Promise<{ success: boolean; error?: string }> {
   try {
     const scope = userId || 'master';
 
-    // 1. Save Meta, Collections & Gatekeeper Rules
     await setDoc(doc(db, `users_${scope}`, 'meta'), sanitizeForFirestore({
       collections: payload.collections,
       categoryOrder: payload.categoryOrder,
@@ -165,10 +147,10 @@ export async function syncMasterToCloud(
       isLockEnabled: payload.isLockEnabled,
       engineWatchlist: payload.engineWatchlist,
       gatekeeperConfig: payload.gatekeeperConfig,
+      executionContract: payload.executionContract,
       updatedAt: Date.now()
     }), { merge: true });
 
-    // 2. Save Trades CHUNKED in buckets of 15
     const tradeChunkSize = 15;
     const totalTradeChunks = Math.ceil(payload.trades.length / tradeChunkSize) || 1;
 
@@ -185,7 +167,6 @@ export async function syncMasterToCloud(
       updatedAt: Date.now()
     });
 
-    // 3. Chunk Specimens into buckets of 25
     const chunkSize = 25;
     const totalChunks = Math.ceil(payload.studySpecimens.length / chunkSize) || 1;
 
@@ -220,6 +201,7 @@ export async function fetchMasterFromCloud(userId: string = 'master'): Promise<{
   isLockEnabled?: boolean;
   engineWatchlist?: Record<string, { high: string; low: string }>;
   gatekeeperConfig?: any;
+  executionContract?: ExecutionContractState;
 } | null> {
   try {
     const scope = userId || 'master';
@@ -230,7 +212,6 @@ export async function fetchMasterFromCloud(userId: string = 'master'): Promise<{
     }
     const metaData = metaSnap.exists() ? metaSnap.data() : {};
 
-    // 1. Fetch Chunked Trades
     let tradesMetaSnap = await getDoc(doc(db, `users_${scope}`, 'trades_meta'));
     let allTrades: Trade[] = [];
 
@@ -252,7 +233,6 @@ export async function fetchMasterFromCloud(userId: string = 'master'): Promise<{
       }
     }
 
-    // 2. Fetch Chunked Specimens
     let specMetaSnap = await getDoc(doc(db, `users_${scope}`, 'specimens_meta'));
     if (!specMetaSnap.exists() && scope === 'master') {
       specMetaSnap = await getDoc(doc(db, 'journal', 'specimens_meta'));
@@ -285,7 +265,8 @@ export async function fetchMasterFromCloud(userId: string = 'master'): Promise<{
       securityPin: metaData.securityPin || '',
       isLockEnabled: !!metaData.isLockEnabled,
       engineWatchlist: metaData.engineWatchlist || undefined,
-      gatekeeperConfig: metaData.gatekeeperConfig || undefined
+      gatekeeperConfig: metaData.gatekeeperConfig || undefined,
+      executionContract: metaData.executionContract || undefined
     };
   } catch (err) {
     console.warn('Failed to fetch from Firebase:', err);

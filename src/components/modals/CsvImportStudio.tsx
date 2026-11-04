@@ -1,11 +1,10 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { Trade, PlaybookCollection, SetupVariantTag } from '@/types/trade';
+import { Trade, PlaybookCollection } from '@/types/trade';
 import { CustomSetupDropdown } from '@/components/ui/CustomControls';
 import { uploadScreenshotToCloud } from '@/lib/cloudSync';
-import { BEHAVIORAL_TAGS } from '@/components/modals/TradeModals';
-import { FileSpreadsheet, X, UploadCloud, Sparkles, Clipboard, Check, Loader2, Clock, ShieldCheck, Zap, Waves, Ruler } from 'lucide-react';
+import { FileSpreadsheet, X, UploadCloud, Sparkles, Clipboard, Check, Loader2, Clock, ShieldCheck, Zap, Ruler } from 'lucide-react';
 
 interface CsvImportStudioProps {
   isOpen: boolean;
@@ -129,12 +128,17 @@ export function CsvImportStudio({
                 const isBearToBull = /bearish\s+to\s+bullish|bull\s+to\s+bear/i.test(trade.setupType || '');
                 const isLiquiditySpring = /liquidity\s+spring/i.test(trade.setupType || '');
 
+                const isSlHuntActive = 
+                  trade.behaviorTag === 'SL Hunt (Clean Variance)' || 
+                  trade.behaviorTag === 'SL Hunt (Defense Abandoned)' || 
+                  trade.behaviorTag === 'SL Hunt / Slippage Hunt';
+
                 return (
                   <div 
                     key={idx} 
                     className="p-3.5 sm:p-4 rounded-xl bg-zinc-900/60 border border-white/[0.08] hover:border-white/20 transition-all space-y-3"
                   >
-                    {/* Header Row: Symbol, Date, Timing, Net P&L, and R */}
+                    {/* Header Row */}
                     <div className="flex flex-wrap items-center justify-between gap-2 pb-2 border-b border-white/[0.06]">
                       <div className="flex items-center gap-2 flex-wrap">
                         <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-400">#{idx + 1}</span>
@@ -169,29 +173,99 @@ export function CsvImportStudio({
                       </div>
                     </div>
 
-                    {/* Behavioral Tag Pills */}
+                    {/* BEHAVIORAL TAG SELECTOR (WITH SPLIT SL HUNT) */}
                     <div>
                       <label className="text-zinc-400 text-[11px] font-mono block mb-1">Behavioral Execution Tag</label>
                       <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
-                        {BEHAVIORAL_TAGS.map(tag => {
-                          const isSelected = trade.behaviorTag === tag.label;
-                          return (
-                            <button
-                              type="button"
-                              key={tag.label}
-                              onClick={() => onUpdateTrade(idx, 'behaviorTag', tag.label)}
-                              className={`p-1.5 rounded-lg border text-[10px] font-bold text-center transition-all flex items-center justify-center gap-1 ${
-                                isSelected 
-                                  ? `${tag.bg} ${tag.color} ${tag.border} ring-1 ring-white/20 shadow-sm` 
-                                  : 'bg-white/[0.02] border-white/[0.06] text-zinc-400 hover:border-white/20'
-                              }`}
-                            >
-                              {isSelected && <Check className="w-2.5 h-2.5 shrink-0" />}
-                              <span className="truncate">{tag.label}</span>
-                            </button>
-                          );
-                        })}
+                        {/* Rules Followed */}
+                        <button
+                          type="button"
+                          onClick={() => onUpdateTrade(idx, 'behaviorTag', 'Rules Followed')}
+                          className={`p-1.5 rounded-lg border text-[10px] font-bold text-center transition-all flex items-center justify-center gap-1 ${
+                            trade.behaviorTag === 'Rules Followed'
+                              ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/50 shadow-sm'
+                              : 'bg-white/[0.02] border-white/[0.06] text-zinc-400 hover:border-white/20'
+                          }`}
+                        >
+                          {trade.behaviorTag === 'Rules Followed' && <Check className="w-2.5 h-2.5 shrink-0" />}
+                          <span className="truncate">Rules Followed</span>
+                        </button>
+
+                        {/* SL Hunt */}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (!isSlHuntActive) {
+                              onUpdateTrade(idx, 'behaviorTag', 'SL Hunt (Clean Variance)');
+                            }
+                          }}
+                          className={`p-1.5 rounded-lg border text-[10px] font-bold text-center transition-all flex items-center justify-center gap-1 ${
+                            isSlHuntActive
+                              ? 'bg-purple-500/20 text-purple-300 border-purple-500/50 shadow-sm'
+                              : 'bg-white/[0.02] border-white/[0.06] text-zinc-400 hover:border-white/20'
+                          }`}
+                        >
+                          {isSlHuntActive && <Check className="w-2.5 h-2.5 shrink-0" />}
+                          <span className="truncate">SL Hunt / Slippage</span>
+                        </button>
+
+                        {/* No Confirmation */}
+                        <button
+                          type="button"
+                          onClick={() => onUpdateTrade(idx, 'behaviorTag', 'No Confirmation Entry')}
+                          className={`p-1.5 rounded-lg border text-[10px] font-bold text-center transition-all flex items-center justify-center gap-1 ${
+                            trade.behaviorTag === 'No Confirmation Entry'
+                              ? 'bg-amber-500/20 text-amber-400 border-amber-500/50 shadow-sm'
+                              : 'bg-white/[0.02] border-white/[0.06] text-zinc-400 hover:border-white/20'
+                          }`}
+                        >
+                          {trade.behaviorTag === 'No Confirmation Entry' && <Check className="w-2.5 h-2.5 shrink-0" />}
+                          <span className="truncate">No Confirmation</span>
+                        </button>
+
+                        {/* Hallucinated */}
+                        <button
+                          type="button"
+                          onClick={() => onUpdateTrade(idx, 'behaviorTag', 'Hallucinated Trade')}
+                          className={`p-1.5 rounded-lg border text-[10px] font-bold text-center transition-all flex items-center justify-center gap-1 ${
+                            trade.behaviorTag === 'Hallucinated Trade'
+                              ? 'bg-rose-500/20 text-rose-400 border-rose-500/50 shadow-sm'
+                              : 'bg-white/[0.02] border-white/[0.06] text-zinc-400 hover:border-white/20'
+                          }`}
+                        >
+                          {trade.behaviorTag === 'Hallucinated Trade' && <Check className="w-2.5 h-2.5 shrink-0" />}
+                          <span className="truncate">Hallucinated</span>
+                        </button>
                       </div>
+
+                      {/* SL Hunt Sub-selection */}
+                      {isSlHuntActive && (
+                        <div className="mt-1.5 p-2 rounded-lg bg-purple-950/20 border border-purple-500/25 grid grid-cols-2 gap-1.5 animate-in fade-in duration-100">
+                          <button
+                            type="button"
+                            onClick={() => onUpdateTrade(idx, 'behaviorTag', 'SL Hunt (Clean Variance)')}
+                            className={`p-1 rounded text-[10px] font-mono text-center border transition-all ${
+                              trade.behaviorTag === 'SL Hunt (Clean Variance)' || trade.behaviorTag === 'SL Hunt / Slippage Hunt'
+                                ? 'bg-purple-500/25 text-purple-200 border-purple-400 font-bold'
+                                : 'bg-black/40 border-white/10 text-zinc-400 hover:text-white'
+                            }`}
+                          >
+                            🟣 Clean Variance (Pre-move)
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => onUpdateTrade(idx, 'behaviorTag', 'SL Hunt (Defense Abandoned)')}
+                            className={`p-1 rounded text-[10px] font-mono text-center border transition-all ${
+                              trade.behaviorTag === 'SL Hunt (Defense Abandoned)'
+                                ? 'bg-rose-500/25 text-rose-300 border-rose-500/50 font-bold'
+                                : 'bg-black/40 border-white/10 text-zinc-400 hover:text-white'
+                            }`}
+                          >
+                            ⚠️ Defense Abandoned (Slept/Trail)
+                          </button>
+                        </div>
+                      )}
                     </div>
 
                     {/* Playbook Setup Selection */}
@@ -213,7 +287,7 @@ export function CsvImportStudio({
                       />
                     </div>
 
-                    {/* SUBHEADING SELECTORS */}
+                    {/* DYNAMIC SUBHEADING SELECTORS */}
                     {isBearToBull && (
                       <div className="p-2.5 rounded-xl bg-white/[0.015] border border-white/[0.06] space-y-1.5 animate-in fade-in duration-150">
                         <label className="text-cyan-400 text-[11px] font-mono font-bold flex items-center justify-between">
@@ -320,9 +394,8 @@ export function CsvImportStudio({
                       </div>
                     )}
 
-                    {/* EXECUTION PARAMETERS + MAINZONE HEIGHT (%) TRACKER */}
+                    {/* PARAMETERS + MAINZONE HEIGHT (%) */}
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3 text-xs font-mono">
-                      {/* NEW: Mainzone Height (%) input */}
                       <div>
                         <label className="text-zinc-400 text-[10px] block mb-1 flex items-center gap-1">
                           <Ruler className="w-2.5 h-2.5 text-cyan-400" />

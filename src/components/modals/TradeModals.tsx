@@ -5,14 +5,7 @@ import { Trade, PlaybookCollection, BehavioralTag, SetupVariantTag, ChartSpecime
 import { CustomSetupDropdown } from '@/components/ui/CustomControls';
 import { uploadScreenshotToCloud } from '@/lib/cloudSync';
 import { formatTo12HourRange } from '@/lib/parser';
-import { X, ImagePlus, Sparkles, Pencil, Clipboard, Check, Loader2, Clock, ShieldCheck, Zap, Waves, Ruler } from 'lucide-react';
-
-export const BEHAVIORAL_TAGS: { label: BehavioralTag; color: string; border: string; bg: string }[] = [
-  { label: 'Rules Followed', color: 'text-emerald-400', border: 'border-emerald-500/40', bg: 'bg-emerald-500/10' },
-  { label: 'SL Hunt / Slippage Hunt', color: 'text-purple-400', border: 'border-purple-500/40', bg: 'bg-purple-500/10' },
-  { label: 'No Confirmation Entry', color: 'text-amber-400', border: 'border-amber-500/40', bg: 'bg-amber-500/10' },
-  { label: 'Hallucinated Trade', color: 'text-rose-400', border: 'border-rose-500/40', bg: 'bg-rose-500/10' },
-];
+import { X, ImagePlus, Sparkles, Pencil, Clipboard, Check, Loader2, Clock, ShieldCheck, Zap, Waves, Ruler, ZapOff, AlertTriangle, Skull } from 'lucide-react';
 
 export function EditDebriefModal({
   isOpen,
@@ -75,6 +68,11 @@ export function EditDebriefModal({
   const isBearToBull = /bearish\s+to\s+bullish|bull\s+to\s+bear/i.test(form.setupType || '');
   const isLiquiditySpring = /liquidity\s+spring/i.test(form.setupType || '');
 
+  const isSlHuntActive = 
+    form.behaviorTag === 'SL Hunt (Clean Variance)' || 
+    form.behaviorTag === 'SL Hunt (Defense Abandoned)' || 
+    form.behaviorTag === 'SL Hunt / Slippage Hunt';
+
   return (
     <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-end sm:items-center justify-center p-0 sm:p-4 overflow-y-auto">
       <div className="bg-[#090A10] border border-white/10 rounded-t-3xl sm:rounded-2xl max-w-2xl w-full p-4 sm:p-6 space-y-4 shadow-2xl max-h-[92vh] overflow-y-auto">
@@ -95,32 +93,121 @@ export function EditDebriefModal({
         </div>
 
         <form onSubmit={(e) => { e.preventDefault(); onSave(form); }} className="space-y-4 text-xs font-mono">
-          {/* Behavioral Execution Tag Selector */}
-          <div>
-            <label className="text-zinc-400 block mb-1.5 flex items-center justify-between">
+          {/* BEHAVIORAL EXECUTION TAG SELECTOR (WITH SPLIT SL HUNT) */}
+          <div className="space-y-2">
+            <label className="text-zinc-400 block flex items-center justify-between">
               <span>Behavioral Execution Tag</span>
-              <span className="text-[10px] text-zinc-500">Pick discipline state</span>
+              <span className="text-[10px] text-zinc-500">Classify execution discipline</span>
             </label>
+
+            {/* 4 Primary Behavioral Cards */}
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-              {BEHAVIORAL_TAGS.map(tag => {
-                const isSelected = form.behaviorTag === tag.label;
-                return (
+              {/* Option 1: Rules Followed */}
+              <button
+                type="button"
+                onClick={() => setForm({ ...form, behaviorTag: 'Rules Followed' })}
+                className={`p-2.5 rounded-xl border text-[11px] font-bold text-center transition-all flex items-center justify-center gap-1.5 ${
+                  form.behaviorTag === 'Rules Followed'
+                    ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/40 ring-1 ring-emerald-500/30 shadow-md'
+                    : 'bg-white/[0.02] border-white/[0.06] text-zinc-400 hover:border-white/20'
+                }`}
+              >
+                {form.behaviorTag === 'Rules Followed' && <Check className="w-3 h-3 shrink-0" />}
+                <span className="truncate">Rules Followed</span>
+              </button>
+
+              {/* Option 2: SL Hunt (Purple) */}
+              <button
+                type="button"
+                onClick={() => {
+                  if (!isSlHuntActive) {
+                    setForm({ ...form, behaviorTag: 'SL Hunt (Clean Variance)' });
+                  }
+                }}
+                className={`p-2.5 rounded-xl border text-[11px] font-bold text-center transition-all flex items-center justify-center gap-1.5 ${
+                  isSlHuntActive
+                    ? 'bg-purple-500/20 text-purple-300 border-purple-500/50 ring-1 ring-purple-500/30 shadow-md'
+                    : 'bg-white/[0.02] border-white/[0.06] text-zinc-400 hover:border-white/20'
+                }`}
+              >
+                {isSlHuntActive && <Check className="w-3 h-3 shrink-0" />}
+                <span className="truncate">SL Hunt / Slippage</span>
+              </button>
+
+              {/* Option 3: No Confirmation (Impulse) */}
+              <button
+                type="button"
+                onClick={() => setForm({ ...form, behaviorTag: 'No Confirmation Entry' })}
+                className={`p-2.5 rounded-xl border text-[11px] font-bold text-center transition-all flex items-center justify-center gap-1.5 ${
+                  form.behaviorTag === 'No Confirmation Entry'
+                    ? 'bg-amber-500/15 text-amber-400 border-amber-500/40 ring-1 ring-amber-500/30 shadow-md'
+                    : 'bg-white/[0.02] border-white/[0.06] text-zinc-400 hover:border-white/20'
+                }`}
+              >
+                {form.behaviorTag === 'No Confirmation Entry' && <Check className="w-3 h-3 shrink-0" />}
+                <span className="truncate">No Confirmation</span>
+              </button>
+
+              {/* Option 4: Hallucinated (Revenge) */}
+              <button
+                type="button"
+                onClick={() => setForm({ ...form, behaviorTag: 'Hallucinated Trade' })}
+                className={`p-2.5 rounded-xl border text-[11px] font-bold text-center transition-all flex items-center justify-center gap-1.5 ${
+                  form.behaviorTag === 'Hallucinated Trade'
+                    ? 'bg-rose-500/15 text-rose-400 border-rose-500/40 ring-1 ring-rose-500/30 shadow-md'
+                    : 'bg-white/[0.02] border-white/[0.06] text-zinc-400 hover:border-white/20'
+                }`}
+              >
+                {form.behaviorTag === 'Hallucinated Trade' && <Check className="w-3 h-3 shrink-0" />}
+                <span className="truncate">Hallucinated</span>
+              </button>
+            </div>
+
+            {/* DYNAMIC SUB-SELECTOR WHEN SL HUNT IS ACTIVE */}
+            {isSlHuntActive && (
+              <div className="p-2.5 rounded-xl bg-purple-950/20 border border-purple-500/30 space-y-1.5 animate-in fade-in duration-150">
+                <span className="text-[10px] text-purple-300 font-bold uppercase tracking-wider block">
+                  Classify SL Hunt Type:
+                </span>
+                <div className="grid grid-cols-2 gap-2">
                   <button
                     type="button"
-                    key={tag.label}
-                    onClick={() => setForm({ ...form, behaviorTag: tag.label })}
-                    className={`p-2 rounded-xl border text-[11px] font-bold text-center transition-all flex items-center justify-center gap-1.5 ${
-                      isSelected 
-                        ? `${tag.bg} ${tag.color} ${tag.border} ring-1 ring-white/20 shadow-md` 
-                        : 'bg-white/[0.02] border-white/[0.06] text-zinc-400 hover:border-white/20'
+                    onClick={() => setForm({ ...form, behaviorTag: 'SL Hunt (Clean Variance)' })}
+                    className={`p-2 rounded-lg border text-left transition-all flex items-center justify-between ${
+                      form.behaviorTag === 'SL Hunt (Clean Variance)' || form.behaviorTag === 'SL Hunt / Slippage Hunt'
+                        ? 'bg-purple-500/25 text-purple-200 border-purple-400 font-bold shadow-sm'
+                        : 'bg-black/40 border-white/10 text-zinc-400 hover:text-white'
                     }`}
                   >
-                    {isSelected && <Check className="w-3 h-3 shrink-0" />}
-                    <span className="truncate">{tag.label}</span>
+                    <div>
+                      <span className="block text-xs">🟣 Clean Variance</span>
+                      <span className="text-[9px] text-zinc-400 font-normal">Pre-move wick (Acceptable)</span>
+                    </div>
+                    {(form.behaviorTag === 'SL Hunt (Clean Variance)' || form.behaviorTag === 'SL Hunt / Slippage Hunt') && (
+                      <Check className="w-3 h-3 text-purple-300" />
+                    )}
                   </button>
-                );
-              })}
-            </div>
+
+                  <button
+                    type="button"
+                    onClick={() => setForm({ ...form, behaviorTag: 'SL Hunt (Defense Abandoned)' })}
+                    className={`p-2 rounded-lg border text-left transition-all flex items-center justify-between ${
+                      form.behaviorTag === 'SL Hunt (Defense Abandoned)'
+                        ? 'bg-rose-500/20 text-rose-300 border-rose-500/50 font-bold shadow-sm'
+                        : 'bg-black/40 border-white/10 text-zinc-400 hover:text-white'
+                    }`}
+                  >
+                    <div>
+                      <span className="block text-xs">⚠️ Defense Abandoned</span>
+                      <span className="text-[9px] text-zinc-400 font-normal">Failed trail / slept (Unforced leak)</span>
+                    </div>
+                    {form.behaviorTag === 'SL Hunt (Defense Abandoned)' && (
+                      <Check className="w-3 h-3 text-rose-400" />
+                    )}
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
 
           <div>
@@ -775,7 +862,6 @@ export function AddStudyModal({
   );
 }
 
-// EDIT EXISTING SPECIMEN DIALOG
 export function EditStudyModal({
   isOpen,
   specimen,

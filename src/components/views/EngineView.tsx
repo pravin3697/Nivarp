@@ -26,7 +26,6 @@ export type WatchlistTicker = typeof WATCHLIST_TICKERS[number];
 
 const GATEKEEPER_STORAGE_KEY = 'NIVARP_GATEKEEPER_CONFIG';
 
-// Standardized setups in consistent order across Engine and Gatekeeper
 const SETUPS_LIST = [
   { key: 'origin', label: 'Origin Retest', icon: '🔄', subtext: '35% Short' },
   { key: 'spring', label: 'Liquidity Spring', icon: '⚡', subtext: 'Reclaim' },
@@ -177,14 +176,14 @@ export function EngineView({
   const [capitalInput, setCapitalInput] = useState<string>(String(tradingCapital || 70000));
   const [copiedPrice, setCopiedPrice] = useState<string | null>(null);
 
-  // GATEKEEPER STATE (Fully dynamic & editable on website)
+  // GATEKEEPER STATE
   const [gatekeeperConfig, setGatekeeperConfig] = useState<GatekeeperConfig>(DEFAULT_GATEKEEPER_CONFIG);
   const [isEditMode, setIsEditMode] = useState(false);
 
-  // Per-Ticker checked states: Record<Ticker, Record<itemId, boolean>>
+  // Per-Ticker checked states
   const [tickerChecks, setTickerChecks] = useState<Record<string, Record<string, boolean>>>({});
 
-  // Live IST Time Tracker (updates every 5 seconds)
+  // Live IST Time Tracker
   const [istTime, setIstTime] = useState(getISTTimeInfo);
 
   useEffect(() => {
@@ -197,7 +196,6 @@ export function EngineView({
   // KEYBOARD SHORTCUTS (E for Engine, G for Gatekeeper)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Don't switch if user is actively typing in an input or textarea
       const target = e.target as HTMLElement | null;
       if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) {
         return;
@@ -212,7 +210,6 @@ export function EngineView({
       }
     };
 
-    // Listen on the window hosting this element (supports both main website and PiP window)
     const activeWin = containerRef.current?.ownerDocument?.defaultView || window;
     activeWin.addEventListener('keydown', handleKeyDown);
 
@@ -228,7 +225,6 @@ export function EngineView({
     };
   }, []);
 
-  // Synchronize inputs whenever active ticker changes or watchlist updates from cloud
   useEffect(() => {
     const data = watchlistData[activeTicker] || { high: '', low: '' };
     setZoneHighInput(data.high || '');
@@ -241,7 +237,6 @@ export function EngineView({
     }
   }, [tradingCapital]);
 
-  // Load Gatekeeper config from storage
   useEffect(() => {
     idbGet<GatekeeperConfig>(GATEKEEPER_STORAGE_KEY).then(saved => {
       if (saved && saved.globalConstraints && saved.setups) {
@@ -284,14 +279,13 @@ export function EngineView({
     }
 
     const zoneWidth = Number((high - low).toFixed(2));
-    const maxAllowedZone = Number((high * 0.0033).toFixed(2)); // 0.33% Max allowed width
+    const maxAllowedZone = Number((high * 0.0033).toFixed(2));
     const zoneWidthPct = Number(((zoneWidth / high) * 100).toFixed(3));
     const isZoneTooWide = zoneWidth > maxAllowedZone;
 
-    // Buffer gaps
-    const reclaimGap = high * 0.0005; // 0.05% of price
-    const slGap = high * 0.001;       // 0.10% of price
-    const penetration35 = zoneWidth * 0.35; // 35% of zone width
+    const reclaimGap = high * 0.0005;
+    const slGap = high * 0.001;
+    const penetration35 = zoneWidth * 0.35;
     const penetrationPct = Number(((penetration35 / high) * 100).toFixed(2));
 
     const maxAffordableQty = (entryPrice: number): number => {
@@ -527,10 +521,10 @@ export function EngineView({
         isWidgetMode ? 'p-3 space-y-2.5 border-cyan-500/30' : 'p-3.5 sm:p-5 space-y-3 sm:space-y-3.5'
       }`}>
         
-        {/* HEADER: MODE SWITCH TOGGLE (HOTKEYS E & G) */}
+        {/* HEADER: MODE SWITCH TOGGLE */}
         <div className="flex items-center justify-between pb-2.5 border-b border-white/[0.06] gap-2">
           
-          {/* Switch Toggle Buttons with Shortcut Indicators */}
+          {/* Switch Toggle Buttons */}
           <div className="flex items-center p-0.5 sm:p-1 rounded-xl bg-white/[0.03] border border-white/10 font-mono text-xs gap-0.5 sm:gap-1 shadow-inner shrink-0">
             <button
               type="button"
@@ -572,7 +566,7 @@ export function EngineView({
             </button>
           </div>
 
-          {/* Right Action: 1R & Dock Toggle Button */}
+          {/* Right Action: 1R & Subtle Floating Widget Toggle Button */}
           <div className="flex items-center gap-1.5 sm:gap-2 font-mono text-xs shrink-0">
             <div className="flex items-center gap-1 text-[10px] sm:text-[11px] text-zinc-400">
               <span className="text-zinc-500 uppercase text-[9px] font-bold">1R:</span>
@@ -586,7 +580,7 @@ export function EngineView({
                 className={`flex items-center gap-1 px-2 py-1 rounded-xl text-[10px] font-bold border transition-all ${
                   isPiPActive
                     ? 'bg-rose-500/15 text-rose-300 border-rose-500/40 hover:bg-rose-500/25'
-                    : 'bg-white/[0.03] hover:bg-white/[0.08] border-white/10 text-cyan-400 hover:text-cyan-300'
+                    : 'bg-white/[0.02] hover:bg-white/[0.06] border-white/10 hover:border-white/20 text-zinc-400 hover:text-zinc-200'
                 }`}
                 title={isPiPActive ? "Dock back to website" : "Pop out as Always-On-Top Floating Window"}
               >
@@ -844,7 +838,6 @@ export function EngineView({
                 ))}
               </div>
 
-              {/* Edit Mode Toggle Button — Rendered ONLY on website, hidden in floating widget/popup */}
               {!isWidgetMode && (
                 <button
                   type="button"
@@ -1052,7 +1045,7 @@ export function EngineView({
                   type="button"
                   onClick={() => {
                     if (isExecutionUnlocked) {
-                      setViewMode('engine'); // Jump right into coordinates!
+                      setViewMode('engine');
                     }
                   }}
                   className={`w-full py-2.5 px-3 rounded-xl font-mono text-xs font-black transition-all flex items-center justify-center gap-2 shadow-lg ${

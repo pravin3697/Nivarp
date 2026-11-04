@@ -2,7 +2,7 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { Trade, PlaybookCollection, ChartSpecimen, SetupVariantTag } from '@/types/trade';
+import { Trade, PlaybookCollection, ChartSpecimen, ExecutionContractState } from '@/types/trade';
 import { parseKotakNeoCsv, parseDateToTimestamp, cleanSecurityName, displaySetupName } from '@/lib/parser';
 import { 
   syncMasterToCloud,
@@ -18,11 +18,12 @@ import { NivarpLogo } from '@/components/ui/NivarpLogo';
 import { ChartInspector, ChartGalleryItem } from '@/components/modals/ChartInspector';
 import { CsvImportStudio } from '@/components/modals/CsvImportStudio';
 import { EditDebriefModal, EditCollectionModal, AddStudyModal, EditStudyModal } from '@/components/modals/TradeModals';
+import { ContractModal } from '@/components/modals/ContractModal';
 import { PulseView } from '@/components/views/PulseView';
 import { CodexView, sortSetupsSmartly } from '@/components/views/CodexView';
 import { MatrixView } from '@/components/views/MatrixView';
 import { HeatmapView } from '@/components/views/HeatmapView';
-import { EngineView, WATCHLIST_TICKERS } from '@/components/views/EngineView';
+import { EngineView } from '@/components/views/EngineView';
 import { SettingsView } from '@/components/views/SettingsView';
 import { 
   Compass, 
@@ -35,12 +36,13 @@ import {
   CheckCircle2, 
   AlertCircle, 
   Info, 
-  X,
-  Lock,
-  Unlock,
-  KeyRound,
-  Calculator,
-  PictureInPicture2
+  X, 
+  Lock, 
+  Unlock, 
+  KeyRound, 
+  Calculator, 
+  PictureInPicture2,
+  Swords
 } from 'lucide-react';
 
 const STORAGE_KEY = 'NIVARP_MASTER_STORAGE';
@@ -49,6 +51,51 @@ const CATEGORY_ORDER_KEY = 'NIVARP_CATEGORY_ORDER';
 const SECURITY_LOCK_KEY = 'NIVARP_SECURITY_LOCK';
 const SESSION_UNLOCKED_KEY = 'NIVARP_SESSION_UNLOCKED';
 const ENGINE_WATCHLIST_KEY = 'NIVARP_ENGINE_WATCHLIST';
+const CONTRACT_STORAGE_KEY = 'NIVARP_EXECUTION_CONTRACT';
+
+const DEFAULT_CONTRACT_STATE: ExecutionContractState = {
+  currentAttempt: 2,
+  startDate: '2026-11-04',
+  targetEndDate: '2027-05-04',
+  totalTargetDays: 180,
+  history: [
+    {
+      attemptNumber: 1,
+      startDate: '2026-10-26',
+      endDate: '2026-11-03',
+      status: 'FAILED',
+      failedDay: 9,
+      failureReason: 'Left terminal during active trade (fell asleep). Allowed a +2R runner to reverse into full SL instead of trailing to BE.',
+      costNote: 'Surrendered winning mechanical setup because defense mechanism was abandoned.',
+      cleanTradesCount: 1
+    }
+  ]
+};
+
+// Automatic sanitizer that ensures Attempt 1 is permanently Day 9 in cache
+const sanitizeContractState = (raw: ExecutionContractState): ExecutionContractState => {
+  return {
+    ...raw,
+    history: (raw.history || []).map(item => {
+      if (item.attemptNumber === 1) {
+        return {
+          ...item,
+          startDate: '2026-10-26',
+          endDate: '2026-11-03',
+          failedDay: 9
+        };
+      }
+      return item;
+    })
+  };
+};
+
+const DEFAULT_WATCHLIST_DATA: Record<string, { high: string; low: string }> = {
+  DLF: { high: '', low: '' },
+  HINDALCO: { high: '', low: '' },
+  SBIN: { high: '', low: '' },
+  TATAMOTORS: { high: '', low: '' }
+};
 
 interface ToastState {
   message: string;
@@ -64,13 +111,6 @@ const sanitizeTrades = (tradesList: Trade[]): Trade[] => {
   }));
 };
 
-const DEFAULT_WATCHLIST_DATA: Record<string, { high: string; low: string }> = {
-  DLF: { high: '', low: '' },
-  HINDALCO: { high: '', low: '' },
-  SBIN: { high: '', low: '' },
-  TATAMOTORS: { high: '', low: '' }
-};
-
 export default function NivarpOS() {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
 
@@ -82,6 +122,10 @@ export default function NivarpOS() {
   const [tradingCapital, setTradingCapital] = useState<number>(70000);
   const [activeTab, setActiveTab] = useState<'pulse' | 'codex' | 'matrix' | 'heatmap' | 'engine' | 'settings'>('pulse');
   const [selectedCollection, setSelectedCollection] = useState<PlaybookCollection | null>(null);
+
+  // Execution Contract State
+  const [contract, setContract] = useState<ExecutionContractState>(DEFAULT_CONTRACT_STATE);
+  const [isContractModalOpen, setIsContractModalOpen] = useState(false);
 
   // Engine Multi-Stock Watchlist Coordinates
   const [engineWatchlist, setEngineWatchlist] = useState<Record<string, { high: string; low: string }>>(DEFAULT_WATCHLIST_DATA);
@@ -152,7 +196,6 @@ export default function NivarpOS() {
     return sessionStorage.getItem(SESSION_UNLOCKED_KEY) === 'true';
   };
 
-  // Toggle OS-Level Always-On-Top Document Picture-in-Picture window
   const handleToggleEnginePiP = async () => {
     if (pipWindow) {
       pipWindow.close();
@@ -167,7 +210,6 @@ export default function NivarpOS() {
           height: 640
         });
 
-        // Copy stylesheets
         document.querySelectorAll('style, link[rel="stylesheet"]').forEach((styleEl) => {
           pip.document.head.appendChild(styleEl.cloneNode(true));
         });
@@ -180,7 +222,7 @@ export default function NivarpOS() {
         });
 
         setPipWindow(pip);
-        showToast('Engine opened in Always-On-Top floating window.', 'success');
+        showToast('Engine opened in Always-On-Top floating widget.', 'success');
       } catch (err: any) {
         console.warn('PiP launch canceled or unsupported:', err);
       }
@@ -192,6 +234,40 @@ export default function NivarpOS() {
       );
       showToast('Opened compact Engine window.', 'info');
     }
+  };
+
+  const handleReportBreach = (reason: string, cost: string) => {
+    const startTs = new Date(contract.startDate).getTime();
+    const diffDays = Math.max(1, Math.floor((Date.now() - startTs) / (1000 * 60 * 60 * 24)) + 1);
+
+    const failedAttempt = {
+      attemptNumber: contract.currentAttempt,
+      startDate: contract.startDate,
+      endDate: new Date().toISOString().slice(0, 10),
+      status: 'FAILED' as const,
+      failedDay: diffDays,
+      failureReason: reason,
+      costNote: cost,
+      cleanTradesCount: 0
+    };
+
+    const nextAttemptNumber = contract.currentAttempt + 1;
+    const newStartDate = new Date().toISOString().slice(0, 10);
+    const targetEnd = new Date();
+    targetEnd.setDate(targetEnd.getDate() + 180);
+
+    const updatedContract: ExecutionContractState = {
+      currentAttempt: nextAttemptNumber,
+      startDate: newStartDate,
+      targetEndDate: targetEnd.toISOString().slice(0, 10),
+      totalTargetDays: 180,
+      history: [failedAttempt, ...contract.history]
+    };
+
+    setContract(updatedContract);
+    idbSet(CONTRACT_STORAGE_KEY, updatedContract);
+
+    showToast(`Contract breached. Reset to Day 1 (Attempt #${nextAttemptNumber}).`, 'error');
   };
 
   // Auth State Listener
@@ -224,7 +300,9 @@ export default function NivarpOS() {
           if (cloudData.engineWatchlist) {
             setEngineWatchlist(prev => ({ ...prev, ...cloudData.engineWatchlist }));
           }
-          
+          if (cloudData.executionContract) {
+            setContract(sanitizeContractState(cloudData.executionContract));
+          }
           if (cloudData.securityPin !== undefined) {
             setSecurityPin(cloudData.securityPin);
             setIsLockEnabled(!!cloudData.isLockEnabled);
@@ -320,13 +398,20 @@ export default function NivarpOS() {
 
     async function loadData() {
       try {
-        const [idbMaster, idbStudy, idbCatOrder, idbSecurity, idbWatchlist] = await Promise.all([
+        const [idbMaster, idbStudy, idbCatOrder, idbSecurity, idbWatchlist, idbContract] = await Promise.all([
           idbGet<any>(STORAGE_KEY),
           idbGet<ChartSpecimen[]>(STUDY_STORAGE_KEY),
           idbGet<string[]>(CATEGORY_ORDER_KEY),
           idbGet<any>(SECURITY_LOCK_KEY),
-          idbGet<Record<string, { high: string; low: string }>>(ENGINE_WATCHLIST_KEY)
+          idbGet<Record<string, { high: string; low: string }>>(ENGINE_WATCHLIST_KEY),
+          idbGet<ExecutionContractState>(CONTRACT_STORAGE_KEY)
         ]);
+
+        if (idbContract) {
+          const sanitized = sanitizeContractState(idbContract);
+          setContract(sanitized);
+          idbSet(CONTRACT_STORAGE_KEY, sanitized);
+        }
 
         if (idbSecurity) {
           if (idbSecurity.securityPin) setSecurityPin(idbSecurity.securityPin);
@@ -382,6 +467,11 @@ export default function NivarpOS() {
           if (cloudData.engineWatchlist) {
             setEngineWatchlist(prev => ({ ...prev, ...cloudData.engineWatchlist }));
           }
+          if (cloudData.executionContract) {
+            const sanitized = sanitizeContractState(cloudData.executionContract);
+            setContract(sanitized);
+            idbSet(CONTRACT_STORAGE_KEY, sanitized);
+          }
           if (cloudData.securityPin !== undefined) {
             setSecurityPin(cloudData.securityPin);
             setIsLockEnabled(!!cloudData.isLockEnabled);
@@ -421,6 +511,7 @@ export default function NivarpOS() {
       isLockEnabled
     });
     idbSet(ENGINE_WATCHLIST_KEY, engineWatchlist);
+    idbSet(CONTRACT_STORAGE_KEY, contract);
 
     const timer = setTimeout(async () => {
       await syncMasterToCloud({
@@ -432,12 +523,13 @@ export default function NivarpOS() {
         tradingCapital,
         securityPin,
         isLockEnabled,
-        engineWatchlist
+        engineWatchlist,
+        executionContract: contract
       }, currentUser?.uid || 'master');
     }, 2000);
 
     return () => clearTimeout(timer);
-  }, [isLoaded, trades, deduplicatedCollections, categoryOrder, studySpecimens, defaultRiskPerTrade, tradingCapital, securityPin, isLockEnabled, engineWatchlist, currentUser]);
+  }, [isLoaded, trades, deduplicatedCollections, categoryOrder, studySpecimens, defaultRiskPerTrade, tradingCapital, securityPin, isLockEnabled, engineWatchlist, contract, currentUser]);
 
   const handleUpdateTickerZone = (ticker: string, high: string, low: string) => {
     setEngineWatchlist(prev => {
@@ -501,6 +593,7 @@ export default function NivarpOS() {
         securityPin,
         isLockEnabled,
         engineWatchlist,
+        executionContract: contract,
         exportedAt: new Date().toISOString()
       };
       const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
@@ -532,12 +625,14 @@ export default function NivarpOS() {
           : MASTER_CATEGORY_ORDER;
         const restoredStudy = Array.isArray(d.studySpecimens) ? d.studySpecimens : [];
         const restoredWatchlist = d.engineWatchlist && typeof d.engineWatchlist === 'object' ? d.engineWatchlist : DEFAULT_WATCHLIST_DATA;
+        const restoredContract = sanitizeContractState(d.executionContract || DEFAULT_CONTRACT_STATE);
 
         setTrades(restoredTrades);
         setCollections(restoredCols);
         setCategoryOrder(restoredCats);
         setStudySpecimens(restoredStudy);
         setEngineWatchlist(restoredWatchlist);
+        setContract(restoredContract);
         if (d.defaultRiskPerTrade) setDefaultRiskPerTrade(d.defaultRiskPerTrade);
         if (d.tradingCapital) setTradingCapital(d.tradingCapital);
         if (d.securityPin) setSecurityPin(d.securityPin);
@@ -557,7 +652,8 @@ export default function NivarpOS() {
             securityPin: d.securityPin || '',
             isLockEnabled: !!d.isLockEnabled
           }),
-          idbSet(ENGINE_WATCHLIST_KEY, restoredWatchlist)
+          idbSet(ENGINE_WATCHLIST_KEY, restoredWatchlist),
+          idbSet(CONTRACT_STORAGE_KEY, restoredContract)
         ]);
 
         showToast("Restoring backup...", "info");
@@ -570,7 +666,8 @@ export default function NivarpOS() {
           tradingCapital: d.tradingCapital || 70000,
           securityPin: d.securityPin,
           isLockEnabled: d.isLockEnabled,
-          engineWatchlist: restoredWatchlist
+          engineWatchlist: restoredWatchlist,
+          executionContract: restoredContract
         }, currentUser?.uid || 'master');
 
         showToast(`Restored & synced: ${restoredTrades.length} trades, ${restoredStudy.length} charts.`, "success");
@@ -710,6 +807,7 @@ export default function NivarpOS() {
     setStudySpecimens([]);
     setSelectedCollection(null);
     setEngineWatchlist(DEFAULT_WATCHLIST_DATA);
+    setContract(DEFAULT_CONTRACT_STATE);
 
     await Promise.all([
       idbClear(),
@@ -807,6 +905,12 @@ export default function NivarpOS() {
     });
   }, [selectedCollection, trades, studySpecimens]);
 
+  // Compute Contract Days for the header
+  const contractDaysElapsed = useMemo(() => {
+    const startTs = new Date(contract.startDate).getTime();
+    return Math.max(1, Math.floor((Date.now() - startTs) / (1000 * 60 * 60 * 24)) + 1);
+  }, [contract.startDate]);
+
   // FULLSCREEN SECURITY VAULT LOCK OVERLAY
   if (isLockEnabled && isVaultLocked) {
     return (
@@ -882,46 +986,58 @@ export default function NivarpOS() {
         </div>
       )}
 
-      {/* TOP HEADER */}
-      <header className="border-b border-white/[0.06] bg-[#08090D]/90 backdrop-blur-xl sticky top-0 z-40 px-4 md:px-6 py-3 flex items-center justify-between">
-        <div className="flex items-center gap-6">
+      {/* TOP HEADER: CENTER-ALIGNED NAVIGATION TABS */}
+      <header className="border-b border-white/[0.06] bg-[#08090D]/90 backdrop-blur-xl sticky top-0 z-40 px-4 md:px-6 py-3 flex items-center justify-between relative">
+        {/* Left Side: Logo & Executioner Contract Badge */}
+        <div className="flex items-center gap-3 sm:gap-4 shrink-0">
           <NivarpLogo size="md" />
 
-          {/* Desktop Navigation Tabs */}
-          <nav className="hidden lg:flex items-center p-1 rounded-xl bg-white/[0.03] border border-white/[0.05]">
-            {(['pulse', 'codex', 'matrix', 'heatmap', 'engine', 'settings'] as const).map(tab => (
-              <button 
-                key={tab} 
-                onClick={() => handleTabChange(tab)} 
-                className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-medium capitalize transition-all ${
-                  activeTab === tab ? 'bg-zinc-800 text-white shadow-sm' : 'text-zinc-400 hover:text-white'
-                }`}
-              >
-                {tab === 'pulse' && <Compass className="w-3.5 h-3.5 text-emerald-400" />}
-                {tab === 'codex' && <BookMarked className="w-3.5 h-3.5 text-cyan-400" />}
-                {tab === 'matrix' && <Binary className="w-3.5 h-3.5 text-purple-400" />}
-                {tab === 'heatmap' && <Flame className="w-3.5 h-3.5 text-amber-400" />}
-                {tab === 'engine' && <Calculator className="w-3.5 h-3.5 text-emerald-400" />}
-                {tab === 'settings' && <SettingsIcon className="w-3.5 h-3.5 text-zinc-400" />}
-                <span>{tab}</span>
-              </button>
-            ))}
-          </nav>
+          {/* THE 180-DAY EXECUTIONER CONTRACT BADGE */}
+          <button
+            type="button"
+            onClick={() => setIsContractModalOpen(true)}
+            className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/30 text-emerald-300 font-mono text-xs font-black transition-all shadow-[0_0_15px_rgba(16,185,129,0.12)] group"
+            title="View 180-Day Executioner Contract, Sentinel & Graveyard"
+          >
+            <Swords className="w-3.5 h-3.5 text-emerald-400 group-hover:rotate-12 transition-transform" />
+            <span className="tracking-wider">ATTEMPT {contract.currentAttempt} • DAY {contractDaysElapsed}/180</span>
+            <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 shadow-[0_0_8px_#10b981] animate-pulse shrink-0" />
+          </button>
         </div>
 
-        {/* Right side: Always-on-top Widget Launcher + Lock + Import Button */}
-        <div className="flex items-center gap-2 md:gap-3">
+        {/* Absolute Dead-Center: Desktop Navigation Tabs */}
+        <nav className="hidden lg:flex items-center p-1 rounded-xl bg-white/[0.03] border border-white/[0.05] absolute left-1/2 -translate-x-1/2">
+          {(['pulse', 'codex', 'matrix', 'heatmap', 'engine', 'settings'] as const).map(tab => (
+            <button 
+              key={tab} 
+              onClick={() => handleTabChange(tab)} 
+              className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-medium capitalize transition-all ${
+                activeTab === tab ? 'bg-zinc-800 text-white shadow-sm' : 'text-zinc-400 hover:text-white'
+              }`}
+            >
+              {tab === 'pulse' && <Compass className="w-3.5 h-3.5 text-emerald-400" />}
+              {tab === 'codex' && <BookMarked className="w-3.5 h-3.5 text-cyan-400" />}
+              {tab === 'matrix' && <Binary className="w-3.5 h-3.5 text-purple-400" />}
+              {tab === 'heatmap' && <Flame className="w-3.5 h-3.5 text-amber-400" />}
+              {tab === 'engine' && <Calculator className="w-3.5 h-3.5 text-emerald-400" />}
+              {tab === 'settings' && <SettingsIcon className="w-3.5 h-3.5 text-zinc-400" />}
+              <span>{tab}</span>
+            </button>
+          ))}
+        </nav>
+
+        {/* Right Side: Subtle Icon-Only Floating Widget Launcher + Lock + Import Button */}
+        <div className="flex items-center gap-2 md:gap-3 shrink-0">
           <button
             onClick={handleToggleEnginePiP}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-mono font-bold transition-all ${
+            className={`p-2 rounded-xl border transition-all ${
               pipWindow 
                 ? 'bg-rose-500/15 text-rose-300 border-rose-500/40 hover:bg-rose-500/25'
-                : 'bg-white/[0.03] hover:bg-white/[0.08] border-white/10 text-cyan-400 hover:text-cyan-300'
+                : 'bg-white/[0.02] hover:bg-white/[0.06] border-white/10 hover:border-white/20 text-zinc-400 hover:text-zinc-200'
             }`}
-            title="Pop out Engine as an Always-on-Top Floating Widget over your trading screen"
+            title={pipWindow ? "Dock Floating Widget" : "Pop out Engine as an Always-on-Top Floating Widget over your trading screen"}
           >
-            <PictureInPicture2 className="w-3.5 h-3.5 shrink-0" />
-            <span className="hidden sm:inline">{pipWindow ? 'Dock Widget' : 'Floating Widget'}</span>
+            {pipWindow ? <X className="w-4 h-4 shrink-0" /> : <PictureInPicture2 className="w-4 h-4 shrink-0" />}
           </button>
 
           <button
@@ -1120,6 +1236,15 @@ export default function NivarpOS() {
         </div>,
         pipWindow.document.body
       )}
+
+      {/* THE 180-DAY EXECUTIONER CONTRACT MODAL */}
+      <ContractModal
+        isOpen={isContractModalOpen}
+        onClose={() => setIsContractModalOpen(false)}
+        contract={contract}
+        trades={trades}
+        onReportBreach={handleReportBreach}
+      />
 
       {/* FULLSCREEN INSPECTOR */}
       <ChartInspector

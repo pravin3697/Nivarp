@@ -68,7 +68,8 @@ export function PulseView({
   onOpenInspector,
   onOpenDebrief,
 }: PulseViewProps) {
-  const [filterMode, setFilterMode] = useState<'rules-only' | 'all'>('rules-only');
+  // Defaults to 'all' (All Executions)
+  const [filterMode, setFilterMode] = useState<'rules-only' | 'all'>('all');
 
   const latestTradeDate = useMemo(() => {
     if (!trades.length) return new Date();
@@ -144,7 +145,8 @@ export function PulseView({
         const tag = t.behaviorTag;
         return (
           tag === 'Rules Followed' || 
-          tag === 'SL Hunt / Slippage Hunt' || 
+          tag === 'SL Hunt (Clean Variance)' || 
+          tag === 'SL Hunt / Slippage Hunt' ||
           (!tag && t.rMultiple > 0)
         );
       }
@@ -247,8 +249,9 @@ export function PulseView({
   const getBehaviorBadge = (tag?: string) => {
     if (!tag) return null;
     if (tag === 'Rules Followed') return 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30';
+    if (tag === 'SL Hunt (Clean Variance)' || tag === 'SL Hunt / Slippage Hunt') return 'bg-purple-500/10 text-purple-400 border-purple-500/30';
+    if (tag === 'SL Hunt (Defense Abandoned)') return 'bg-rose-950/40 text-rose-300 border-rose-500/40 font-bold';
     if (tag === 'No Confirmation Entry') return 'bg-amber-500/10 text-amber-400 border-amber-500/30';
-    if (tag === 'SL Hunt / Slippage Hunt') return 'bg-purple-500/10 text-purple-400 border-purple-500/30';
     return 'bg-rose-500/10 text-rose-400 border-rose-500/30';
   };
 
@@ -285,7 +288,7 @@ export function PulseView({
           </div>
         </div>
 
-        {/* Right: Sleek Month Pager (Prev / Next) + All Time Toggle */}
+        {/* Right: Month Pager */}
         <div className="flex items-center justify-between sm:justify-end gap-2 font-mono text-xs">
           <div className="flex items-center bg-white/[0.03] border border-white/[0.06] rounded-xl p-0.5">
             <button
@@ -396,7 +399,7 @@ export function PulseView({
           <h3 className="font-mono text-xs uppercase text-zinc-400 flex items-center gap-2">
             <span className={`h-2 w-2 rounded-full ${filterMode === 'rules-only' ? 'bg-emerald-400' : 'bg-cyan-400'}`} />
             <span>
-              {filterMode === 'rules-only' ? 'System Edge Trajectory (Rules Followed & SL Hunts)' : 'Realized Trajectory (All Trades)'}
+              {filterMode === 'rules-only' ? 'System Edge Trajectory (Rules Followed & Clean SL Hunts)' : 'Realized Trajectory (All Trades)'}
             </span>
           </h3>
           <span className={`text-xs font-mono font-bold ${dynamicStats.netR >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
@@ -458,7 +461,7 @@ export function PulseView({
             </span>
           </div>
 
-          {/* Cybernetic Custom Dropdown UI */}
+          {/* Time Filter Dropdown */}
           <div className="relative self-start sm:self-auto" ref={dropdownRef}>
             <div className="flex items-center gap-1 bg-white/[0.03] hover:bg-white/[0.05] border border-white/10 hover:border-cyan-500/40 rounded-xl p-1 transition-all">
               <button

@@ -31,7 +31,6 @@ import {
   Timer, 
   AlertOctagon, 
   ClockAlert, 
-  Flame, 
   Maximize2, 
   Gauge, 
   ChevronLeft, 
@@ -46,7 +45,6 @@ interface MatrixViewProps {
 }
 
 export function MatrixView({ collections, trades, onOpenInspector }: MatrixViewProps) {
-  // Discover latest trade date or fallback to now
   const latestTradeDate = useMemo(() => {
     if (!trades.length) return new Date();
     const timestamps = trades.map(t => parseDateToTimestamp(t.tradeDate)).filter(ts => ts > 0);
@@ -56,7 +54,6 @@ export function MatrixView({ collections, trades, onOpenInspector }: MatrixViewP
   const [currentDateCursor, setCurrentDateCursor] = useState<Date>(() => latestTradeDate);
   const [isAllTime, setIsAllTime] = useState<boolean>(false);
 
-  // Automatically snap to latest trade month as soon as trades load
   useEffect(() => {
     if (trades.length > 0) {
       const timestamps = trades.map(t => parseDateToTimestamp(t.tradeDate)).filter(ts => ts > 0);
@@ -157,98 +154,79 @@ export function MatrixView({ collections, trades, onOpenInspector }: MatrixViewP
     return null;
   };
 
-  // 1. Behavioral Execution Analytics
+  // 1. BEHAVIORAL EXECUTION ANALYTICS (SPLIT SL HUNT CARD LOGIC)
   const behaviorAnalytics = useMemo(() => {
     const totalTrades = normalizedTrades.length;
 
-    const tags: {
-      tag: BehavioralTag;
-      label: string;
-      color: string;
-      border: string;
-      bg: string;
-      icon: any;
-      isSystemRule: boolean;
-      trades: number;
-      wins: number;
-      netR: number;
-    }[] = [
-      {
-        tag: 'Rules Followed',
-        label: 'Rules Followed',
-        color: 'text-emerald-400',
-        border: 'border-emerald-500/30',
-        bg: 'bg-emerald-500/10',
-        icon: ShieldCheck,
-        isSystemRule: true,
-        trades: 0,
-        wins: 0,
-        netR: 0
-      },
-      {
-        tag: 'SL Hunt / Slippage Hunt',
-        label: 'SL Hunt (Market Variance)',
-        color: 'text-purple-400',
-        border: 'border-purple-500/30',
-        bg: 'bg-purple-500/10',
-        icon: ZapOff,
-        isSystemRule: true,
-        trades: 0,
-        wins: 0,
-        netR: 0
-      },
-      {
-        tag: 'No Confirmation Entry',
-        label: 'No Confirmation (Impulse)',
-        color: 'text-amber-400',
-        border: 'border-amber-500/30',
-        bg: 'bg-amber-500/10',
-        icon: AlertTriangle,
-        isSystemRule: false,
-        trades: 0,
-        wins: 0,
-        netR: 0
-      },
-      {
-        tag: 'Hallucinated Trade',
-        label: 'Hallucinated (Revenge)',
-        color: 'text-rose-400',
-        border: 'border-rose-500/30',
-        bg: 'bg-rose-500/10',
-        icon: Skull,
-        isSystemRule: false,
-        trades: 0,
-        wins: 0,
-        netR: 0
-      }
-    ];
-
     let taggedCount = 0;
     let disciplinedTrades = 0;
-    let disciplinedR = 0;
     let mistakeR = 0;
     let brokenRuleCount = 0;
+
+    // Rules Followed (Green)
+    let rulesTrades = 0;
+    let rulesWins = 0;
+    let rulesNetR = 0;
+
+    // SL Hunt Internal Split (Purple Card)
+    let cleanHuntTrades = 0;
+    let cleanHuntWins = 0;
+    let cleanHuntR = 0;
+
+    let badHuntTrades = 0;
+    let badHuntWins = 0;
+    let badHuntR = 0;
+
+    // No Confirmation Impulse (Amber)
+    let noConfirmTrades = 0;
+    let noConfirmWins = 0;
+    let noConfirmR = 0;
+
+    // Hallucinated Revenge (Rose)
+    let hallucinatedTrades = 0;
+    let hallucinatedWins = 0;
+    let hallucinatedR = 0;
 
     normalizedTrades.forEach(t => {
       const tag = t.behaviorTag;
       if (!tag) return;
-
       taggedCount++;
-      const item = tags.find(x => x.tag === tag);
-      if (item) {
-        item.trades += 1;
-        if (t.rMultiple > 0) item.wins += 1;
-        item.netR = Number((item.netR + t.rMultiple).toFixed(2));
-      }
 
-      if (tag === 'Rules Followed' || tag === 'SL Hunt / Slippage Hunt') {
+      const isWin = t.rMultiple > 0;
+
+      if (tag === 'Rules Followed') {
+        rulesTrades++;
+        if (isWin) rulesWins++;
+        rulesNetR = Number((rulesNetR + t.rMultiple).toFixed(2));
         disciplinedTrades++;
-        disciplinedR = Number((disciplinedR + t.rMultiple).toFixed(2));
-      } else {
-        mistakeR = Number((mistakeR + t.rMultiple).toFixed(2));
+      } else if (tag === 'SL Hunt (Clean Variance)' || tag === 'SL Hunt / Slippage Hunt') {
+        cleanHuntTrades++;
+        if (isWin) cleanHuntWins++;
+        cleanHuntR = Number((cleanHuntR + t.rMultiple).toFixed(2));
+        disciplinedTrades++; // Clean market variance counts as disciplined
+      } else if (tag === 'SL Hunt (Defense Abandoned)') {
+        badHuntTrades++;
+        if (isWin) badHuntWins++;
+        badHuntR = Number((badHuntR + t.rMultiple).toFixed(2));
         brokenRuleCount++;
+        mistakeR = Number((mistakeR + t.rMultiple).toFixed(2));
+      } else if (tag === 'No Confirmation Entry') {
+        noConfirmTrades++;
+        if (isWin) noConfirmWins++;
+        noConfirmR = Number((noConfirmR + t.rMultiple).toFixed(2));
+        brokenRuleCount++;
+        mistakeR = Number((mistakeR + t.rMultiple).toFixed(2));
+      } else if (tag === 'Hallucinated Trade') {
+        hallucinatedTrades++;
+        if (isWin) hallucinatedWins++;
+        hallucinatedR = Number((hallucinatedR + t.rMultiple).toFixed(2));
+        brokenRuleCount++;
+        mistakeR = Number((mistakeR + t.rMultiple).toFixed(2));
       }
     });
+
+    const totalHuntTrades = cleanHuntTrades + badHuntTrades;
+    const totalHuntR = Number((cleanHuntR + badHuntR).toFixed(2));
 
     const complianceRate = taggedCount 
       ? Math.round((disciplinedTrades / taggedCount) * 100) 
@@ -259,14 +237,21 @@ export function MatrixView({ collections, trades, onOpenInspector }: MatrixViewP
       : 0;
 
     return {
-      tags,
       taggedCount,
       complianceRate,
-      disciplinedR,
       mistakeR,
       brokenRuleCount,
       avgCostPerMistake,
-      untaggedCount: totalTrades - taggedCount
+      untaggedCount: totalTrades - taggedCount,
+      rules: { trades: rulesTrades, wins: rulesWins, netR: rulesNetR },
+      slHunt: {
+        totalTrades: totalHuntTrades,
+        totalNetR: totalHuntR,
+        clean: { trades: cleanHuntTrades, wins: cleanHuntWins, netR: cleanHuntR },
+        bad: { trades: badHuntTrades, wins: badHuntWins, netR: badHuntR }
+      },
+      noConfirm: { trades: noConfirmTrades, wins: noConfirmWins, netR: noConfirmR },
+      hallucinated: { trades: hallucinatedTrades, wins: hallucinatedWins, netR: hallucinatedR }
     };
   }, [normalizedTrades]);
 
@@ -514,7 +499,6 @@ export function MatrixView({ collections, trades, onOpenInspector }: MatrixViewP
 
     const scatterData = normalizedTrades.map(t => {
       let durationMinutes = t.durationMinutes || 0;
-
       if (!durationMinutes) {
         durationMinutes = t.rMultiple <= 0 ? 8 : 35;
       }
@@ -754,7 +738,7 @@ export function MatrixView({ collections, trades, onOpenInspector }: MatrixViewP
         </div>
       </div>
 
-      {/* 1. BEHAVIORAL EXECUTION AUDIT */}
+      {/* 1. BEHAVIORAL EXECUTION AUDIT (PERFECTLY BALANCED 4 CARDS WITH HORIZONTAL SPLIT) */}
       <div className="p-4 sm:p-6 rounded-2xl bg-[#090A10] border border-white/[0.06] space-y-4">
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 pb-3 border-b border-white/[0.06]">
           <div className="flex items-center gap-2">
@@ -780,47 +764,138 @@ export function MatrixView({ collections, trades, onOpenInspector }: MatrixViewP
           </div>
         </div>
 
-        {/* 4 Behavioral Cards */}
+        {/* 4 BALANCED BEHAVIORAL CARDS (MATCHING HEIGHT) */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-          {behaviorAnalytics.tags.map(item => {
-            const Icon = item.icon;
-            const wr = item.trades ? Math.round((item.wins / item.trades) * 100) : 0;
-            const isProfit = item.netR >= 0;
+          
+          {/* CARD 1: RULES FOLLOWED */}
+          <div className="p-4 rounded-xl border border-emerald-500/30 bg-emerald-500/10 flex flex-col justify-between space-y-3">
+            <div className="flex items-start justify-between">
+              <div className="space-y-0.5">
+                <span className="text-[10px] font-mono text-zinc-400 uppercase tracking-wider block">Rule Execution</span>
+                <span className="text-xs font-bold text-emerald-400 flex items-center gap-1.5">
+                  <ShieldCheck className="w-3.5 h-3.5 shrink-0" />
+                  <span>Rules Followed</span>
+                </span>
+              </div>
+              <span className="text-xs font-mono px-2 py-0.5 rounded bg-black/40 text-white font-bold border border-white/10">
+                {behaviorAnalytics.rules.trades} Trades
+              </span>
+            </div>
 
-            return (
-              <div 
-                key={item.tag}
-                className={`p-4 rounded-xl border ${item.border} ${item.bg} flex flex-col justify-between space-y-3`}
-              >
-                <div className="flex items-start justify-between">
-                  <div className="space-y-0.5">
-                    <span className="text-[10px] font-mono text-zinc-400 uppercase tracking-wider block">
-                      {item.isSystemRule ? 'Rule Execution' : 'Psychological Error'}
-                    </span>
-                    <span className={`text-xs font-bold ${item.color} flex items-center gap-1.5`}>
-                      <Icon className="w-3.5 h-3.5 shrink-0" />
-                      <span>{item.label}</span>
-                    </span>
-                  </div>
-                  <span className="text-xs font-mono px-2 py-0.5 rounded bg-black/40 text-white font-bold border border-white/10">
-                    {item.trades} Trades
-                  </span>
-                </div>
+            <div className="space-y-1">
+              <span className="text-[10px] font-mono text-zinc-400 block">Realized Return</span>
+              <div className={`text-2xl font-black font-mono ${behaviorAnalytics.rules.netR >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                {behaviorAnalytics.rules.netR >= 0 ? '+' : ''}{behaviorAnalytics.rules.netR.toFixed(2)}R
+              </div>
+            </div>
 
-                <div className="space-y-1">
-                  <span className="text-[10px] font-mono text-zinc-400 block">Realized Return</span>
-                  <div className={`text-2xl font-black font-mono ${isProfit ? 'text-emerald-400' : 'text-rose-400'}`}>
-                    {isProfit ? '+' : ''}{item.netR.toFixed(2)}R
-                  </div>
-                </div>
+            <div className="pt-2 border-t border-white/[0.06] text-[10px] font-mono flex items-center justify-between text-zinc-400">
+              <span>Win Rate: <strong className="text-white">{behaviorAnalytics.rules.trades ? Math.round((behaviorAnalytics.rules.wins / behaviorAnalytics.rules.trades) * 100) : 0}%</strong></span>
+              <span>{behaviorAnalytics.rules.wins}W / {behaviorAnalytics.rules.trades - behaviorAnalytics.rules.wins}L</span>
+            </div>
+          </div>
 
-                <div className="pt-2 border-t border-white/[0.06] text-[10px] font-mono flex items-center justify-between text-zinc-400">
-                  <span>Win Rate: <strong className="text-white">{wr}%</strong></span>
-                  <span>{item.wins}W / {item.trades - item.wins}L</span>
+          {/* CARD 2: PURPLE CONTAINER (HORIZONTAL SPLIT BESIDE RETURN TO MATCH HEIGHT) */}
+          <div className="p-4 rounded-xl border border-purple-500/30 bg-purple-500/10 flex flex-col justify-between space-y-3">
+            <div className="flex items-start justify-between">
+              <div className="space-y-0.5">
+                <span className="text-[10px] font-mono text-purple-300/80 uppercase tracking-wider block">Rule & Defense Audit</span>
+                <span className="text-xs font-bold text-purple-400 flex items-center gap-1.5">
+                  <ZapOff className="w-3.5 h-3.5 shrink-0" />
+                  <span>SL Hunt & Exit Defense</span>
+                </span>
+              </div>
+              <span className="text-xs font-mono px-2 py-0.5 rounded bg-black/40 text-purple-200 font-bold border border-white/10">
+                {behaviorAnalytics.slHunt.totalTrades} Trades
+              </span>
+            </div>
+
+            {/* HORIZONTAL SPACE: RETURN ON LEFT + MINI SPLIT ON RIGHT */}
+            <div className="flex items-center justify-between gap-2">
+              <div>
+                <span className="text-[10px] font-mono text-zinc-400 block">Realized Return</span>
+                <div className={`text-2xl font-black font-mono ${behaviorAnalytics.slHunt.totalNetR >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                  {behaviorAnalytics.slHunt.totalNetR >= 0 ? '+' : ''}{behaviorAnalytics.slHunt.totalNetR.toFixed(2)}R
                 </div>
               </div>
-            );
-          })}
+
+              {/* Compact horizontal breakdown pill */}
+              <div className="p-1.5 rounded-lg bg-black/45 border border-purple-500/25 font-mono text-[9.5px] space-y-0.5 text-right shrink-0">
+                <div className="text-purple-300 flex items-center justify-end gap-1">
+                  <span className="h-1.5 w-1.5 rounded-full bg-purple-400" />
+                  <span className="text-zinc-500">Clean:</span>
+                  <strong>{behaviorAnalytics.slHunt.clean.trades}T</strong> ({behaviorAnalytics.slHunt.clean.netR >= 0 ? '+' : ''}{behaviorAnalytics.slHunt.clean.netR.toFixed(2)}R)
+                </div>
+                <div className="text-rose-300 flex items-center justify-end gap-1">
+                  <span className="h-1.5 w-1.5 rounded-full bg-rose-400" />
+                  <span className="text-zinc-500">Leak:</span>
+                  <strong>{behaviorAnalytics.slHunt.bad.trades}T</strong> ({behaviorAnalytics.slHunt.bad.netR >= 0 ? '+' : ''}{behaviorAnalytics.slHunt.bad.netR.toFixed(2)}R)
+                </div>
+              </div>
+            </div>
+
+            <div className="pt-2 border-t border-purple-500/25 text-[10px] font-mono flex items-center justify-between text-zinc-400">
+              <span>Clean: <strong className="text-purple-300">{behaviorAnalytics.slHunt.clean.trades} Safe</strong></span>
+              <span>Leak: <strong className={behaviorAnalytics.slHunt.bad.trades > 0 ? "text-rose-400 font-bold" : "text-zinc-400"}>{behaviorAnalytics.slHunt.bad.trades} Slept/Trail</strong></span>
+            </div>
+          </div>
+
+          {/* CARD 3: NO CONFIRMATION (IMPULSE) */}
+          <div className="p-4 rounded-xl border border-amber-500/30 bg-amber-500/10 flex flex-col justify-between space-y-3">
+            <div className="flex items-start justify-between">
+              <div className="space-y-0.5">
+                <span className="text-[10px] font-mono text-zinc-400 uppercase tracking-wider block">Psychological Error</span>
+                <span className="text-xs font-bold text-amber-400 flex items-center gap-1.5">
+                  <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                  <span>No Confirmation (Impulse)</span>
+                </span>
+              </div>
+              <span className="text-xs font-mono px-2 py-0.5 rounded bg-black/40 text-white font-bold border border-white/10">
+                {behaviorAnalytics.noConfirm.trades} Trades
+              </span>
+            </div>
+
+            <div className="space-y-1">
+              <span className="text-[10px] font-mono text-zinc-400 block">Realized Return</span>
+              <div className={`text-2xl font-black font-mono ${behaviorAnalytics.noConfirm.netR >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                {behaviorAnalytics.noConfirm.netR >= 0 ? '+' : ''}{behaviorAnalytics.noConfirm.netR.toFixed(2)}R
+              </div>
+            </div>
+
+            <div className="pt-2 border-t border-white/[0.06] text-[10px] font-mono flex items-center justify-between text-zinc-400">
+              <span>Win Rate: <strong className="text-white">{behaviorAnalytics.noConfirm.trades ? Math.round((behaviorAnalytics.noConfirm.wins / behaviorAnalytics.noConfirm.trades) * 100) : 0}%</strong></span>
+              <span>{behaviorAnalytics.noConfirm.wins}W / {behaviorAnalytics.noConfirm.trades - behaviorAnalytics.noConfirm.wins}L</span>
+            </div>
+          </div>
+
+          {/* CARD 4: HALLUCINATED TRADE */}
+          <div className="p-4 rounded-xl border border-rose-500/30 bg-rose-500/10 flex flex-col justify-between space-y-3">
+            <div className="flex items-start justify-between">
+              <div className="space-y-0.5">
+                <span className="text-[10px] font-mono text-zinc-400 uppercase tracking-wider block">Psychological Error</span>
+                <span className="text-xs font-bold text-rose-400 flex items-center gap-1.5">
+                  <Skull className="w-3.5 h-3.5 shrink-0" />
+                  <span>Hallucinated (Revenge)</span>
+                </span>
+              </div>
+              <span className="text-xs font-mono px-2 py-0.5 rounded bg-black/40 text-white font-bold border border-white/10">
+                {behaviorAnalytics.hallucinated.trades} Trades
+              </span>
+            </div>
+
+            <div className="space-y-1">
+              <span className="text-[10px] font-mono text-zinc-400 block">Realized Return</span>
+              <div className={`text-2xl font-black font-mono ${behaviorAnalytics.hallucinated.netR >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                {behaviorAnalytics.hallucinated.netR >= 0 ? '+' : ''}{behaviorAnalytics.hallucinated.netR.toFixed(2)}R
+              </div>
+            </div>
+
+            <div className="pt-2 border-t border-white/[0.06] text-[10px] font-mono flex items-center justify-between text-zinc-400">
+              <span>Win Rate: <strong className="text-white">{behaviorAnalytics.hallucinated.trades ? Math.round((behaviorAnalytics.hallucinated.wins / behaviorAnalytics.hallucinated.trades) * 100) : 0}%</strong></span>
+              <span>{behaviorAnalytics.hallucinated.wins}W / {behaviorAnalytics.hallucinated.trades - behaviorAnalytics.hallucinated.wins}L</span>
+            </div>
+          </div>
+
         </div>
 
         {/* UNFORCED MISTAKE RADAR */}
@@ -830,7 +905,7 @@ export function MatrixView({ collections, trades, onOpenInspector }: MatrixViewP
             <div>
               <span className="font-bold text-rose-300">Unforced Error Penalty Radar:</span>
               <span className="text-zinc-400 ml-1.5">
-                {behaviorAnalytics.brokenRuleCount} out of {behaviorAnalytics.taggedCount} trades were impulse/hallucinated mistakes.
+                {behaviorAnalytics.brokenRuleCount} out of {behaviorAnalytics.taggedCount} trades were impulse, revenge, or abandoned defense leaks.
               </span>
             </div>
           </div>
