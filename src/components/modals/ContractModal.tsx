@@ -1,13 +1,14 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { ExecutionContractState, Trade } from '@/types/trade';
 import { 
   X, 
   Swords, 
   Skull, 
   Flame, 
-  AlertOctagon
+  AlertOctagon,
+  AlertTriangle
 } from 'lucide-react';
 
 interface ContractModalProps {
@@ -16,6 +17,8 @@ interface ContractModalProps {
   contract: ExecutionContractState;
   trades: Trade[];
   onReportBreach: (reason: string, cost: string) => void;
+  pendingBreachTrade?: Trade | null;
+  onClearPendingBreach?: () => void;
 }
 
 export function ContractModal({
@@ -23,7 +26,9 @@ export function ContractModal({
   onClose,
   contract,
   trades,
-  onReportBreach
+  onReportBreach,
+  pendingBreachTrade,
+  onClearPendingBreach
 }: ContractModalProps) {
   const [activeTab, setActiveTab] = useState<'status' | 'rules' | 'graveyard'>('status');
 
@@ -31,6 +36,16 @@ export function ContractModal({
   const [isConfessingBreach, setIsConfessingBreach] = useState(false);
   const [breachReason, setBreachReason] = useState('');
   const [breachCost, setBreachCost] = useState('');
+
+  // Auto-trigger breach confession when an unforced trade fault is detected
+  useEffect(() => {
+    if (pendingBreachTrade) {
+      setActiveTab('status');
+      setIsConfessingBreach(true);
+      setBreachReason(`${pendingBreachTrade.symbol} (${pendingBreachTrade.tradeDate}): Execution fault [${pendingBreachTrade.behaviorTag}].`);
+      setBreachCost(`${pendingBreachTrade.rMultiple >= 0 ? '+' : ''}${pendingBreachTrade.rMultiple}R result & 180-day streak severed.`);
+    }
+  }, [pendingBreachTrade]);
 
   if (!isOpen) return null;
 
@@ -55,53 +70,74 @@ export function ContractModal({
     setIsConfessingBreach(false);
     setBreachReason('');
     setBreachCost('');
+    if (onClearPendingBreach) onClearPendingBreach();
+  };
+
+  const handleModalClose = () => {
+    if (onClearPendingBreach) onClearPendingBreach();
+    setIsConfessingBreach(false);
+    onClose();
   };
 
   return (
     <div className="fixed inset-0 z-50 bg-black/90 backdrop-blur-md flex items-center justify-center p-3 sm:p-4">
       {/* FIXED CONTAINER HEIGHT (ELIMINATES ALL VERTICAL RESIZING AND JUMPING) */}
-      <div className="bg-[#08090E] border-2 border-emerald-500/40 rounded-3xl max-w-2xl w-full p-5 sm:p-6 shadow-[0_0_60px_rgba(16,185,129,0.15)] h-[540px] max-h-[92vh] flex flex-col font-mono text-xs overflow-hidden">
+      <div className={`bg-[#08090E] border-2 rounded-3xl max-w-2xl w-full p-5 sm:p-6 h-[540px] max-h-[92vh] flex flex-col font-mono text-xs overflow-hidden transition-all ${
+        pendingBreachTrade 
+          ? 'border-rose-500/80 shadow-[0_0_60px_rgba(244,63,94,0.3)] animate-shake' 
+          : 'border-emerald-500/40 shadow-[0_0_60px_rgba(16,185,129,0.15)]'
+      }`}>
         
-        {/* FROZEN TOP SECTION: STICKS IN ONE PLACE AT ALL TIMES */}
+        {/* FROZEN TOP SECTION */}
         <div className="shrink-0 space-y-3 pb-3 border-b border-white/[0.08]">
           {/* Header Bar */}
           <div className="flex items-start justify-between gap-3">
             <div className="flex items-center gap-3 min-w-0">
-              <div className="p-2.5 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 shrink-0">
-                <Swords className="w-5 h-5 sm:w-6 sm:h-6" />
+              <div className={`p-2.5 rounded-2xl border shrink-0 ${
+                pendingBreachTrade 
+                  ? 'bg-rose-500/20 text-rose-400 border-rose-500/40 animate-pulse' 
+                  : 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400'
+              }`}>
+                {pendingBreachTrade ? <AlertTriangle className="w-5 h-5 sm:w-6 sm:h-6" /> : <Swords className="w-5 h-5 sm:w-6 sm:h-6" />}
               </div>
               <div className="min-w-0">
                 <div className="flex items-center gap-2 flex-wrap">
                   <h3 className="text-sm sm:text-base font-black text-white uppercase tracking-wider truncate">
-                    The Executioner Contract
+                    {pendingBreachTrade ? 'DISCIPLINE BREACH DETECTED' : 'The Executioner Contract'}
                   </h3>
-                  <span className="px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-300 border border-emerald-500/40 text-[10px] font-bold shrink-0">
+                  <span className={`px-2 py-0.5 rounded-full border text-[10px] font-bold shrink-0 ${
+                    pendingBreachTrade
+                      ? 'bg-rose-500/20 text-rose-300 border-rose-500/40'
+                      : 'bg-emerald-500/15 text-emerald-300 border-emerald-500/40'
+                  }`}>
                     ATTEMPT {contract.currentAttempt} • DAY {diffDays} / {contract.totalTargetDays}
                   </span>
                 </div>
                 <p className="text-[11px] text-zinc-400 mt-0.5 truncate">
-                  The 180-Day Zero-Fault Covenant between Pravin & Gemini AI.
+                  {pendingBreachTrade 
+                    ? 'Unforced error logged. The 180-day covenant demands honesty.' 
+                    : 'The 180-Day Zero-Fault Covenant between Pravin & Gemini AI.'}
                 </p>
               </div>
             </div>
 
-            <button onClick={onClose} className="p-1 rounded-xl text-zinc-500 hover:text-white hover:bg-white/[0.06] transition-colors shrink-0">
+            <button onClick={handleModalClose} className="p-1 rounded-xl text-zinc-500 hover:text-white hover:bg-white/[0.06] transition-colors shrink-0">
               <X className="w-5 h-5" />
             </button>
           </div>
 
-          {/* Clean 3-Tab Selector (Fixed in place, uniform size) */}
+          {/* Clean 3-Tab Selector */}
           <div className="grid grid-cols-3 gap-1.5 p-1 rounded-2xl bg-white/[0.03] border border-white/[0.08] text-center text-xs font-bold">
             <button
               type="button"
               onClick={() => setActiveTab('status')}
               className={`py-2 px-3 rounded-xl transition-all border ${
                 activeTab === 'status' 
-                  ? 'bg-emerald-500 text-black border-emerald-400 shadow-md font-black' 
+                  ? (pendingBreachTrade ? 'bg-rose-600 text-white border-rose-500 shadow-md font-black' : 'bg-emerald-500 text-black border-emerald-400 shadow-md font-black') 
                   : 'border-transparent text-zinc-400 hover:text-white hover:bg-white/[0.04]'
               }`}
             >
-              HUD Status
+              {pendingBreachTrade ? 'Breach Status' : 'HUD Status'}
             </button>
             <button
               type="button"
@@ -128,10 +164,10 @@ export function ContractModal({
           </div>
         </div>
 
-        {/* SCROLLABLE INNER VIEWPORT (HEADER & TABS NEVER SHIFT) */}
+        {/* SCROLLABLE INNER VIEWPORT */}
         <div className="flex-1 overflow-y-auto pt-3.5 pr-1 space-y-4">
           
-          {/* TAB 1: HUD STATUS */}
+          {/* TAB 1: HUD STATUS & BREACH CONFESSION */}
           {activeTab === 'status' && (
             <div className="space-y-3.5 animate-in fade-in duration-150">
               {/* Progress Bar */}
@@ -140,14 +176,18 @@ export function ContractModal({
                   <span className="text-zinc-400 font-bold uppercase tracking-wider">
                     180-Day Execution Milestone
                   </span>
-                  <span className="font-black text-emerald-400">
+                  <span className={`font-black ${pendingBreachTrade ? 'text-rose-400' : 'text-emerald-400'}`}>
                     {diffDays} / {contract.totalTargetDays} Days ({progressPct}%)
                   </span>
                 </div>
 
                 <div className="w-full bg-zinc-900 h-2.5 rounded-full overflow-hidden border border-white/[0.06]">
                   <div 
-                    className="h-full bg-gradient-to-r from-emerald-500 via-cyan-400 to-emerald-400 rounded-full transition-all duration-700 shadow-[0_0_15px_#10b981]"
+                    className={`h-full rounded-full transition-all duration-700 shadow-lg ${
+                      pendingBreachTrade 
+                        ? 'bg-rose-500 shadow-rose-500/50' 
+                        : 'bg-gradient-to-r from-emerald-500 via-cyan-400 to-emerald-400 shadow-emerald-500/50'
+                    }`}
                     style={{ width: `${progressPct}%` }}
                   />
                 </div>
@@ -182,17 +222,21 @@ export function ContractModal({
               </div>
 
               {/* Covenant Affirmation */}
-              <div className="p-3 rounded-2xl bg-gradient-to-r from-emerald-950/30 to-black border border-emerald-500/30 text-[11px] text-emerald-200/90 leading-relaxed space-y-0.5">
-                <p className="font-bold flex items-center gap-1.5 text-emerald-300">
-                  <Flame className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-                  <span>The Covenant Rule:</span>
+              <div className={`p-3 rounded-2xl border text-[11px] leading-relaxed space-y-0.5 ${
+                pendingBreachTrade 
+                  ? 'bg-rose-950/30 border-rose-500/40 text-rose-200' 
+                  : 'bg-gradient-to-r from-emerald-950/30 to-black border-emerald-500/30 text-emerald-200/90'
+              }`}>
+                <p className="font-bold flex items-center gap-1.5 text-rose-400">
+                  <Flame className="w-3.5 h-3.5 text-rose-400 shrink-0" />
+                  <span>The Covenant Law:</span>
                 </p>
                 <p>
                   "A winning mechanical setup is worthless if the defense mechanism is abandoned. Every loss where rules are followed is an operating expense. Every trade where discipline is broken resets the clock to Day 1."
                 </p>
               </div>
 
-              {/* Self-Reporting Breach Trigger */}
+              {/* AUTOMATED OR MANUAL BREACH CONFESSION FORM */}
               <div className="pt-1">
                 {!isConfessingBreach ? (
                   <button
@@ -204,10 +248,11 @@ export function ContractModal({
                     <span>Report Discipline Breach (Self-Reset to Day 1)</span>
                   </button>
                 ) : (
-                  <form onSubmit={handleConfessSubmit} className="p-3 rounded-2xl bg-[#14080B] border border-rose-500/50 space-y-2.5 animate-in fade-in">
-                    <span className="text-rose-300 font-bold block text-xs">
-                      ⚠️ Confess Breach & Terminate Attempt #{contract.currentAttempt}:
-                    </span>
+                  <form onSubmit={handleConfessSubmit} className="p-3.5 rounded-2xl bg-[#14080B] border-2 border-rose-600/70 space-y-2.5 animate-in fade-in">
+                    <div className="flex items-center gap-2 text-rose-300 font-bold text-xs">
+                      <AlertOctagon className="w-4 h-4 text-rose-400 shrink-0" />
+                      <span>Confess Breach & Terminate Attempt #{contract.currentAttempt}:</span>
+                    </div>
                     <input
                       type="text"
                       value={breachReason}
@@ -224,18 +269,20 @@ export function ContractModal({
                       className="w-full bg-black/60 border border-rose-500/40 rounded-xl p-2 text-white outline-none"
                     />
                     <div className="flex justify-end gap-2 pt-1">
-                      <button
-                        type="button"
-                        onClick={() => setIsConfessingBreach(false)}
-                        className="px-3 py-1.5 rounded-lg bg-zinc-800 text-zinc-400"
-                      >
-                        Cancel
-                      </button>
+                      {!pendingBreachTrade && (
+                        <button
+                          type="button"
+                          onClick={() => setIsConfessingBreach(false)}
+                          className="px-3 py-1.5 rounded-lg bg-zinc-800 text-zinc-400"
+                        >
+                          Cancel
+                        </button>
+                      )}
                       <button
                         type="submit"
-                        className="px-4 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-500 text-white font-black shadow-lg"
+                        className="px-5 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-black shadow-lg shadow-rose-600/30 text-xs"
                       >
-                        Confirm Reset to Day 1
+                        Acknowledge Breach & Reset to Day 1
                       </button>
                     </div>
                   </form>

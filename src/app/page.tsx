@@ -105,9 +105,10 @@ export default function NivarpOS() {
   const [activeTab, setActiveTab] = useState<'pulse' | 'codex' | 'matrix' | 'heatmap' | 'engine' | 'settings'>('pulse');
   const [selectedCollection, setSelectedCollection] = useState<PlaybookCollection | null>(null);
 
-  // Execution Contract State
+  // Execution Contract State & Auto-Breach Hook
   const [contract, setContract] = useState<ExecutionContractState>(DEFAULT_CONTRACT_STATE);
   const [isContractModalOpen, setIsContractModalOpen] = useState(false);
+  const [pendingBreachTrade, setPendingBreachTrade] = useState<Trade | null>(null);
 
   // Engine Multi-Stock Watchlist Coordinates
   const [engineWatchlist, setEngineWatchlist] = useState<Record<string, { high: string; low: string }>>(DEFAULT_WATCHLIST_DATA);
@@ -218,6 +219,14 @@ export default function NivarpOS() {
     }
   };
 
+  // Check if a trade tag constitutes an unforced discipline breach
+  const isUnforcedBreachTag = (tag?: string) => {
+    return tag === 'SL Hunt (Defense Abandoned)' || 
+           tag === 'No Confirmation Entry' || 
+           tag === 'Hallucinated Trade';
+  };
+
+  // REPORT CONTRACT BREACH HANDLER
   const handleReportBreach = (reason: string, cost: string) => {
     const startTs = new Date(contract.startDate).getTime();
     const diffDays = Math.max(1, Math.floor((Date.now() - startTs) / (1000 * 60 * 60 * 24)) + 1);
@@ -248,6 +257,7 @@ export default function NivarpOS() {
 
     setContract(updatedContract);
     idbSet(CONTRACT_STORAGE_KEY, updatedContract);
+    setPendingBreachTrade(null);
 
     showToast(`Contract breached. Reset to Day 1 (Attempt #${nextAttemptNumber}).`, 'error');
   };
@@ -987,7 +997,7 @@ export default function NivarpOS() {
               type="button"
               onClick={() => setIsContractModalOpen(true)}
               className="flex items-center gap-1.5 px-2 sm:px-2.5 py-1 rounded-xl bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/30 text-emerald-300 font-mono text-[11px] sm:text-xs font-black transition-all shadow-[0_0_15px_rgba(16,185,129,0.12)] shrink-0"
-              title="View 180-Day Executioner Contract, Sentinel & Graveyard"
+              title="View 180-Day Executioner Contract & Graveyard"
             >
               <Swords className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
               <span className="tracking-wider hidden xs:inline">ATTEMPT {contract.currentAttempt} • D{contractDaysElapsed}/180</span>
@@ -1021,7 +1031,6 @@ export default function NivarpOS() {
 
           {/* COLUMN 3: RIGHT ACTIONS (SUBTLE FLOATING WIDGET + LOCK + IMPORT) */}
           <div className="flex items-center gap-1.5 sm:gap-2.5 justify-self-end shrink-0">
-            {/* Subtle Minimalist Floating Widget Button */}
             <button
               onClick={handleToggleEnginePiP}
               className={`p-2 rounded-xl border transition-all ${
@@ -1240,6 +1249,8 @@ export default function NivarpOS() {
         contract={contract}
         trades={trades}
         onReportBreach={handleReportBreach}
+        pendingBreachTrade={pendingBreachTrade}
+        onClearPendingBreach={() => setPendingBreachTrade(null)}
       />
 
       {/* FULLSCREEN INSPECTOR */}
@@ -1254,7 +1265,7 @@ export default function NivarpOS() {
         onClose={() => setInspectorChart(prev => ({ ...prev, isOpen: false }))}
       />
 
-      {/* CSV MODAL */}
+      {/* CSV MODAL (WITH AUTO-BREACH DETECTION) */}
       <CsvImportStudio
         isOpen={isCsvModalOpen} onClose={() => setIsCsvModalOpen(false)} csvPreview={csvPreview}
         csvFileName={csvFileName} defaultRisk={defaultRiskPerTrade} collections={playbookOrderedCollections}
@@ -1298,12 +1309,20 @@ export default function NivarpOS() {
 
           setTrades(prev => [...prev, ...csvPreview]); 
           showToast(`Successfully imported ${csvPreview.length} trades.`, "success");
+          
+          // Check if any imported trade has an unforced discipline breach
+          const breachTrade = csvPreview.find(t => isUnforcedBreachTag(t.behaviorTag));
+          if (breachTrade) {
+            setPendingBreachTrade(breachTrade);
+            setIsContractModalOpen(true);
+          }
+
           setCsvPreview([]); 
           setIsCsvModalOpen(false); 
         }}
       />
 
-      {/* DEBRIEF MODAL */}
+      {/* DEBRIEF MODAL (WITH AUTO-BREACH DETECTION) */}
       <EditDebriefModal
         isOpen={isDebriefModalOpen} trade={editingTrade} collections={playbookOrderedCollections}
         onClose={() => setIsDebriefModalOpen(false)}
@@ -1344,6 +1363,12 @@ export default function NivarpOS() {
           setTrades(prev => prev.map(t => t.id === cleanUpdated.id ? cleanUpdated : t)); 
           showToast(`Debrief for ${cleanUpdated.symbol} saved.`, "success");
           setIsDebriefModalOpen(false); 
+
+          // AUTOMATIC CONTRACT BREACH INTERCEPT
+          if (isUnforcedBreachTag(cleanUpdated.behaviorTag)) {
+            setPendingBreachTrade(cleanUpdated);
+            setIsContractModalOpen(true);
+          }
         }}
       />
 
