@@ -148,6 +148,8 @@ interface EngineViewProps {
   isWidgetMode?: boolean;
   onTogglePiP?: () => void;
   isPiPActive?: boolean;
+  gatekeeperConfig?: GatekeeperConfig;
+  onUpdateGatekeeperConfig?: (config: GatekeeperConfig) => void;
 }
 
 const roundToTick = (val: number): number => {
@@ -164,7 +166,9 @@ export function EngineView({
   onChangeTradingCapital,
   isWidgetMode = false,
   onTogglePiP,
-  isPiPActive = false
+  isPiPActive = false,
+  gatekeeperConfig: gatekeeperConfigProp,
+  onUpdateGatekeeperConfig
 }: EngineViewProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const focusMenuRef = useRef<HTMLDivElement>(null);
@@ -172,11 +176,10 @@ export function EngineView({
   // Top Switch Mode: 'engine' | 'gatekeeper'
   const [viewMode, setViewMode] = useState<'engine' | 'gatekeeper'>('engine');
 
-  // LIVE FOCUS STATE (Allows focusing only 1, 2, or 3 tickers to eliminate clutter)
+  // LIVE FOCUS STATE
   const [focusedTickers, setFocusedTickers] = useState<string[]>([...WATCHLIST_TICKERS]);
   const [isFocusSelectorOpen, setIsFocusSelectorOpen] = useState(false);
 
-  // Load focused tickers from storage
   useEffect(() => {
     idbGet<string[]>(FOCUSED_TICKERS_KEY).then(saved => {
       if (Array.isArray(saved) && saved.length > 0) {
@@ -185,14 +188,12 @@ export function EngineView({
     });
   }, []);
 
-  // Safe effect: If activeTicker was removed from focus, smoothly switch to the first focused ticker
   useEffect(() => {
     if (focusedTickers.length > 0 && !focusedTickers.includes(activeTicker)) {
       onSelectTicker(focusedTickers[0]);
     }
   }, [focusedTickers, activeTicker, onSelectTicker]);
 
-  // Close focus popover when clicking outside
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
       if (focusMenuRef.current && !focusMenuRef.current.contains(e.target as Node)) {
@@ -205,11 +206,10 @@ export function EngineView({
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [isFocusSelectorOpen]);
 
-  // Clean handler without set-state-in-render side effects
   const handleToggleTickerFocus = (ticker: string) => {
     let next: string[];
     if (focusedTickers.includes(ticker)) {
-      if (focusedTickers.length <= 1) return; // Keep at least 1
+      if (focusedTickers.length <= 1) return;
       next = focusedTickers.filter(t => t !== ticker);
     } else {
       next = [...focusedTickers, ticker];
@@ -225,7 +225,6 @@ export function EngineView({
     idbSet(FOCUSED_TICKERS_KEY, all);
   };
 
-  // Visible tickers based on focus filter
   const visibleTickers = useMemo(() => {
     return WATCHLIST_TICKERS.filter(t => focusedTickers.includes(t));
   }, [focusedTickers]);
@@ -260,9 +259,28 @@ export function EngineView({
   const [capitalInput, setCapitalInput] = useState<string>(String(tradingCapital || 70000));
   const [copiedPrice, setCopiedPrice] = useState<string | null>(null);
 
-  // GATEKEEPER STATE
-  const [gatekeeperConfig, setGatekeeperConfig] = useState<GatekeeperConfig>(DEFAULT_GATEKEEPER_CONFIG);
+  // GATEKEEPER STATE WITH SYNC BRIDGE
+  const [localGatekeeperConfig, setLocalGatekeeperConfig] = useState<GatekeeperConfig>(
+    gatekeeperConfigProp || DEFAULT_GATEKEEPER_CONFIG
+  );
   const [isEditMode, setIsEditMode] = useState(false);
+
+  useEffect(() => {
+    if (gatekeeperConfigProp) {
+      setLocalGatekeeperConfig(gatekeeperConfigProp);
+    }
+  }, [gatekeeperConfigProp]);
+
+  const activeConfig = gatekeeperConfigProp || localGatekeeperConfig;
+
+  const saveGatekeeperConfig = (updated: GatekeeperConfig) => {
+    if (onUpdateGatekeeperConfig) {
+      onUpdateGatekeeperConfig(updated);
+    } else {
+      setLocalGatekeeperConfig(updated);
+      idbSet(GATEKEEPER_STORAGE_KEY, updated);
+    }
+  };
 
   // Per-Ticker checked states
   const [tickerChecks, setTickerChecks] = useState<Record<string, Record<string, boolean>>>({});
@@ -277,7 +295,7 @@ export function EngineView({
     return () => clearInterval(timer);
   }, []);
 
-  // KEYBOARD SHORTCUTS (E for Engine, G for Gatekeeper)
+  // KEYBOARD SHORTCUTS
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement | null;
@@ -320,19 +338,6 @@ export function EngineView({
       setCapitalInput(String(tradingCapital));
     }
   }, [tradingCapital]);
-
-  useEffect(() => {
-    idbGet<GatekeeperConfig>(GATEKEEPER_STORAGE_KEY).then(saved => {
-      if (saved && saved.globalConstraints && saved.setups) {
-        setGatekeeperConfig(saved);
-      }
-    });
-  }, []);
-
-  const saveGatekeeperConfig = (updated: GatekeeperConfig) => {
-    setGatekeeperConfig(updated);
-    idbSet(GATEKEEPER_STORAGE_KEY, updated);
-  };
 
   const handleHighChange = (val: string) => {
     setZoneHighInput(val);
@@ -454,7 +459,7 @@ export function EngineView({
   }, [zoneMath, activeSetupTab]);
 
   // Gatekeeper automation helpers
-  const activeGatekeeperSetup = gatekeeperConfig.setups[activeSetupTab];
+  const activeGatekeeperSetup = activeConfig.setups[activeSetupTab];
   const currentTickerCheckMap = tickerChecks[activeTicker] || {};
 
   const getItemCheckDetails = (item: GatekeeperCheckItem) => {
@@ -495,18 +500,18 @@ export function EngineView({
     };
   };
 
-  const totalRequiredChecks = gatekeeperConfig.globalConstraints.length + (activeGatekeeperSetup?.items.length || 0);
+  const totalRequiredChecks = activeConfig.globalConstraints.length + (activeGatekeeperSetup?.items.length || 0);
   
   const checkedCount = useMemo(() => {
     let count = 0;
-    gatekeeperConfig.globalConstraints.forEach(item => {
+    activeConfig.globalConstraints.forEach(item => {
       if (getItemCheckDetails(item).isChecked) count++;
     });
     activeGatekeeperSetup?.items.forEach(item => {
       if (getItemCheckDetails(item).isChecked) count++;
     });
     return count;
-  }, [currentTickerCheckMap, gatekeeperConfig, activeGatekeeperSetup, istTime, zoneMath]);
+  }, [currentTickerCheckMap, activeConfig, activeGatekeeperSetup, istTime, zoneMath]);
 
   const isExecutionUnlocked = totalRequiredChecks > 0 && checkedCount >= totalRequiredChecks;
 
@@ -533,15 +538,15 @@ export function EngineView({
 
   const handleUpdateGlobalItem = (id: string, text: string) => {
     saveGatekeeperConfig({
-      ...gatekeeperConfig,
-      globalConstraints: gatekeeperConfig.globalConstraints.map(item => item.id === id ? { ...item, text } : item)
+      ...activeConfig,
+      globalConstraints: activeConfig.globalConstraints.map(item => item.id === id ? { ...item, text } : item)
     });
   };
 
   const handleDeleteGlobalItem = (id: string) => {
     saveGatekeeperConfig({
-      ...gatekeeperConfig,
-      globalConstraints: gatekeeperConfig.globalConstraints.filter(item => item.id !== id)
+      ...activeConfig,
+      globalConstraints: activeConfig.globalConstraints.filter(item => item.id !== id)
     });
   };
 
@@ -551,17 +556,17 @@ export function EngineView({
       text: 'New Constraint Rule'
     };
     saveGatekeeperConfig({
-      ...gatekeeperConfig,
-      globalConstraints: [...gatekeeperConfig.globalConstraints, newItem]
+      ...activeConfig,
+      globalConstraints: [...activeConfig.globalConstraints, newItem]
     });
   };
 
   const handleUpdateSetupItem = (id: string, text: string) => {
-    const currentSetup = gatekeeperConfig.setups[activeSetupTab];
+    const currentSetup = activeConfig.setups[activeSetupTab];
     saveGatekeeperConfig({
-      ...gatekeeperConfig,
+      ...activeConfig,
       setups: {
-        ...gatekeeperConfig.setups,
+        ...activeConfig.setups,
         [activeSetupTab]: {
           ...currentSetup,
           items: currentSetup.items.map(item => item.id === id ? { ...item, text } : item)
@@ -571,11 +576,11 @@ export function EngineView({
   };
 
   const handleDeleteSetupItem = (id: string) => {
-    const currentSetup = gatekeeperConfig.setups[activeSetupTab];
+    const currentSetup = activeConfig.setups[activeSetupTab];
     saveGatekeeperConfig({
-      ...gatekeeperConfig,
+      ...activeConfig,
       setups: {
-        ...gatekeeperConfig.setups,
+        ...activeConfig.setups,
         [activeSetupTab]: {
           ...currentSetup,
           items: currentSetup.items.filter(item => item.id !== id)
@@ -585,15 +590,15 @@ export function EngineView({
   };
 
   const handleAddSetupItem = () => {
-    const currentSetup = gatekeeperConfig.setups[activeSetupTab];
+    const currentSetup = activeConfig.setups[activeSetupTab];
     const newItem: GatekeeperCheckItem = {
       id: `rule-${Date.now()}`,
       text: 'New Setup Rule'
     };
     saveGatekeeperConfig({
-      ...gatekeeperConfig,
+      ...activeConfig,
       setups: {
-        ...gatekeeperConfig.setups,
+        ...activeConfig.setups,
         [activeSetupTab]: {
           ...currentSetup,
           items: [...currentSetup.items, newItem]
@@ -603,11 +608,11 @@ export function EngineView({
   };
 
   const handleUpdateTrailingRule = (text: string) => {
-    const currentSetup = gatekeeperConfig.setups[activeSetupTab];
+    const currentSetup = activeConfig.setups[activeSetupTab];
     saveGatekeeperConfig({
-      ...gatekeeperConfig,
+      ...activeConfig,
       setups: {
-        ...gatekeeperConfig.setups,
+        ...activeConfig.setups,
         [activeSetupTab]: {
           ...currentSetup,
           trailingRule: text
@@ -616,7 +621,6 @@ export function EngineView({
     });
   };
 
-  // Determine dynamic grid columns for the ticker row based on focused tickers count
   const tickerGridColsClass = 
     visibleTickers.length === 1 ? 'grid-cols-1' :
     visibleTickers.length === 2 ? 'grid-cols-2' :
@@ -699,7 +703,7 @@ export function EngineView({
           </div>
         </div>
 
-        {/* TICKER SELECTOR BAR WITH LIVE FOCUS SELECTOR (Only shows your focused tickers!) */}
+        {/* TICKER SELECTOR BAR WITH LIVE FOCUS SELECTOR */}
         <div className="flex items-center gap-1.5">
           <div className={`grid ${tickerGridColsClass} items-center p-1 rounded-xl bg-white/[0.02] border border-white/10 font-mono text-xs gap-1 shadow-inner flex-1`}>
             {visibleTickers.map((ticker) => {
@@ -880,7 +884,7 @@ export function EngineView({
               </div>
             )}
 
-            {/* 4 PLAYBOOK SETUP TABS (INDEPENDENT PER TICKER) */}
+            {/* 4 PLAYBOOK SETUP TABS */}
             {zoneMath && activeData && (
               <div className="space-y-2.5 pt-0.5">
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 font-mono text-xs">
@@ -1053,7 +1057,7 @@ export function EngineView({
               </div>
 
               <div className="space-y-1">
-                {gatekeeperConfig.globalConstraints.map(item => {
+                {activeConfig.globalConstraints.map(item => {
                   const checkDetails = getItemCheckDetails(item);
 
                   if (!isWidgetMode && isEditMode) {

@@ -2,7 +2,7 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { Trade, PlaybookCollection, ChartSpecimen, ExecutionContractState } from '@/types/trade';
+import { Trade, PlaybookCollection, ChartSpecimen, ExecutionContractState, GatekeeperConfig } from '@/types/trade';
 import { parseKotakNeoCsv, parseDateToTimestamp, cleanSecurityName, displaySetupName } from '@/lib/parser';
 import { 
   syncMasterToCloud,
@@ -23,7 +23,7 @@ import { PulseView } from '@/components/views/PulseView';
 import { CodexView, sortSetupsSmartly } from '@/components/views/CodexView';
 import { MatrixView } from '@/components/views/MatrixView';
 import { HeatmapView } from '@/components/views/HeatmapView';
-import { EngineView } from '@/components/views/EngineView';
+import { EngineView, DEFAULT_GATEKEEPER_CONFIG } from '@/components/views/EngineView';
 import { SettingsView } from '@/components/views/SettingsView';
 import { 
   Compass, 
@@ -52,6 +52,7 @@ const SECURITY_LOCK_KEY = 'NIVARP_SECURITY_LOCK';
 const SESSION_UNLOCKED_KEY = 'NIVARP_SESSION_UNLOCKED';
 const ENGINE_WATCHLIST_KEY = 'NIVARP_ENGINE_WATCHLIST';
 const CONTRACT_STORAGE_KEY = 'NIVARP_EXECUTION_CONTRACT';
+const GATEKEEPER_STORAGE_KEY = 'NIVARP_GATEKEEPER_CONFIG';
 
 const DEFAULT_CONTRACT_STATE: ExecutionContractState = {
   currentAttempt: 2,
@@ -109,6 +110,9 @@ export default function NivarpOS() {
   const [contract, setContract] = useState<ExecutionContractState>(DEFAULT_CONTRACT_STATE);
   const [isContractModalOpen, setIsContractModalOpen] = useState(false);
   const [pendingBreachTrade, setPendingBreachTrade] = useState<Trade | null>(null);
+
+  // Gatekeeper Config with Cloud Sync
+  const [gatekeeperConfig, setGatekeeperConfig] = useState<GatekeeperConfig>(DEFAULT_GATEKEEPER_CONFIG);
 
   // Engine Multi-Stock Watchlist Coordinates
   const [engineWatchlist, setEngineWatchlist] = useState<Record<string, { high: string; low: string }>>(DEFAULT_WATCHLIST_DATA);
@@ -219,14 +223,12 @@ export default function NivarpOS() {
     }
   };
 
-  // Check if a trade tag constitutes an unforced discipline breach
   const isUnforcedBreachTag = (tag?: string) => {
     return tag === 'SL Hunt (Defense Abandoned)' || 
            tag === 'No Confirmation Entry' || 
            tag === 'Hallucinated Trade';
   };
 
-  // REPORT CONTRACT BREACH HANDLER
   const handleReportBreach = (reason: string, cost: string) => {
     const startTs = new Date(contract.startDate).getTime();
     const diffDays = Math.max(1, Math.floor((Date.now() - startTs) / (1000 * 60 * 60 * 24)) + 1);
@@ -262,6 +264,11 @@ export default function NivarpOS() {
     showToast(`Contract breached. Reset to Day 1 (Attempt #${nextAttemptNumber}).`, 'error');
   };
 
+  const handleUpdateGatekeeperConfig = (updated: GatekeeperConfig) => {
+    setGatekeeperConfig(updated);
+    idbSet(GATEKEEPER_STORAGE_KEY, updated);
+  };
+
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       setCurrentUser(user);
@@ -293,6 +300,10 @@ export default function NivarpOS() {
           }
           if (cloudData.executionContract) {
             setContract(cloudData.executionContract);
+          }
+          if (cloudData.gatekeeperConfig) {
+            setGatekeeperConfig(cloudData.gatekeeperConfig);
+            idbSet(GATEKEEPER_STORAGE_KEY, cloudData.gatekeeperConfig);
           }
           if (cloudData.securityPin !== undefined) {
             setSecurityPin(cloudData.securityPin);
@@ -388,13 +399,14 @@ export default function NivarpOS() {
 
     async function loadData() {
       try {
-        const [idbMaster, idbStudy, idbCatOrder, idbSecurity, idbWatchlist, idbContract] = await Promise.all([
+        const [idbMaster, idbStudy, idbCatOrder, idbSecurity, idbWatchlist, idbContract, idbGatekeeper] = await Promise.all([
           idbGet<any>(STORAGE_KEY),
           idbGet<ChartSpecimen[]>(STUDY_STORAGE_KEY),
           idbGet<string[]>(CATEGORY_ORDER_KEY),
           idbGet<any>(SECURITY_LOCK_KEY),
           idbGet<Record<string, { high: string; low: string }>>(ENGINE_WATCHLIST_KEY),
-          idbGet<ExecutionContractState>(CONTRACT_STORAGE_KEY)
+          idbGet<ExecutionContractState>(CONTRACT_STORAGE_KEY),
+          idbGet<GatekeeperConfig>(GATEKEEPER_STORAGE_KEY)
         ]);
 
         if (idbContract) {
@@ -414,6 +426,10 @@ export default function NivarpOS() {
           const updated = { ...idbContract, history: migratedHistory };
           setContract(updated);
           idbSet(CONTRACT_STORAGE_KEY, updated);
+        }
+
+        if (idbGatekeeper && idbGatekeeper.globalConstraints && idbGatekeeper.setups) {
+          setGatekeeperConfig(idbGatekeeper);
         }
 
         if (idbSecurity) {
@@ -473,6 +489,10 @@ export default function NivarpOS() {
           if (cloudData.executionContract) {
             setContract(cloudData.executionContract);
           }
+          if (cloudData.gatekeeperConfig) {
+            setGatekeeperConfig(cloudData.gatekeeperConfig);
+            idbSet(GATEKEEPER_STORAGE_KEY, cloudData.gatekeeperConfig);
+          }
           if (cloudData.securityPin !== undefined) {
             setSecurityPin(cloudData.securityPin);
             setIsLockEnabled(!!cloudData.isLockEnabled);
@@ -512,6 +532,7 @@ export default function NivarpOS() {
     });
     idbSet(ENGINE_WATCHLIST_KEY, engineWatchlist);
     idbSet(CONTRACT_STORAGE_KEY, contract);
+    idbSet(GATEKEEPER_STORAGE_KEY, gatekeeperConfig);
 
     const timer = setTimeout(async () => {
       await syncMasterToCloud({
@@ -524,12 +545,13 @@ export default function NivarpOS() {
         securityPin,
         isLockEnabled,
         engineWatchlist,
-        executionContract: contract
+        executionContract: contract,
+        gatekeeperConfig
       }, currentUser?.uid || 'master');
     }, 2000);
 
     return () => clearTimeout(timer);
-  }, [isLoaded, trades, deduplicatedCollections, categoryOrder, studySpecimens, defaultRiskPerTrade, tradingCapital, securityPin, isLockEnabled, engineWatchlist, contract, currentUser]);
+  }, [isLoaded, trades, deduplicatedCollections, categoryOrder, studySpecimens, defaultRiskPerTrade, tradingCapital, securityPin, isLockEnabled, engineWatchlist, contract, gatekeeperConfig, currentUser]);
 
   const handleUpdateTickerZone = (ticker: string, high: string, low: string) => {
     setEngineWatchlist(prev => {
@@ -594,6 +616,7 @@ export default function NivarpOS() {
         isLockEnabled,
         engineWatchlist,
         executionContract: contract,
+        gatekeeperConfig,
         exportedAt: new Date().toISOString()
       };
       const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
@@ -626,6 +649,7 @@ export default function NivarpOS() {
         const restoredStudy = Array.isArray(d.studySpecimens) ? d.studySpecimens : [];
         const restoredWatchlist = d.engineWatchlist && typeof d.engineWatchlist === 'object' ? d.engineWatchlist : DEFAULT_WATCHLIST_DATA;
         const restoredContract = d.executionContract || DEFAULT_CONTRACT_STATE;
+        const restoredGatekeeper = d.gatekeeperConfig || DEFAULT_GATEKEEPER_CONFIG;
 
         setTrades(restoredTrades);
         setCollections(restoredCols);
@@ -633,6 +657,7 @@ export default function NivarpOS() {
         setStudySpecimens(restoredStudy);
         setEngineWatchlist(restoredWatchlist);
         setContract(restoredContract);
+        setGatekeeperConfig(restoredGatekeeper);
         if (d.defaultRiskPerTrade) setDefaultRiskPerTrade(d.defaultRiskPerTrade);
         if (d.tradingCapital) setTradingCapital(d.tradingCapital);
         if (d.securityPin) setSecurityPin(d.securityPin);
@@ -653,7 +678,8 @@ export default function NivarpOS() {
             isLockEnabled: !!d.isLockEnabled
           }),
           idbSet(ENGINE_WATCHLIST_KEY, restoredWatchlist),
-          idbSet(CONTRACT_STORAGE_KEY, restoredContract)
+          idbSet(CONTRACT_STORAGE_KEY, restoredContract),
+          idbSet(GATEKEEPER_STORAGE_KEY, restoredGatekeeper)
         ]);
 
         showToast("Restoring backup...", "info");
@@ -667,7 +693,8 @@ export default function NivarpOS() {
           securityPin: d.securityPin,
           isLockEnabled: d.isLockEnabled,
           engineWatchlist: restoredWatchlist,
-          executionContract: restoredContract
+          executionContract: restoredContract,
+          gatekeeperConfig: restoredGatekeeper
         }, currentUser?.uid || 'master');
 
         showToast(`Restored & synced: ${restoredTrades.length} trades, ${restoredStudy.length} charts.`, "success");
@@ -808,6 +835,7 @@ export default function NivarpOS() {
     setSelectedCollection(null);
     setEngineWatchlist(DEFAULT_WATCHLIST_DATA);
     setContract(DEFAULT_CONTRACT_STATE);
+    setGatekeeperConfig(DEFAULT_GATEKEEPER_CONFIG);
 
     await Promise.all([
       idbClear(),
@@ -984,7 +1012,7 @@ export default function NivarpOS() {
         </div>
       )}
 
-      {/* TOPBAR: STRICT 3-COLUMN LAYOUT (LEFT / LOCKED-CENTER / RIGHT) */}
+      {/* TOPBAR: STRICT 3-COLUMN LAYOUT */}
       <header className="border-b border-white/[0.06] bg-[#08090D]/90 backdrop-blur-xl sticky top-0 z-40 px-3 sm:px-6 py-2.5 sm:py-3">
         <div className="max-w-[1600px] mx-auto flex sm:grid sm:grid-cols-[1fr_auto_1fr] items-center justify-between gap-2">
           
@@ -1006,7 +1034,7 @@ export default function NivarpOS() {
             </button>
           </div>
 
-          {/* COLUMN 2: DEAD-CENTER DESKTOP NAVIGATION TABS (NEVER SHIFTS LEFT OR RIGHT) */}
+          {/* COLUMN 2: DEAD-CENTER DESKTOP NAVIGATION TABS */}
           <div className="hidden lg:flex justify-self-center">
             <nav className="flex items-center p-1 rounded-xl bg-white/[0.03] border border-white/[0.05]">
               {(['pulse', 'codex', 'matrix', 'heatmap', 'engine', 'settings'] as const).map(tab => (
@@ -1029,7 +1057,7 @@ export default function NivarpOS() {
             </nav>
           </div>
 
-          {/* COLUMN 3: RIGHT ACTIONS (SUBTLE FLOATING WIDGET + LOCK + IMPORT) */}
+          {/* COLUMN 3: RIGHT ACTIONS */}
           <div className="flex items-center gap-1.5 sm:gap-2.5 justify-self-end shrink-0">
             <button
               onClick={handleToggleEnginePiP}
@@ -1192,6 +1220,8 @@ export default function NivarpOS() {
               }}
               onTogglePiP={handleToggleEnginePiP}
               isPiPActive={!!pipWindow}
+              gatekeeperConfig={gatekeeperConfig}
+              onUpdateGatekeeperConfig={handleUpdateGatekeeperConfig}
             />
           </div>
         )}
@@ -1220,7 +1250,7 @@ export default function NivarpOS() {
         )}
       </main>
 
-      {/* OS-LEVEL ALWAYS-ON-TOP FLOATING WIDGET (PORTALED DIRECTLY TO PIP WINDOW) */}
+      {/* OS-LEVEL ALWAYS-ON-TOP FLOATING WIDGET */}
       {pipWindow && createPortal(
         <div className="bg-[#050608] text-zinc-100 min-h-full p-1 select-none">
           <EngineView 
@@ -1237,6 +1267,8 @@ export default function NivarpOS() {
             isWidgetMode={true}
             onTogglePiP={handleToggleEnginePiP}
             isPiPActive={true}
+            gatekeeperConfig={gatekeeperConfig}
+            onUpdateGatekeeperConfig={handleUpdateGatekeeperConfig}
           />
         </div>,
         pipWindow.document.body
