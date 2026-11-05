@@ -28,6 +28,8 @@ const SETUPS_LIST: { key: SetupKey; label: string; icon: string; subtext: string
   { key: 'b2b', label: 'Bearish To Bullish', icon: '📈', subtext: '35% Retest' }
 ];
 
+const R_MULTIPLES = [3, 4, 5, 6, 7] as const;
+
 interface EngineViewProps {
   defaultRisk: number;
   tradingCapital: number;
@@ -59,12 +61,16 @@ export function EngineView({
 }: EngineViewProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const focusMenuRef = useRef<HTMLDivElement>(null);
+  const targetMenuRef = useRef<HTMLDivElement>(null);
+  const targetBtnRef = useRef<HTMLButtonElement>(null);
 
-  // LIVE FOCUS STATE (Allows focusing only 1, 2, or 3 tickers to eliminate clutter)
+  // LIVE FOCUS STATE
   const [focusedTickers, setFocusedTickers] = useState<string[]>([...WATCHLIST_TICKERS]);
   const [isFocusSelectorOpen, setIsFocusSelectorOpen] = useState(false);
 
-  // Load focused tickers once on mount without causing render loops
+  // Centered Targets Popover State
+  const [isTargetMenuOpen, setIsTargetMenuOpen] = useState(false);
+
   useEffect(() => {
     idbGet<string[]>(FOCUSED_TICKERS_KEY).then(saved => {
       if (Array.isArray(saved) && saved.length > 0) {
@@ -76,15 +82,25 @@ export function EngineView({
     });
   }, []);
 
-  // CLOSE FOCUS POPOVER ON CLICK OUTSIDE (WORKS IN BOTH MAIN TAB AND ALWAYS-ON-TOP PIP WINDOW)
+  // Close menus on click outside
   useEffect(() => {
-    if (!isFocusSelectorOpen) return;
+    if (!isFocusSelectorOpen && !isTargetMenuOpen) return;
 
     const activeDoc = containerRef.current?.ownerDocument || document;
 
     const handleClickOutside = (e: MouseEvent | TouchEvent) => {
-      if (focusMenuRef.current && !focusMenuRef.current.contains(e.target as Node)) {
+      const target = e.target as Node;
+      if (isFocusSelectorOpen && focusMenuRef.current && !focusMenuRef.current.contains(target)) {
         setIsFocusSelectorOpen(false);
+      }
+      if (
+        isTargetMenuOpen && 
+        targetMenuRef.current && 
+        !targetMenuRef.current.contains(target) &&
+        targetBtnRef.current &&
+        !targetBtnRef.current.contains(target)
+      ) {
+        setIsTargetMenuOpen(false);
       }
     };
 
@@ -104,13 +120,12 @@ export function EngineView({
         document.removeEventListener('touchstart', handleClickOutside);
       }
     };
-  }, [isFocusSelectorOpen]);
+  }, [isFocusSelectorOpen, isTargetMenuOpen]);
 
-  // Handle focus toggle cleanly in user action event
   const handleToggleTickerFocus = (ticker: string) => {
     let next: string[];
     if (focusedTickers.includes(ticker)) {
-      if (focusedTickers.length <= 1) return; // Keep at least 1
+      if (focusedTickers.length <= 1) return;
       next = focusedTickers.filter(t => t !== ticker);
     } else {
       next = [...focusedTickers, ticker];
@@ -186,7 +201,7 @@ export function EngineView({
     onUpdateTickerZone(activeTicker, zoneHighInput, val);
   };
 
-  // ROBUST MULTI-WINDOW CLIPBOARD COPY
+  // ROBUST CLIPBOARD COPY
   const handleCopy = async (text: string | number, label: string) => {
     const str = String(text);
     const activeDoc = containerRef.current?.ownerDocument || document;
@@ -293,7 +308,8 @@ export function EngineView({
         marginUsed,
         marginFree,
         actualRupeeRisk,
-        actualREffective
+        actualREffective,
+        isShort
       };
     };
 
@@ -324,6 +340,19 @@ export function EngineView({
     if (activeSetupTab === 'pivot') return { ...zoneMath.pivot, label: 'Overextended Pivot (Short Retest)', rule: 'Low + 35% Depth' };
     return { ...zoneMath.b2b, label: 'Bearish To Bullish (Long Retest)', rule: 'High - 35% Depth' };
   }, [zoneMath, activeSetupTab]);
+
+  // Compute 3R, 4R, 5R, 6R, 7R Target Levels
+  const targetLevels = useMemo(() => {
+    if (!activeData || activeData.entryPrice <= 0 || activeData.riskPerShare <= 0) return [];
+    
+    return R_MULTIPLES.map(r => {
+      const price = activeData.isShort
+        ? roundToTick(activeData.entryPrice - r * activeData.riskPerShare)
+        : roundToTick(activeData.entryPrice + r * activeData.riskPerShare);
+      
+      return { r, price };
+    });
+  }, [activeData]);
 
   const tickerGridColsClass = 
     visibleTickers.length === 1 ? 'grid-cols-1' :
@@ -421,7 +450,7 @@ export function EngineView({
             </button>
 
             {isFocusSelectorOpen && (
-              <div className="absolute right-0 top-full mt-1.5 z-50 w-52 bg-[#0B0D14]/95 border border-white/15 rounded-2xl shadow-[0_16px_40px_rgba(0,0,0,0.85)] backdrop-blur-2xl p-2.5 font-mono text-xs space-y-2 animate-in fade-in zoom-in-95 duration-100">
+              <div className="absolute right-0 top-full mt-1.5 z-50 w-52 bg-[#0B0D14]/98 border border-white/15 rounded-2xl shadow-[0_16px_40px_rgba(0,0,0,0.85)] backdrop-blur-2xl p-2.5 font-mono text-xs space-y-2 animate-in fade-in zoom-in-95 duration-100">
                 <div className="flex items-center justify-between pb-1.5 border-b border-white/[0.06]">
                   <span className="text-[10px] text-zinc-400 uppercase font-bold flex items-center gap-1">
                     <Target className="w-3 h-3 text-cyan-400" />
@@ -572,16 +601,84 @@ export function EngineView({
               ))}
             </div>
 
-            {/* FOCUSED SETUP COORDINATE CARD */}
-            <div className="p-2.5 sm:p-3 rounded-xl bg-white/[0.015] border border-white/[0.06] space-y-2.5 font-mono">
+            {/* FOCUSED SETUP COORDINATE CARD (RELATIVE POSITIONED FOR CENTERED OVERLAY) */}
+            <div className="relative p-2.5 sm:p-3 rounded-xl bg-white/[0.015] border border-white/[0.06] space-y-2.5 font-mono">
+              
+              {/* CARD HEADER */}
               <div className="flex items-center justify-between pb-1.5 border-b border-white/[0.04] text-xs">
-                <span className="font-bold text-white flex items-center gap-1.5 text-xs truncate max-w-[70%]">
+                <span className="font-bold text-white flex items-center gap-1.5 text-xs truncate max-w-[55%]">
                   {activeData.label}
                 </span>
-                <span className="text-[10px] text-zinc-400 shrink-0">
-                  Risk/Sh: <strong className="text-white">₹{activeData.riskPerShare}</strong>
-                </span>
+
+                <div className="flex items-center gap-2 shrink-0">
+                  {/* ZERO-HEIGHT TARGETS POPOVER BUTTON */}
+                  {targetLevels.length > 0 && (
+                    <button
+                      ref={targetBtnRef}
+                      type="button"
+                      onClick={() => setIsTargetMenuOpen(prev => !prev)}
+                      className={`flex items-center gap-1 px-2 py-0.5 rounded-lg text-[10px] font-bold border transition-all ${
+                        isTargetMenuOpen
+                          ? 'bg-emerald-500 text-black border-emerald-400 shadow-sm'
+                          : 'bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-300 border-emerald-500/30'
+                      }`}
+                      title="View 3R to 7R targets (Click to copy)"
+                    >
+                      <Target className="w-3 h-3" />
+                      <span>Targets</span>
+                    </button>
+                  )}
+
+                  <span className="text-[10px] text-zinc-400">
+                    Risk/Sh: <strong className="text-white">₹{activeData.riskPerShare}</strong>
+                  </span>
+                </div>
               </div>
+
+              {/* PERFECTLY CENTERED FLOATING TARGETS OVERLAY (ACROSS THE MIDDLE OF THE CARD) */}
+              {isTargetMenuOpen && (
+                <div
+                  ref={targetMenuRef}
+                  className="absolute left-2 right-2 top-8 z-50 bg-[#0B0D14]/98 border border-emerald-500/50 rounded-2xl shadow-[0_16px_40px_rgba(0,0,0,0.95)] backdrop-blur-2xl p-2.5 space-y-2 animate-in fade-in zoom-in-95 duration-100"
+                >
+                  <div className="flex items-center justify-between pb-1 border-b border-white/[0.06]">
+                    <span className="text-[10px] font-bold text-zinc-400 uppercase flex items-center gap-1">
+                      <Target className="w-3 h-3 text-emerald-400" />
+                      <span>R-Multiple Targets (3R — 7R)</span>
+                    </span>
+                    <div className="flex items-center gap-2">
+                      <span className="text-[9px] text-zinc-500">Click to copy</span>
+                      <button
+                        type="button"
+                        onClick={() => setIsTargetMenuOpen(false)}
+                        className="text-zinc-500 hover:text-white p-0.5"
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-5 gap-1.5 text-center">
+                    {targetLevels.map(({ r, price }) => {
+                      const label = `r${r}`;
+                      const isCopied = copiedPrice === label;
+                      return (
+                        <div
+                          key={r}
+                          onClick={() => handleCopy(price, label)}
+                          className="p-1.5 rounded-xl bg-black/60 border border-white/10 hover:border-emerald-400 hover:bg-emerald-500/10 cursor-pointer transition-all"
+                          title={`Copy ${r}R target price (₹${price})`}
+                        >
+                          <span className="text-[8.5px] font-bold text-zinc-400 block">{r}R</span>
+                          <span className="text-[11px] font-black text-emerald-300 block truncate">
+                            {isCopied ? '✓' : `₹${price}`}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
 
               <div className="grid grid-cols-2 gap-2 text-xs">
                 {/* Entry Price Box */}
