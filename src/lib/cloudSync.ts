@@ -130,7 +130,6 @@ export async function syncMasterToCloud(
     securityPin?: string;
     isLockEnabled?: boolean;
     engineWatchlist?: Record<string, { high: string; low: string }>;
-    gatekeeperConfig?: any;
     executionContract?: ExecutionContractState;
   },
   userId: string = 'master'
@@ -146,7 +145,6 @@ export async function syncMasterToCloud(
       securityPin: payload.securityPin,
       isLockEnabled: payload.isLockEnabled,
       engineWatchlist: payload.engineWatchlist,
-      gatekeeperConfig: payload.gatekeeperConfig,
       executionContract: payload.executionContract,
       updatedAt: Date.now()
     }), { merge: true });
@@ -200,7 +198,6 @@ export async function fetchMasterFromCloud(userId: string = 'master'): Promise<{
   securityPin?: string;
   isLockEnabled?: boolean;
   engineWatchlist?: Record<string, { high: string; low: string }>;
-  gatekeeperConfig?: any;
   executionContract?: ExecutionContractState;
 } | null> {
   try {
@@ -265,7 +262,6 @@ export async function fetchMasterFromCloud(userId: string = 'master'): Promise<{
       securityPin: metaData.securityPin || '',
       isLockEnabled: !!metaData.isLockEnabled,
       engineWatchlist: metaData.engineWatchlist || undefined,
-      gatekeeperConfig: metaData.gatekeeperConfig || undefined,
       executionContract: metaData.executionContract || undefined
     };
   } catch (err) {

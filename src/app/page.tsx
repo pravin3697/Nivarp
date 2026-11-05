@@ -1,8 +1,8 @@
 'use client';
 
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
-import { Trade, PlaybookCollection, ChartSpecimen, ExecutionContractState, GatekeeperConfig } from '@/types/trade';
+import { Trade, PlaybookCollection, ChartSpecimen, ExecutionContractState } from '@/types/trade';
 import { parseKotakNeoCsv, parseDateToTimestamp, cleanSecurityName, displaySetupName } from '@/lib/parser';
 import { 
   syncMasterToCloud,
@@ -23,7 +23,7 @@ import { PulseView } from '@/components/views/PulseView';
 import { CodexView, sortSetupsSmartly } from '@/components/views/CodexView';
 import { MatrixView } from '@/components/views/MatrixView';
 import { HeatmapView } from '@/components/views/HeatmapView';
-import { EngineView, DEFAULT_GATEKEEPER_CONFIG } from '@/components/views/EngineView';
+import { EngineView } from '@/components/views/EngineView';
 import { SettingsView } from '@/components/views/SettingsView';
 import { 
   Compass, 
@@ -52,7 +52,6 @@ const SECURITY_LOCK_KEY = 'NIVARP_SECURITY_LOCK';
 const SESSION_UNLOCKED_KEY = 'NIVARP_SESSION_UNLOCKED';
 const ENGINE_WATCHLIST_KEY = 'NIVARP_ENGINE_WATCHLIST';
 const CONTRACT_STORAGE_KEY = 'NIVARP_EXECUTION_CONTRACT';
-const GATEKEEPER_STORAGE_KEY = 'NIVARP_GATEKEEPER_CONFIG';
 
 const DEFAULT_CONTRACT_STATE: ExecutionContractState = {
   currentAttempt: 2,
@@ -111,12 +110,14 @@ export default function NivarpOS() {
   const [isContractModalOpen, setIsContractModalOpen] = useState(false);
   const [pendingBreachTrade, setPendingBreachTrade] = useState<Trade | null>(null);
 
-  // Gatekeeper Config with Cloud Sync
-  const [gatekeeperConfig, setGatekeeperConfig] = useState<GatekeeperConfig>(DEFAULT_GATEKEEPER_CONFIG);
-
   // Engine Multi-Stock Watchlist Coordinates
   const [engineWatchlist, setEngineWatchlist] = useState<Record<string, { high: string; low: string }>>(DEFAULT_WATCHLIST_DATA);
   const [activeEngineTicker, setActiveEngineTicker] = useState<string>('DLF');
+
+  // STABLE CALLBACK TO PREVENT UNNECESSARY RERENDERS
+  const handleSelectTicker = useCallback((ticker: string) => {
+    setActiveEngineTicker(ticker);
+  }, []);
 
   // Always-On-Top Document Picture-in-Picture State
   const [pipWindow, setPipWindow] = useState<Window | null>(null);
@@ -264,11 +265,6 @@ export default function NivarpOS() {
     showToast(`Contract breached. Reset to Day 1 (Attempt #${nextAttemptNumber}).`, 'error');
   };
 
-  const handleUpdateGatekeeperConfig = (updated: GatekeeperConfig) => {
-    setGatekeeperConfig(updated);
-    idbSet(GATEKEEPER_STORAGE_KEY, updated);
-  };
-
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       setCurrentUser(user);
@@ -300,10 +296,6 @@ export default function NivarpOS() {
           }
           if (cloudData.executionContract) {
             setContract(cloudData.executionContract);
-          }
-          if (cloudData.gatekeeperConfig) {
-            setGatekeeperConfig(cloudData.gatekeeperConfig);
-            idbSet(GATEKEEPER_STORAGE_KEY, cloudData.gatekeeperConfig);
           }
           if (cloudData.securityPin !== undefined) {
             setSecurityPin(cloudData.securityPin);
@@ -399,14 +391,13 @@ export default function NivarpOS() {
 
     async function loadData() {
       try {
-        const [idbMaster, idbStudy, idbCatOrder, idbSecurity, idbWatchlist, idbContract, idbGatekeeper] = await Promise.all([
+        const [idbMaster, idbStudy, idbCatOrder, idbSecurity, idbWatchlist, idbContract] = await Promise.all([
           idbGet<any>(STORAGE_KEY),
           idbGet<ChartSpecimen[]>(STUDY_STORAGE_KEY),
           idbGet<string[]>(CATEGORY_ORDER_KEY),
           idbGet<any>(SECURITY_LOCK_KEY),
           idbGet<Record<string, { high: string; low: string }>>(ENGINE_WATCHLIST_KEY),
-          idbGet<ExecutionContractState>(CONTRACT_STORAGE_KEY),
-          idbGet<GatekeeperConfig>(GATEKEEPER_STORAGE_KEY)
+          idbGet<ExecutionContractState>(CONTRACT_STORAGE_KEY)
         ]);
 
         if (idbContract) {
@@ -426,10 +417,6 @@ export default function NivarpOS() {
           const updated = { ...idbContract, history: migratedHistory };
           setContract(updated);
           idbSet(CONTRACT_STORAGE_KEY, updated);
-        }
-
-        if (idbGatekeeper && idbGatekeeper.globalConstraints && idbGatekeeper.setups) {
-          setGatekeeperConfig(idbGatekeeper);
         }
 
         if (idbSecurity) {
@@ -489,10 +476,6 @@ export default function NivarpOS() {
           if (cloudData.executionContract) {
             setContract(cloudData.executionContract);
           }
-          if (cloudData.gatekeeperConfig) {
-            setGatekeeperConfig(cloudData.gatekeeperConfig);
-            idbSet(GATEKEEPER_STORAGE_KEY, cloudData.gatekeeperConfig);
-          }
           if (cloudData.securityPin !== undefined) {
             setSecurityPin(cloudData.securityPin);
             setIsLockEnabled(!!cloudData.isLockEnabled);
@@ -532,7 +515,6 @@ export default function NivarpOS() {
     });
     idbSet(ENGINE_WATCHLIST_KEY, engineWatchlist);
     idbSet(CONTRACT_STORAGE_KEY, contract);
-    idbSet(GATEKEEPER_STORAGE_KEY, gatekeeperConfig);
 
     const timer = setTimeout(async () => {
       await syncMasterToCloud({
@@ -545,13 +527,12 @@ export default function NivarpOS() {
         securityPin,
         isLockEnabled,
         engineWatchlist,
-        executionContract: contract,
-        gatekeeperConfig
+        executionContract: contract
       }, currentUser?.uid || 'master');
     }, 2000);
 
     return () => clearTimeout(timer);
-  }, [isLoaded, trades, deduplicatedCollections, categoryOrder, studySpecimens, defaultRiskPerTrade, tradingCapital, securityPin, isLockEnabled, engineWatchlist, contract, gatekeeperConfig, currentUser]);
+  }, [isLoaded, trades, deduplicatedCollections, categoryOrder, studySpecimens, defaultRiskPerTrade, tradingCapital, securityPin, isLockEnabled, engineWatchlist, contract, currentUser]);
 
   const handleUpdateTickerZone = (ticker: string, high: string, low: string) => {
     setEngineWatchlist(prev => {
@@ -616,7 +597,6 @@ export default function NivarpOS() {
         isLockEnabled,
         engineWatchlist,
         executionContract: contract,
-        gatekeeperConfig,
         exportedAt: new Date().toISOString()
       };
       const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
@@ -649,7 +629,6 @@ export default function NivarpOS() {
         const restoredStudy = Array.isArray(d.studySpecimens) ? d.studySpecimens : [];
         const restoredWatchlist = d.engineWatchlist && typeof d.engineWatchlist === 'object' ? d.engineWatchlist : DEFAULT_WATCHLIST_DATA;
         const restoredContract = d.executionContract || DEFAULT_CONTRACT_STATE;
-        const restoredGatekeeper = d.gatekeeperConfig || DEFAULT_GATEKEEPER_CONFIG;
 
         setTrades(restoredTrades);
         setCollections(restoredCols);
@@ -657,7 +636,6 @@ export default function NivarpOS() {
         setStudySpecimens(restoredStudy);
         setEngineWatchlist(restoredWatchlist);
         setContract(restoredContract);
-        setGatekeeperConfig(restoredGatekeeper);
         if (d.defaultRiskPerTrade) setDefaultRiskPerTrade(d.defaultRiskPerTrade);
         if (d.tradingCapital) setTradingCapital(d.tradingCapital);
         if (d.securityPin) setSecurityPin(d.securityPin);
@@ -678,8 +656,7 @@ export default function NivarpOS() {
             isLockEnabled: !!d.isLockEnabled
           }),
           idbSet(ENGINE_WATCHLIST_KEY, restoredWatchlist),
-          idbSet(CONTRACT_STORAGE_KEY, restoredContract),
-          idbSet(GATEKEEPER_STORAGE_KEY, restoredGatekeeper)
+          idbSet(CONTRACT_STORAGE_KEY, restoredContract)
         ]);
 
         showToast("Restoring backup...", "info");
@@ -693,8 +670,7 @@ export default function NivarpOS() {
           securityPin: d.securityPin,
           isLockEnabled: d.isLockEnabled,
           engineWatchlist: restoredWatchlist,
-          executionContract: restoredContract,
-          gatekeeperConfig: restoredGatekeeper
+          executionContract: restoredContract
         }, currentUser?.uid || 'master');
 
         showToast(`Restored & synced: ${restoredTrades.length} trades, ${restoredStudy.length} charts.`, "success");
@@ -835,7 +811,6 @@ export default function NivarpOS() {
     setSelectedCollection(null);
     setEngineWatchlist(DEFAULT_WATCHLIST_DATA);
     setContract(DEFAULT_CONTRACT_STATE);
-    setGatekeeperConfig(DEFAULT_GATEKEEPER_CONFIG);
 
     await Promise.all([
       idbClear(),
@@ -1016,7 +991,7 @@ export default function NivarpOS() {
       <header className="border-b border-white/[0.06] bg-[#08090D]/90 backdrop-blur-xl sticky top-0 z-40 px-3 sm:px-6 py-2.5 sm:py-3">
         <div className="max-w-[1600px] mx-auto flex sm:grid sm:grid-cols-[1fr_auto_1fr] items-center justify-between gap-2">
           
-          {/* COLUMN 1: LEFT (LOGO + CONTRACT BADGE) */}
+          {/* COLUMN 1: LEFT */}
           <div className="flex items-center gap-2 sm:gap-3.5 justify-self-start min-w-0 shrink">
             <NivarpLogo size="md" />
 
@@ -1212,7 +1187,7 @@ export default function NivarpOS() {
               tradingCapital={tradingCapital}
               watchlistData={engineWatchlist}
               activeTicker={activeEngineTicker}
-              onSelectTicker={(ticker) => setActiveEngineTicker(ticker)}
+              onSelectTicker={handleSelectTicker}
               onUpdateTickerZone={handleUpdateTickerZone}
               onChangeTradingCapital={(val: number) => {
                 setTradingCapital(val);
@@ -1220,8 +1195,6 @@ export default function NivarpOS() {
               }}
               onTogglePiP={handleToggleEnginePiP}
               isPiPActive={!!pipWindow}
-              gatekeeperConfig={gatekeeperConfig}
-              onUpdateGatekeeperConfig={handleUpdateGatekeeperConfig}
             />
           </div>
         )}
@@ -1258,7 +1231,7 @@ export default function NivarpOS() {
             tradingCapital={tradingCapital}
             watchlistData={engineWatchlist}
             activeTicker={activeEngineTicker}
-            onSelectTicker={(ticker) => setActiveEngineTicker(ticker)}
+            onSelectTicker={handleSelectTicker}
             onUpdateTickerZone={handleUpdateTickerZone}
             onChangeTradingCapital={(val: number) => {
               setTradingCapital(val);
@@ -1267,8 +1240,6 @@ export default function NivarpOS() {
             isWidgetMode={true}
             onTogglePiP={handleToggleEnginePiP}
             isPiPActive={true}
-            gatekeeperConfig={gatekeeperConfig}
-            onUpdateGatekeeperConfig={handleUpdateGatekeeperConfig}
           />
         </div>,
         pipWindow.document.body
@@ -1297,7 +1268,7 @@ export default function NivarpOS() {
         onClose={() => setInspectorChart(prev => ({ ...prev, isOpen: false }))}
       />
 
-      {/* CSV MODAL (WITH AUTO-BREACH DETECTION) */}
+      {/* CSV MODAL */}
       <CsvImportStudio
         isOpen={isCsvModalOpen} onClose={() => setIsCsvModalOpen(false)} csvPreview={csvPreview}
         csvFileName={csvFileName} defaultRisk={defaultRiskPerTrade} collections={playbookOrderedCollections}
@@ -1342,7 +1313,6 @@ export default function NivarpOS() {
           setTrades(prev => [...prev, ...csvPreview]); 
           showToast(`Successfully imported ${csvPreview.length} trades.`, "success");
           
-          // Check if any imported trade has an unforced discipline breach
           const breachTrade = csvPreview.find(t => isUnforcedBreachTag(t.behaviorTag));
           if (breachTrade) {
             setPendingBreachTrade(breachTrade);
@@ -1354,7 +1324,7 @@ export default function NivarpOS() {
         }}
       />
 
-      {/* DEBRIEF MODAL (WITH AUTO-BREACH DETECTION) */}
+      {/* DEBRIEF MODAL */}
       <EditDebriefModal
         isOpen={isDebriefModalOpen} trade={editingTrade} collections={playbookOrderedCollections}
         onClose={() => setIsDebriefModalOpen(false)}
@@ -1396,7 +1366,6 @@ export default function NivarpOS() {
           showToast(`Debrief for ${cleanUpdated.symbol} saved.`, "success");
           setIsDebriefModalOpen(false); 
 
-          // AUTOMATIC CONTRACT BREACH INTERCEPT
           if (isUnforcedBreachTag(cleanUpdated.behaviorTag)) {
             setPendingBreachTrade(cleanUpdated);
             setIsContractModalOpen(true);

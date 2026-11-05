@@ -2,7 +2,7 @@ export type BehavioralTag =
   | 'Rules Followed' 
   | 'SL Hunt (Clean Variance)' 
   | 'SL Hunt (Defense Abandoned)' 
-  | 'SL Hunt / Slippage Hunt' // backward compatibility
+  | 'SL Hunt / Slippage Hunt' 
   | 'No Confirmation Entry' 
   | 'Hallucinated Trade';
 
@@ -13,25 +13,6 @@ export type SetupVariantTag =
   | 'Extended Spring' 
   | 'Pre 10AM' 
   | 'General';
-
-export interface GatekeeperCheckItem {
-  id: string;
-  text: string;
-}
-
-export interface GatekeeperSetupConfig {
-  setupKey: 'spring' | 'b2b' | 'origin' | 'pivot';
-  label: string;
-  tag: string;
-  tagColor: string;
-  trailingRule: string;
-  items: GatekeeperCheckItem[];
-}
-
-export interface GatekeeperConfig {
-  globalConstraints: GatekeeperCheckItem[];
-  setups: Record<'spring' | 'b2b' | 'origin' | 'pivot', GatekeeperSetupConfig>;
-}
 
 export interface ContractAttempt {
   attemptNumber: number;
@@ -46,9 +27,9 @@ export interface ContractAttempt {
 
 export interface ExecutionContractState {
   currentAttempt: number;
-  startDate: string; // e.g. "2026-11-04"
-  targetEndDate: string; // e.g. "2027-05-04"
-  totalTargetDays: number; // 180
+  startDate: string;
+  targetEndDate: string;
+  totalTargetDays: number;
   history: ContractAttempt[];
 }
 
@@ -57,7 +38,7 @@ export interface Trade {
   symbol: string;
   tradeDate: string;
   tradeTime?: string;
-  durationMinutes?: number; // Exact holding time in minutes
+  durationMinutes?: number;
   direction: 'LONG' | 'SHORT';
   quantity: number;
   entryPrice: number;
@@ -67,14 +48,14 @@ export interface Trade {
   netPnl: number;
   fees: number;
   setupType: string;
-  setupSubtype?: SetupVariantTag; // Dynamic subheading variant tag
-  mainzoneHeightPct?: number; // Exact Mainzone height/width in % (e.g. 0.138%)
+  setupSubtype?: SetupVariantTag;
+  mainzoneHeightPct?: number;
   regime?: 'Bullish' | 'Bearish' | 'Choppy';
   behaviorTag?: BehavioralTag;
   mae?: string;
   mfe?: string;
-  image1?: string; // HTF Context
-  image2?: string; // LTF Execution (Synced to Codex)
+  image1?: string;
+  image2?: string;
   notes?: string;
 }
 

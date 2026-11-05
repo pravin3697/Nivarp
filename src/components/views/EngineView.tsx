@@ -1,7 +1,6 @@
 'use client';
 
 import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { GatekeeperConfig, GatekeeperCheckItem } from '@/types/trade';
 import { idbGet, idbSet } from '@/lib/storage';
 import { 
   Calculator, 
@@ -10,13 +9,6 @@ import {
   Check, 
   CheckCircle,
   PictureInPicture2,
-  ShieldCheck,
-  Lock,
-  Unlock,
-  Pencil,
-  Trash2,
-  Plus,
-  RotateCcw,
   Target,
   X
 } from 'lucide-react';
@@ -24,7 +16,6 @@ import {
 export const WATCHLIST_TICKERS = ['DLF', 'HINDALCO', 'SBIN', 'TATAMOTORS'] as const;
 export type WatchlistTicker = typeof WATCHLIST_TICKERS[number];
 
-const GATEKEEPER_STORAGE_KEY = 'NIVARP_GATEKEEPER_CONFIG';
 const TICKER_SETUPS_KEY = 'NIVARP_TICKER_SETUPS_MAP';
 const FOCUSED_TICKERS_KEY = 'NIVARP_ENGINE_FOCUSED_TICKERS';
 
@@ -37,106 +28,6 @@ const SETUPS_LIST: { key: SetupKey; label: string; icon: string; subtext: string
   { key: 'b2b', label: 'Bearish To Bullish', icon: '📈', subtext: '35% Retest' }
 ];
 
-export const DEFAULT_GATEKEEPER_CONFIG: GatekeeperConfig = {
-  globalConstraints: [
-    { id: 'g-1', text: 'Time Filter: Current time strictly after 10:00 AM' },
-    { id: 'g-2', text: 'Risk Cap: Max capital risk capped strictly <= 1% (1R)' },
-    { id: 'g-3', text: 'Zone Size Limit: Main Zone is <= 0.33% of stock price' },
-    { id: 'g-4', text: 'Pre-calculate Entry & 0.10% buffered SL resting prior to order' }
-  ],
-  setups: {
-    origin: {
-      setupKey: 'origin',
-      label: 'Origin Retest',
-      tag: 'BEARISH SHORT',
-      tagColor: 'text-rose-400 bg-rose-500/10 border-rose-500/30',
-      trailingRule: 'Trail to Breakeven (BE) once price drops below the initial bearish confirmation (the LL).',
-      items: [
-        { id: 'or-1', text: 'Price broken strictly BELOW Main Zone?' },
-        { id: 'or-2', text: 'Mathematically confirmed downtrend (L, LH, LL) below zone?' },
-        { id: 'or-3', text: 'Entry limit order resting exactly 35% inside Main Zone width?' }
-      ]
-    },
-    spring: {
-      setupKey: 'spring',
-      label: 'Liquidity Spring',
-      tag: 'BULLISH LONG',
-      tagColor: 'text-emerald-400 bg-emerald-500/10 border-emerald-500/30',
-      trailingRule: "Trail to BE once price breaks above Today's High, pulls back, and breaks out higher again.",
-      items: [
-        { id: 'sp-1', text: 'Price broke above zone (bullish lure), failed retest & swept liquidity below?' },
-        { id: 'sp-2', text: 'Confirmed bearish structure (L, LH, LL) established below zone?' },
-        { id: 'sp-3', text: 'Price violently reclaiming back above Main Zone line?' },
-        { id: 'sp-4', text: 'Stop entry order resting exactly 0.05% above Main Zone high?' }
-      ]
-    },
-    pivot: {
-      setupKey: 'pivot',
-      label: 'Overextended Pivot',
-      tag: 'BEARISH SHORT REVERSAL',
-      tagColor: 'text-amber-400 bg-amber-500/10 border-amber-500/30',
-      trailingRule: 'Trail stop to protect capital as soon as price expands away from Main Zone.',
-      items: [
-        { id: 'pv-1', text: 'Price extended significantly above Main Zone (HH/HL exhausted)?' },
-        { id: 'pv-2', text: 'Violent drop back below zone with decisive red candle close?' },
-        { id: 'pv-3', text: 'Short limit order resting exactly 35% inside Main Zone width?' }
-      ]
-    },
-    b2b: {
-      setupKey: 'b2b',
-      label: 'Bearish To Bullish',
-      tag: 'BULLISH LONG',
-      tagColor: 'text-cyan-400 bg-cyan-500/10 border-cyan-500/30',
-      trailingRule: 'Mandatory trail to Breakeven (BE) once price decisively breaks above the reversal high (the HH).',
-      items: [
-        { id: 'bb-1', text: 'Execution strictly after 10:00 AM?' },
-        { id: 'bb-2', text: 'Clear, prior resistance verified on Main Zone before breakout?' },
-        { id: 'bb-3', text: 'Origin Retest failed; price violently pushed back above zone?' },
-        { id: 'bb-4', text: 'Confirmed bullish structure (H, HL, HH) established?' },
-        { id: 'bb-5', text: 'Long limit order resting exactly 35% inside Main Zone width?' }
-      ]
-    }
-  }
-};
-
-function getISTTimeInfo() {
-  try {
-    const now = new Date();
-    const formatter = new Intl.DateTimeFormat('en-US', {
-      timeZone: 'Asia/Kolkata',
-      hour: 'numeric',
-      minute: 'numeric',
-      hour12: true
-    });
-    const formatted = formatter.format(now);
-
-    const timeParts = new Intl.DateTimeFormat('en-US', {
-      timeZone: 'Asia/Kolkata',
-      hour: 'numeric',
-      minute: 'numeric',
-      hour12: false
-    }).format(now);
-    
-    const [h, m] = timeParts.split(':').map(Number);
-    const minuteOfDay = (h || 0) * 60 + (m || 0);
-    const isAfter10AM = minuteOfDay >= 10 * 60;
-    const minutesTo10 = Math.max(0, 10 * 60 - minuteOfDay);
-
-    return {
-      formattedIST: formatted,
-      isAfter10AM,
-      minutesTo10
-    };
-  } catch {
-    const now = new Date();
-    return {
-      formattedIST: now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      isAfter10AM: now.getHours() >= 10,
-      minutesTo10: 0
-    };
-  }
-}
-
 interface EngineViewProps {
   defaultRisk: number;
   tradingCapital: number;
@@ -148,8 +39,6 @@ interface EngineViewProps {
   isWidgetMode?: boolean;
   onTogglePiP?: () => void;
   isPiPActive?: boolean;
-  gatekeeperConfig?: GatekeeperConfig;
-  onUpdateGatekeeperConfig?: (config: GatekeeperConfig) => void;
 }
 
 const roundToTick = (val: number): number => {
@@ -166,50 +55,62 @@ export function EngineView({
   onChangeTradingCapital,
   isWidgetMode = false,
   onTogglePiP,
-  isPiPActive = false,
-  gatekeeperConfig: gatekeeperConfigProp,
-  onUpdateGatekeeperConfig
+  isPiPActive = false
 }: EngineViewProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const focusMenuRef = useRef<HTMLDivElement>(null);
 
-  // Top Switch Mode: 'engine' | 'gatekeeper'
-  const [viewMode, setViewMode] = useState<'engine' | 'gatekeeper'>('engine');
-
-  // LIVE FOCUS STATE
+  // LIVE FOCUS STATE (Allows focusing only 1, 2, or 3 tickers to eliminate clutter)
   const [focusedTickers, setFocusedTickers] = useState<string[]>([...WATCHLIST_TICKERS]);
   const [isFocusSelectorOpen, setIsFocusSelectorOpen] = useState(false);
 
+  // Load focused tickers once on mount without causing render loops
   useEffect(() => {
     idbGet<string[]>(FOCUSED_TICKERS_KEY).then(saved => {
       if (Array.isArray(saved) && saved.length > 0) {
         setFocusedTickers(saved);
+        if (!saved.includes(activeTicker) && saved.length > 0) {
+          onSelectTicker(saved[0]);
+        }
       }
     });
   }, []);
 
+  // CLOSE FOCUS POPOVER ON CLICK OUTSIDE (WORKS IN BOTH MAIN TAB AND ALWAYS-ON-TOP PIP WINDOW)
   useEffect(() => {
-    if (focusedTickers.length > 0 && !focusedTickers.includes(activeTicker)) {
-      onSelectTicker(focusedTickers[0]);
-    }
-  }, [focusedTickers, activeTicker, onSelectTicker]);
+    if (!isFocusSelectorOpen) return;
 
-  useEffect(() => {
-    const handleClickOutside = (e: MouseEvent) => {
+    const activeDoc = containerRef.current?.ownerDocument || document;
+
+    const handleClickOutside = (e: MouseEvent | TouchEvent) => {
       if (focusMenuRef.current && !focusMenuRef.current.contains(e.target as Node)) {
         setIsFocusSelectorOpen(false);
       }
     };
-    if (isFocusSelectorOpen) {
+
+    activeDoc.addEventListener('mousedown', handleClickOutside);
+    activeDoc.addEventListener('touchstart', handleClickOutside);
+
+    if (activeDoc !== document) {
       document.addEventListener('mousedown', handleClickOutside);
+      document.addEventListener('touchstart', handleClickOutside);
     }
-    return () => document.removeEventListener('mousedown', handleClickOutside);
+
+    return () => {
+      activeDoc.removeEventListener('mousedown', handleClickOutside);
+      activeDoc.removeEventListener('touchstart', handleClickOutside);
+      if (activeDoc !== document) {
+        document.removeEventListener('mousedown', handleClickOutside);
+        document.removeEventListener('touchstart', handleClickOutside);
+      }
+    };
   }, [isFocusSelectorOpen]);
 
+  // Handle focus toggle cleanly in user action event
   const handleToggleTickerFocus = (ticker: string) => {
     let next: string[];
     if (focusedTickers.includes(ticker)) {
-      if (focusedTickers.length <= 1) return;
+      if (focusedTickers.length <= 1) return; // Keep at least 1
       next = focusedTickers.filter(t => t !== ticker);
     } else {
       next = [...focusedTickers, ticker];
@@ -217,6 +118,10 @@ export function EngineView({
 
     setFocusedTickers(next);
     idbSet(FOCUSED_TICKERS_KEY, next);
+
+    if (!next.includes(activeTicker) && next.length > 0) {
+      onSelectTicker(next[0]);
+    }
   };
 
   const handleResetAllFocus = () => {
@@ -259,71 +164,6 @@ export function EngineView({
   const [capitalInput, setCapitalInput] = useState<string>(String(tradingCapital || 70000));
   const [copiedPrice, setCopiedPrice] = useState<string | null>(null);
 
-  // GATEKEEPER STATE
-  const [localGatekeeperConfig, setLocalGatekeeperConfig] = useState<GatekeeperConfig>(
-    gatekeeperConfigProp || DEFAULT_GATEKEEPER_CONFIG
-  );
-  const [isEditMode, setIsEditMode] = useState(false);
-
-  useEffect(() => {
-    if (gatekeeperConfigProp) {
-      setLocalGatekeeperConfig(gatekeeperConfigProp);
-    }
-  }, [gatekeeperConfigProp]);
-
-  const activeConfig = gatekeeperConfigProp || localGatekeeperConfig;
-
-  const saveGatekeeperConfig = (updated: GatekeeperConfig) => {
-    if (onUpdateGatekeeperConfig) {
-      onUpdateGatekeeperConfig(updated);
-    } else {
-      setLocalGatekeeperConfig(updated);
-      idbSet(GATEKEEPER_STORAGE_KEY, updated);
-    }
-  };
-
-  const [tickerChecks, setTickerChecks] = useState<Record<string, Record<string, boolean>>>({});
-  const [istTime, setIstTime] = useState(getISTTimeInfo);
-
-  useEffect(() => {
-    const timer = setInterval(() => {
-      setIstTime(getISTTimeInfo());
-    }, 5000);
-    return () => clearInterval(timer);
-  }, []);
-
-  // KEYBOARD SHORTCUTS
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      const target = e.target as HTMLElement | null;
-      if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) {
-        return;
-      }
-
-      if (e.key === 'e' || e.key === 'E') {
-        e.preventDefault();
-        setViewMode('engine');
-      } else if (e.key === 'g' || e.key === 'G') {
-        e.preventDefault();
-        setViewMode('gatekeeper');
-      }
-    };
-
-    const activeWin = containerRef.current?.ownerDocument?.defaultView || window;
-    activeWin.addEventListener('keydown', handleKeyDown);
-
-    if (activeWin !== window) {
-      window.addEventListener('keydown', handleKeyDown);
-    }
-
-    return () => {
-      activeWin.removeEventListener('keydown', handleKeyDown);
-      if (activeWin !== window) {
-        window.removeEventListener('keydown', handleKeyDown);
-      }
-    };
-  }, []);
-
   useEffect(() => {
     const data = watchlistData[activeTicker] || { high: '', low: '' };
     setZoneHighInput(data.high || '');
@@ -346,17 +186,14 @@ export function EngineView({
     onUpdateTickerZone(activeTicker, zoneHighInput, val);
   };
 
-  // ROBUST MULTI-WINDOW CLIPBOARD COPY (WORKS IN ALWAYS-ON-TOP PIP & BROWSER)
+  // ROBUST MULTI-WINDOW CLIPBOARD COPY
   const handleCopy = async (text: string | number, label: string) => {
     const str = String(text);
-    
-    // Resolve the active document & window that received the click
     const activeDoc = containerRef.current?.ownerDocument || document;
     const activeWin = activeDoc.defaultView || window;
 
     let copied = false;
 
-    // 1. Try active window's clipboard API first
     if ((activeWin as any).navigator?.clipboard?.writeText) {
       try {
         await (activeWin as any).navigator.clipboard.writeText(str);
@@ -364,7 +201,6 @@ export function EngineView({
       } catch {}
     }
 
-    // 2. Try global window's clipboard API
     if (!copied && navigator?.clipboard?.writeText) {
       try {
         await navigator.clipboard.writeText(str);
@@ -372,7 +208,6 @@ export function EngineView({
       } catch {}
     }
 
-    // 3. Fallback: execCommand('copy') on textarea appended directly into the active focused document body
     if (!copied) {
       try {
         const el = activeDoc.createElement('textarea');
@@ -490,169 +325,6 @@ export function EngineView({
     return { ...zoneMath.b2b, label: 'Bearish To Bullish (Long Retest)', rule: 'High - 35% Depth' };
   }, [zoneMath, activeSetupTab]);
 
-  // Gatekeeper automation helpers
-  const activeGatekeeperSetup = activeConfig.setups[activeSetupTab];
-  const currentTickerCheckMap = tickerChecks[activeTicker] || {};
-
-  const getItemCheckDetails = (item: GatekeeperCheckItem) => {
-    const isTimeFilter = /time\s+filter|after\s+10/i.test(item.text) || item.id === 'g-1' || item.id === 'bb-1';
-    const isZoneSize = /zone\s+size|0\.33/i.test(item.text) || item.id === 'g-3';
-
-    let isAutoChecked = false;
-    let autoBadgeText: string | null = null;
-    let autoBadgeColor = 'bg-emerald-500/10 text-emerald-300 border-emerald-500/30';
-
-    if (isTimeFilter) {
-      if (istTime.isAfter10AM) {
-        isAutoChecked = true;
-        autoBadgeText = `Auto: ${istTime.formattedIST} IST`;
-      } else {
-        autoBadgeText = `${istTime.formattedIST} (Wait ${istTime.minutesTo10}m)`;
-        autoBadgeColor = 'bg-amber-500/15 text-amber-300 border-amber-500/30';
-      }
-    } else if (isZoneSize && zoneMath) {
-      if (!zoneMath.isZoneTooWide) {
-        isAutoChecked = true;
-        autoBadgeText = `Auto: ${zoneMath.zoneWidthPct}% ≤ 0.33%`;
-      } else {
-        autoBadgeText = `Void: ${zoneMath.zoneWidthPct}% > 0.33%`;
-        autoBadgeColor = 'bg-rose-500/20 text-rose-300 border-rose-500/40';
-      }
-    }
-
-    const isChecked = currentTickerCheckMap[item.id] !== undefined
-      ? currentTickerCheckMap[item.id]
-      : isAutoChecked;
-
-    return {
-      isChecked,
-      isAutoChecked,
-      autoBadgeText,
-      autoBadgeColor
-    };
-  };
-
-  const totalRequiredChecks = activeConfig.globalConstraints.length + (activeGatekeeperSetup?.items.length || 0);
-  
-  const checkedCount = useMemo(() => {
-    let count = 0;
-    activeConfig.globalConstraints.forEach(item => {
-      if (getItemCheckDetails(item).isChecked) count++;
-    });
-    activeGatekeeperSetup?.items.forEach(item => {
-      if (getItemCheckDetails(item).isChecked) count++;
-    });
-    return count;
-  }, [currentTickerCheckMap, activeConfig, activeGatekeeperSetup, istTime, zoneMath]);
-
-  const isExecutionUnlocked = totalRequiredChecks > 0 && checkedCount >= totalRequiredChecks;
-
-  const handleToggleCheck = (itemId: string, defaultAutoVal: boolean) => {
-    setTickerChecks(prev => {
-      const current = prev[activeTicker] || {};
-      const currentVal = current[itemId] !== undefined ? current[itemId] : defaultAutoVal;
-      return {
-        ...prev,
-        [activeTicker]: {
-          ...current,
-          [itemId]: !currentVal
-        }
-      };
-    });
-  };
-
-  const handleResetChecklist = () => {
-    setTickerChecks(prev => ({
-      ...prev,
-      [activeTicker]: {}
-    }));
-  };
-
-  const handleUpdateGlobalItem = (id: string, text: string) => {
-    saveGatekeeperConfig({
-      ...activeConfig,
-      globalConstraints: activeConfig.globalConstraints.map(item => item.id === id ? { ...item, text } : item)
-    });
-  };
-
-  const handleDeleteGlobalItem = (id: string) => {
-    saveGatekeeperConfig({
-      ...activeConfig,
-      globalConstraints: activeConfig.globalConstraints.filter(item => item.id !== id)
-    });
-  };
-
-  const handleAddGlobalItem = () => {
-    const newItem: GatekeeperCheckItem = {
-      id: `g-${Date.now()}`,
-      text: 'New Constraint Rule'
-    };
-    saveGatekeeperConfig({
-      ...activeConfig,
-      globalConstraints: [...activeConfig.globalConstraints, newItem]
-    });
-  };
-
-  const handleUpdateSetupItem = (id: string, text: string) => {
-    const currentSetup = activeConfig.setups[activeSetupTab];
-    saveGatekeeperConfig({
-      ...activeConfig,
-      setups: {
-        ...activeConfig.setups,
-        [activeSetupTab]: {
-          ...currentSetup,
-          items: currentSetup.items.map(item => item.id === id ? { ...item, text } : item)
-        }
-      }
-    });
-  };
-
-  const handleDeleteSetupItem = (id: string) => {
-    const currentSetup = activeConfig.setups[activeSetupTab];
-    saveGatekeeperConfig({
-      ...activeConfig,
-      setups: {
-        ...activeConfig.setups,
-        [activeSetupTab]: {
-          ...currentSetup,
-          items: currentSetup.items.filter(item => item.id !== id)
-        }
-      }
-    });
-  };
-
-  const handleAddSetupItem = () => {
-    const currentSetup = activeConfig.setups[activeSetupTab];
-    const newItem: GatekeeperCheckItem = {
-      id: `rule-${Date.now()}`,
-      text: 'New Setup Rule'
-    };
-    saveGatekeeperConfig({
-      ...activeConfig,
-      setups: {
-        ...activeConfig.setups,
-        [activeSetupTab]: {
-          ...currentSetup,
-          items: [...currentSetup.items, newItem]
-        }
-      }
-    });
-  };
-
-  const handleUpdateTrailingRule = (text: string) => {
-    const currentSetup = activeConfig.setups[activeSetupTab];
-    saveGatekeeperConfig({
-      ...activeConfig,
-      setups: {
-        ...activeConfig.setups,
-        [activeSetupTab]: {
-          ...currentSetup,
-          trailingRule: text
-        }
-      }
-    });
-  };
-
   const tickerGridColsClass = 
     visibleTickers.length === 1 ? 'grid-cols-1' :
     visibleTickers.length === 2 ? 'grid-cols-2' :
@@ -660,58 +332,27 @@ export function EngineView({
 
   return (
     <div ref={containerRef} className={`mx-auto space-y-3 ${isWidgetMode ? 'w-full p-2.5 max-w-none' : 'max-w-4xl sm:space-y-3.5'}`}>
-      {/* Main Terminal Frame */}
       <div className={`rounded-2xl bg-[#090A10] border border-white/[0.08] shadow-2xl overflow-hidden ${
         isWidgetMode ? 'p-3 space-y-2.5 border-cyan-500/30' : 'p-3.5 sm:p-5 space-y-3 sm:space-y-3.5'
       }`}>
         
-        {/* HEADER: MODE SWITCH TOGGLE (HOTKEYS E & G) */}
+        {/* CLEAN SINGLE HEADER */}
         <div className="flex items-center justify-between pb-2.5 border-b border-white/[0.06] gap-2">
-          
-          {/* Switch Toggle Buttons */}
-          <div className="flex items-center p-0.5 sm:p-1 rounded-xl bg-white/[0.03] border border-white/10 font-mono text-xs gap-0.5 sm:gap-1 shadow-inner shrink-0">
-            <button
-              type="button"
-              onClick={() => setViewMode('engine')}
-              className={`flex items-center gap-1.5 px-2.5 sm:px-3 py-1 rounded-lg font-bold transition-all ${
-                viewMode === 'engine'
-                  ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 shadow-sm'
-                  : 'text-zinc-400 hover:text-white border border-transparent'
-              }`}
-              title="Calculator Engine [Press E]"
-            >
-              <Calculator className="w-3.5 h-3.5 shrink-0" />
-              {!isWidgetMode && <span>Engine</span>}
-              <kbd className="hidden sm:inline-block px-1 py-0.2 rounded bg-black/40 text-[9px] text-zinc-500 border border-white/10 font-mono">
-                E
-              </kbd>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setViewMode('gatekeeper')}
-              className={`flex items-center gap-1.5 px-2.5 sm:px-3 py-1 rounded-lg font-bold transition-all ${
-                viewMode === 'gatekeeper'
-                  ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 shadow-sm'
-                  : 'text-zinc-400 hover:text-white border border-transparent'
-              }`}
-              title="Terminal Gatekeeper Checklist [Press G]"
-            >
-              <ShieldCheck className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-              {!isWidgetMode && <span>Gatekeeper</span>}
-              <kbd className="hidden sm:inline-block px-1 py-0.2 rounded bg-black/40 text-[9px] text-zinc-500 border border-white/10 font-mono">
-                G
-              </kbd>
-              <span className={`text-[9px] px-1 py-0.2 rounded font-black ${
-                isExecutionUnlocked ? 'bg-emerald-500/20 text-emerald-300' : 'bg-rose-500/20 text-rose-300'
-              }`}>
-                {checkedCount}/{totalRequiredChecks}
+          <div className="flex items-center gap-2">
+            <div className="p-1.5 rounded-xl bg-white/[0.03] text-cyan-400 border border-white/[0.06] shadow-inner shrink-0">
+              <Calculator className="w-4 h-4" />
+            </div>
+            <div className="flex items-center gap-1.5 truncate">
+              <h2 className="font-bold text-xs sm:text-sm text-white font-mono whitespace-nowrap truncate">
+                Execution Engine
+              </h2>
+              <span className="text-[9px] font-mono px-1.5 py-0.2 rounded-full bg-cyan-500/10 text-cyan-300 border border-cyan-500/20 font-bold shrink-0">
+                Live
               </span>
-            </button>
+            </div>
           </div>
 
-          {/* Right Action: 1R & Subtle Dock Button */}
-          <div className="flex items-center gap-1.5 sm:gap-2 font-mono text-xs shrink-0">
+          <div className="flex items-center gap-1.5 sm:gap-2.5 font-mono text-xs shrink-0">
             <div className="flex items-center gap-1 text-[10px] sm:text-[11px] text-zinc-400">
               <span className="text-zinc-500 uppercase text-[9px] font-bold">1R:</span>
               <span className="font-black text-emerald-400 text-xs">₹{defaultRisk}</span>
@@ -758,7 +399,7 @@ export function EngineView({
             })}
           </div>
 
-          {/* FOCUS FILTER POPOVER TOGGLE BUTTON */}
+          {/* FOCUS FILTER TOGGLE */}
           <div className="relative shrink-0" ref={focusMenuRef}>
             <button
               type="button"
@@ -779,7 +420,6 @@ export function EngineView({
               </span>
             </button>
 
-            {/* FOCUS POPOVER MENU */}
             {isFocusSelectorOpen && (
               <div className="absolute right-0 top-full mt-1.5 z-50 w-52 bg-[#0B0D14]/95 border border-white/15 rounded-2xl shadow-[0_16px_40px_rgba(0,0,0,0.85)] backdrop-blur-2xl p-2.5 font-mono text-xs space-y-2 animate-in fade-in zoom-in-95 duration-100">
                 <div className="flex items-center justify-between pb-1.5 border-b border-white/[0.06]">
@@ -829,473 +469,197 @@ export function EngineView({
           </div>
         </div>
 
-        {/* ========================================================= */}
-        {/* VIEW 1: ENGINE CALCULATOR & COORDINATES (Press E)         */}
-        {/* ========================================================= */}
-        {viewMode === 'engine' && (
-          <div className="space-y-3 animate-in fade-in duration-150">
-            {/* 3 Parameter Inputs */}
-            <div className={`grid gap-2 font-mono text-xs ${isWidgetMode ? 'grid-cols-3' : 'grid-cols-1 sm:grid-cols-3'}`}>
-              <div>
-                <label className="text-zinc-400 text-[10px] block mb-0.5 truncate">
-                  <span>Zone High <strong className="text-zinc-200">({activeTicker})</strong></span>
-                </label>
-                <input
-                  type="number"
-                  step="0.05"
-                  value={zoneHighInput}
-                  onChange={(e) => handleHighChange(e.target.value)}
-                  placeholder="High"
-                  className="w-full bg-zinc-900 border border-white/10 focus:border-cyan-500/50 rounded-xl px-2.5 py-1.5 text-white font-bold outline-none text-xs placeholder:text-zinc-600 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none transition-colors"
-                />
-              </div>
+        {/* 3 PARAMETER INPUTS */}
+        <div className={`grid gap-2 font-mono text-xs ${isWidgetMode ? 'grid-cols-3' : 'grid-cols-1 sm:grid-cols-3'}`}>
+          <div>
+            <label className="text-zinc-400 text-[10px] block mb-0.5 truncate">
+              <span>Zone High <strong className="text-zinc-200">({activeTicker})</strong></span>
+            </label>
+            <input
+              type="number"
+              step="0.05"
+              value={zoneHighInput}
+              onChange={(e) => handleHighChange(e.target.value)}
+              placeholder="High"
+              className="w-full bg-zinc-900 border border-white/10 focus:border-cyan-500/50 rounded-xl px-2.5 py-1.5 text-white font-bold outline-none text-xs placeholder:text-zinc-600 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none transition-colors"
+            />
+          </div>
 
-              <div>
-                <label className="text-zinc-400 text-[10px] block mb-0.5 truncate">
-                  <span>Zone Low <strong className="text-zinc-200">({activeTicker})</strong></span>
-                </label>
-                <input
-                  type="number"
-                  step="0.05"
-                  value={zoneLowInput}
-                  onChange={(e) => handleLowChange(e.target.value)}
-                  placeholder="Low"
-                  className="w-full bg-zinc-900 border border-white/10 focus:border-cyan-500/50 rounded-xl px-2.5 py-1.5 text-white font-bold outline-none text-xs placeholder:text-zinc-600 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none transition-colors"
-                />
-              </div>
+          <div>
+            <label className="text-zinc-400 text-[10px] block mb-0.5 truncate">
+              <span>Zone Low <strong className="text-zinc-200">({activeTicker})</strong></span>
+            </label>
+            <input
+              type="number"
+              step="0.05"
+              value={zoneLowInput}
+              onChange={(e) => handleLowChange(e.target.value)}
+              placeholder="Low"
+              className="w-full bg-zinc-900 border border-white/10 focus:border-cyan-500/50 rounded-xl px-2.5 py-1.5 text-white font-bold outline-none text-xs placeholder:text-zinc-600 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none transition-colors"
+            />
+          </div>
 
-              <div>
-                <label className="text-zinc-400 text-[10px] block mb-0.5 truncate">
-                  <span>Account Cash <strong className="text-emerald-400">(5x)</strong></span>
-                </label>
-                <input
-                  type="number"
-                  step="5000"
-                  value={capitalInput}
-                  onChange={(e) => {
-                    const val = e.target.value;
-                    setCapitalInput(val);
-                    const parsed = parseFloat(val);
-                    if (parsed && parsed > 0) onChangeTradingCapital(parsed);
-                  }}
-                  placeholder="70000"
-                  className="w-full bg-zinc-900 border border-white/10 focus:border-emerald-500/50 rounded-xl px-2.5 py-1.5 text-emerald-300 font-black outline-none text-xs [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none transition-colors"
-                />
-              </div>
-            </div>
+          <div>
+            <label className="text-zinc-400 text-[10px] block mb-0.5 truncate">
+              <span>Account Cash <strong className="text-emerald-400">(5x)</strong></span>
+            </label>
+            <input
+              type="number"
+              step="5000"
+              value={capitalInput}
+              onChange={(e) => {
+                const val = e.target.value;
+                setCapitalInput(val);
+                const parsed = parseFloat(val);
+                if (parsed && parsed > 0) onChangeTradingCapital(parsed);
+              }}
+              placeholder="70000"
+              className="w-full bg-zinc-900 border border-white/10 focus:border-emerald-500/50 rounded-xl px-2.5 py-1.5 text-emerald-300 font-black outline-none text-xs [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none transition-colors"
+            />
+          </div>
+        </div>
 
-            {/* ZONE VALIDATION STATUS BAR */}
-            {zoneMath ? (
-              <div>
-                {zoneMath.isZoneTooWide ? (
-                  <div className="p-2 rounded-xl bg-rose-950/20 border border-rose-500/40 text-rose-300 font-mono text-xs flex items-center justify-between gap-1">
-                    <div className="flex items-center gap-1.5 truncate">
-                      <AlertOctagon className="w-3.5 h-3.5 text-rose-400 shrink-0" />
-                      <span className="font-bold text-[11px] truncate">ZONE TOO WIDE ({zoneMath.zoneWidthPct}% &gt; 0.33%)</span>
-                    </div>
-                    <span className="text-[9px] px-1.5 py-0.2 rounded bg-rose-500/20 text-rose-300 border border-rose-500/40 font-bold uppercase shrink-0">Skip</span>
-                  </div>
-                ) : (
-                  <div className="p-1.5 sm:p-2 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 font-mono text-xs flex items-center justify-between gap-1">
-                    <div className="flex items-center gap-1.5">
-                      <CheckCircle className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-                      <span className="font-bold text-[11px]">ZONE VALID: {zoneMath.zoneWidthPct}%</span>
-                    </div>
-                    <span className="text-[9px] text-zinc-400">
-                      Depth ±{zoneMath.penetrationPct}%
-                    </span>
-                  </div>
-                )}
+        {/* ZONE VALIDATION STATUS BAR */}
+        {zoneMath ? (
+          <div>
+            {zoneMath.isZoneTooWide ? (
+              <div className="p-2 rounded-xl bg-rose-950/20 border border-rose-500/40 text-rose-300 font-mono text-xs flex items-center justify-between gap-1">
+                <div className="flex items-center gap-1.5 truncate">
+                  <AlertOctagon className="w-3.5 h-3.5 text-rose-400 shrink-0" />
+                  <span className="font-bold text-[11px] truncate">ZONE TOO WIDE ({zoneMath.zoneWidthPct}% &gt; 0.33%)</span>
+                </div>
+                <span className="text-[9px] px-1.5 py-0.2 rounded bg-rose-500/20 text-rose-300 border border-rose-500/40 font-bold uppercase shrink-0">Skip</span>
               </div>
             ) : (
-              <div className="p-2 rounded-xl bg-white/[0.015] border border-white/[0.05] text-[10px] font-mono text-zinc-500 flex items-center justify-between">
-                <span className="flex items-center gap-1.5">
-                  <span className="h-1.5 w-1.5 rounded-full bg-cyan-400 animate-pulse shrink-0" />
-                  <span>Enter Zone High & Low for <strong className="text-zinc-300">{activeTicker}</strong>.</span>
+              <div className="p-1.5 sm:p-2 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 font-mono text-xs flex items-center justify-between gap-1">
+                <div className="flex items-center gap-1.5">
+                  <CheckCircle className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                  <span className="font-bold text-[11px]">ZONE VALID: {zoneMath.zoneWidthPct}%</span>
+                </div>
+                <span className="text-[9px] text-zinc-400">
+                  Depth ±{zoneMath.penetrationPct}%
                 </span>
               </div>
             )}
-
-            {/* 4 PLAYBOOK SETUP TABS */}
-            {zoneMath && activeData && (
-              <div className="space-y-2.5 pt-0.5">
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 font-mono text-xs">
-                  {SETUPS_LIST.map(({ key, label, icon, subtext }) => (
-                    <button
-                      type="button"
-                      key={key}
-                      onClick={() => handleSelectSetupForCurrentTicker(key)}
-                      className={`p-1.5 sm:p-2 rounded-xl border text-center transition-all ${
-                        activeSetupTab === key
-                          ? 'bg-cyan-500/10 text-cyan-300 border-cyan-500/40 font-bold shadow-sm'
-                          : 'bg-white/[0.02] border-white/[0.06] text-zinc-400 hover:text-white'
-                      }`}
-                    >
-                      <span className="block text-[11px] font-bold leading-tight truncate">{icon} {label}</span>
-                      <span className="text-[9px] text-zinc-500">{subtext}</span>
-                    </button>
-                  ))}
-                </div>
-
-                {/* FOCUSED SETUP COORDINATE CARD */}
-                <div className="p-2.5 sm:p-3 rounded-xl bg-white/[0.015] border border-white/[0.06] space-y-2.5 font-mono">
-                  <div className="flex items-center justify-between pb-1.5 border-b border-white/[0.04] text-xs">
-                    <span className="font-bold text-white flex items-center gap-1.5 text-xs truncate max-w-[70%]">
-                      {activeData.label}
-                    </span>
-                    <span className="text-[10px] text-zinc-400 shrink-0">
-                      Risk/Sh: <strong className="text-white">₹{activeData.riskPerShare}</strong>
-                    </span>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-2 text-xs">
-                    {/* Entry Price Box */}
-                    <div
-                      onClick={() => handleCopy(activeData.entryPrice, 'entry')}
-                      className="p-2.5 rounded-xl bg-black/40 border border-white/[0.08] hover:border-white/20 transition-all cursor-pointer group flex flex-col justify-between shadow-inner"
-                    >
-                      <div>
-                        <div className="flex items-center justify-between text-[10px] text-zinc-400 uppercase mb-0.5">
-                          <span>Limit Entry</span>
-                          {copiedPrice === 'entry' ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3 text-zinc-500 group-hover:text-zinc-300" />}
-                        </div>
-                        <div className="text-lg sm:text-2xl font-black text-white tracking-tight truncate">
-                          ₹{activeData.entryPrice}
-                        </div>
-                        <span className="text-[9px] text-zinc-500 block truncate">
-                          {activeData.rule}
-                        </span>
-                      </div>
-
-                      <div className="mt-2 pt-1.5 border-t border-white/[0.04] flex items-center justify-between">
-                        <span className="text-zinc-500 text-[10px]">Size:</span>
-                        <span className="text-emerald-300 font-black px-1.5 py-0.2 rounded bg-emerald-500/10 border border-emerald-500/20 text-[11px]">
-                          {activeData.cappedQty} QTY
-                        </span>
-                      </div>
-                    </div>
-
-                    {/* Stop Loss Price Box */}
-                    <div
-                      onClick={() => handleCopy(activeData.slPrice, 'sl')}
-                      className="p-2.5 rounded-xl bg-rose-950/15 border border-rose-500/25 hover:border-rose-500/40 transition-all cursor-pointer group flex flex-col justify-between shadow-inner"
-                    >
-                      <div>
-                        <div className="flex items-center justify-between text-[10px] text-rose-400 uppercase mb-0.5">
-                          <span>Stop Loss (SL)</span>
-                          {copiedPrice === 'sl' ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3 text-rose-400" />}
-                        </div>
-                        <div className="text-lg sm:text-2xl font-black text-rose-400 tracking-tight truncate">
-                          ₹{activeData.slPrice}
-                        </div>
-                        <span className="text-[9px] text-zinc-500 block truncate">
-                          Buffer (0.10%)
-                        </span>
-                      </div>
-
-                      <div className="mt-2 pt-1.5 border-t border-rose-500/20 text-[10px] text-zinc-400 flex items-center justify-between">
-                        <span>1R</span>
-                        <span className="text-rose-400 font-bold">-₹{defaultRisk}</span>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* CAPITAL & MARGIN STRIP */}
-                  <div className="p-2 rounded-xl bg-black/40 border border-white/[0.04] text-[10px] grid grid-cols-2 sm:grid-cols-4 gap-1.5">
-                    <div>
-                      <span className="text-zinc-500 block uppercase text-[8.5px]">Value</span>
-                      <span className="text-zinc-200 font-bold truncate block">₹{activeData.totalTradeValue.toLocaleString('en-IN')}</span>
-                    </div>
-
-                    <div>
-                      <span className="text-zinc-500 block uppercase text-[8.5px]">Margin 5x</span>
-                      <span className="text-cyan-300 font-bold truncate block">₹{activeData.marginUsed.toLocaleString('en-IN')}</span>
-                    </div>
-
-                    <div>
-                      <span className="text-zinc-500 block uppercase text-[8.5px]">Margin Free</span>
-                      <span className="text-zinc-400 font-bold truncate block">₹{activeData.marginFree.toLocaleString('en-IN')}</span>
-                    </div>
-
-                    <div>
-                      <span className="text-zinc-500 block uppercase text-[8.5px]">Actual Risk</span>
-                      <span className={`font-black truncate block ${activeData.isCapped ? 'text-amber-400' : 'text-emerald-400'}`}>
-                        ₹{activeData.actualRupeeRisk} ({activeData.actualREffective}R)
-                      </span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
+          </div>
+        ) : (
+          <div className="p-2 rounded-xl bg-white/[0.015] border border-white/[0.05] text-[10px] font-mono text-zinc-500 flex items-center justify-between">
+            <span className="flex items-center gap-1.5">
+              <span className="h-1.5 w-1.5 rounded-full bg-cyan-400 animate-pulse shrink-0" />
+              <span>Enter Zone High & Low for <strong className="text-zinc-300">{activeTicker}</strong>.</span>
+            </span>
           </div>
         )}
 
-        {/* ========================================================= */}
-        {/* VIEW 2: TERMINAL GATEKEEPER PRE-TRADE CHECKLIST (Press G) */}
-        {/* ========================================================= */}
-        {viewMode === 'gatekeeper' && (
-          <div className="space-y-3 font-mono animate-in fade-in duration-150">
-            {/* Gatekeeper Bar: Setup Tabs + Edit Mode Toggle (Website Only) */}
-            <div className="flex items-center justify-between pb-1.5 border-b border-white/[0.06] text-xs gap-2">
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-1 w-full sm:w-auto">
-                {SETUPS_LIST.map(({ key, label, icon }) => (
-                  <button
-                    type="button"
-                    key={key}
-                    onClick={() => handleSelectSetupForCurrentTicker(key)}
-                    className={`px-2 py-1 rounded-lg text-[10px] font-bold border transition-colors truncate ${
-                      activeSetupTab === key
-                        ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40 shadow-sm'
-                        : 'bg-white/[0.02] border-white/[0.06] text-zinc-500 hover:text-white'
-                    }`}
-                  >
-                    <span>{icon} {label}</span>
-                  </button>
-                ))}
-              </div>
-
-              {/* Edit Mode Toggle Button */}
-              {!isWidgetMode && (
+        {/* 4 PLAYBOOK SETUP TABS (INDEPENDENT PER TICKER) */}
+        {zoneMath && activeData && (
+          <div className="space-y-2.5 pt-0.5">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 font-mono text-xs">
+              {SETUPS_LIST.map(({ key, label, icon, subtext }) => (
                 <button
                   type="button"
-                  onClick={() => setIsEditMode(prev => !prev)}
-                  className={`p-1.5 rounded-lg border text-[10px] font-bold flex items-center gap-1 transition-all shrink-0 ${
-                    isEditMode
-                      ? 'bg-cyan-500 text-black border-cyan-400 font-black shadow-md'
-                      : 'bg-white/[0.03] border-white/10 text-zinc-400 hover:text-cyan-300'
+                  key={key}
+                  onClick={() => handleSelectSetupForCurrentTicker(key)}
+                  className={`p-1.5 sm:p-2 rounded-xl border text-center transition-all ${
+                    activeSetupTab === key
+                      ? 'bg-cyan-500/10 text-cyan-300 border-cyan-500/40 font-bold shadow-sm'
+                      : 'bg-white/[0.02] border-white/[0.06] text-zinc-400 hover:text-white'
                   }`}
-                  title={isEditMode ? "Done Editing Rules" : "Edit Checklist Text & Rules"}
                 >
-                  {isEditMode ? <Check className="w-3 h-3" /> : <Pencil className="w-3 h-3" />}
-                  <span>{isEditMode ? 'Done' : 'Edit Mode'}</span>
+                  <span className="block text-[11px] font-bold leading-tight truncate">{icon} {label}</span>
+                  <span className="text-[9px] text-zinc-500">{subtext}</span>
                 </button>
-              )}
+              ))}
             </div>
 
-            {/* SECTION 1: GLOBAL CONSTRAINTS */}
-            <div className="space-y-1.5">
-              <div className="flex items-center justify-between text-[10px] text-zinc-500 uppercase tracking-wider font-bold">
-                <span>Global Constraints</span>
-                {!isWidgetMode && isEditMode && (
-                  <button
-                    type="button"
-                    onClick={handleAddGlobalItem}
-                    className="text-cyan-400 hover:text-white flex items-center gap-0.5 font-bold"
-                  >
-                    <Plus className="w-2.5 h-2.5" />
-                    <span>Add Constraint</span>
-                  </button>
-                )}
+            {/* FOCUSED SETUP COORDINATE CARD */}
+            <div className="p-2.5 sm:p-3 rounded-xl bg-white/[0.015] border border-white/[0.06] space-y-2.5 font-mono">
+              <div className="flex items-center justify-between pb-1.5 border-b border-white/[0.04] text-xs">
+                <span className="font-bold text-white flex items-center gap-1.5 text-xs truncate max-w-[70%]">
+                  {activeData.label}
+                </span>
+                <span className="text-[10px] text-zinc-400 shrink-0">
+                  Risk/Sh: <strong className="text-white">₹{activeData.riskPerShare}</strong>
+                </span>
               </div>
 
-              <div className="space-y-1">
-                {activeConfig.globalConstraints.map(item => {
-                  const checkDetails = getItemCheckDetails(item);
-
-                  if (!isWidgetMode && isEditMode) {
-                    return (
-                      <div key={item.id} className="flex items-center gap-1.5 bg-black/40 p-1.5 rounded-lg border border-white/10">
-                        <input
-                          type="text"
-                          value={item.text}
-                          onChange={(e) => handleUpdateGlobalItem(item.id, e.target.value)}
-                          className="w-full bg-transparent text-xs text-zinc-200 outline-none"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => handleDeleteGlobalItem(item.id)}
-                          className="p-1 text-zinc-500 hover:text-rose-400 shrink-0"
-                        >
-                          <Trash2 className="w-3 h-3" />
-                        </button>
-                      </div>
-                    );
-                  }
-
-                  return (
-                    <div
-                      key={item.id}
-                      onClick={() => handleToggleCheck(item.id, checkDetails.isAutoChecked)}
-                      className={`p-2 rounded-xl border text-xs cursor-pointer select-none transition-all flex items-center justify-between gap-2.5 ${
-                        checkDetails.isChecked
-                          ? 'bg-emerald-500/10 border-emerald-500/40 text-emerald-300'
-                          : 'bg-white/[0.02] border-white/[0.06] text-zinc-400 hover:border-white/15 hover:text-zinc-200'
-                      }`}
-                    >
-                      <div className="flex items-center gap-2.5 min-w-0">
-                        <div className={`h-4 w-4 rounded-md border flex items-center justify-center shrink-0 transition-colors ${
-                          checkDetails.isChecked ? 'bg-emerald-500 border-emerald-400 text-black' : 'border-white/20 bg-zinc-900'
-                        }`}>
-                          {checkDetails.isChecked && <Check className="w-3 h-3 stroke-[3]" />}
-                        </div>
-                        <span className="text-[11px] leading-snug truncate">{item.text}</span>
-                      </div>
-
-                      {checkDetails.autoBadgeText && (
-                        <span className={`text-[9px] px-1.5 py-0.5 rounded-md border font-mono font-bold shrink-0 ${checkDetails.autoBadgeColor}`}>
-                          {checkDetails.autoBadgeText}
-                        </span>
-                      )}
+              <div className="grid grid-cols-2 gap-2 text-xs">
+                {/* Entry Price Box */}
+                <div
+                  onClick={() => handleCopy(activeData.entryPrice, 'entry')}
+                  className="p-2.5 rounded-xl bg-black/40 border border-white/[0.08] hover:border-white/20 transition-all cursor-pointer group flex flex-col justify-between shadow-inner"
+                >
+                  <div>
+                    <div className="flex items-center justify-between text-[10px] text-zinc-400 uppercase mb-0.5">
+                      <span>Limit Entry</span>
+                      {copiedPrice === 'entry' ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3 text-zinc-500 group-hover:text-zinc-300" />}
                     </div>
-                  );
-                })}
-              </div>
-            </div>
-
-            {/* SECTION 2: SETUP-SPECIFIC MECHANICAL RULES */}
-            {activeGatekeeperSetup && (
-              <div className="space-y-1.5 pt-1">
-                <div className="flex items-center justify-between text-[10px] font-bold">
-                  <div className="flex items-center gap-1.5">
-                    <span className="text-zinc-500 uppercase">Setup:</span>
-                    <span className="text-white font-bold">{activeGatekeeperSetup.label}</span>
-                    <span className={`px-1.5 py-0.2 rounded text-[9px] border font-black ${activeGatekeeperSetup.tagColor}`}>
-                      {activeGatekeeperSetup.tag}
+                    <div className="text-lg sm:text-2xl font-black text-white tracking-tight truncate">
+                      ₹{activeData.entryPrice}
+                    </div>
+                    <span className="text-[9px] text-zinc-500 block truncate">
+                      {activeData.rule}
                     </span>
                   </div>
 
-                  {!isWidgetMode && isEditMode && (
-                    <button
-                      type="button"
-                      onClick={handleAddSetupItem}
-                      className="text-cyan-400 hover:text-white flex items-center gap-0.5 font-bold"
-                    >
-                      <Plus className="w-2.5 h-2.5" />
-                      <span>Add Setup Rule</span>
-                    </button>
-                  )}
+                  <div className="mt-2 pt-1.5 border-t border-white/[0.04] flex items-center justify-between">
+                    <span className="text-zinc-500 text-[10px]">Size:</span>
+                    <span className="text-emerald-300 font-black px-1.5 py-0.2 rounded bg-emerald-500/10 border border-emerald-500/20 text-[11px]">
+                      {activeData.cappedQty} QTY
+                    </span>
+                  </div>
                 </div>
 
-                <div className="space-y-1">
-                  {activeGatekeeperSetup.items.map(item => {
-                    const checkDetails = getItemCheckDetails(item);
+                {/* Stop Loss Price Box */}
+                <div
+                  onClick={() => handleCopy(activeData.slPrice, 'sl')}
+                  className="p-2.5 rounded-xl bg-rose-950/15 border border-rose-500/25 hover:border-rose-500/40 transition-all cursor-pointer group flex flex-col justify-between shadow-inner"
+                >
+                  <div>
+                    <div className="flex items-center justify-between text-[10px] text-rose-400 uppercase mb-0.5">
+                      <span>Stop Loss (SL)</span>
+                      {copiedPrice === 'sl' ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3 text-rose-400" />}
+                    </div>
+                    <div className="text-lg sm:text-2xl font-black text-rose-400 tracking-tight truncate">
+                      ₹{activeData.slPrice}
+                    </div>
+                    <span className="text-[9px] text-zinc-500 block truncate">
+                      Buffer (0.10%)
+                    </span>
+                  </div>
 
-                    if (!isWidgetMode && isEditMode) {
-                      return (
-                        <div key={item.id} className="flex items-center gap-1.5 bg-black/40 p-1.5 rounded-lg border border-white/10">
-                          <input
-                            type="text"
-                            value={item.text}
-                            onChange={(e) => handleUpdateSetupItem(item.id, e.target.value)}
-                            className="w-full bg-transparent text-xs text-zinc-200 outline-none"
-                          />
-                          <button
-                            type="button"
-                            onClick={() => handleDeleteSetupItem(item.id)}
-                            className="p-1 text-zinc-500 hover:text-rose-400 shrink-0"
-                          >
-                            <Trash2 className="w-3 h-3" />
-                          </button>
-                        </div>
-                      );
-                    }
+                  <div className="mt-2 pt-1.5 border-t border-rose-500/20 text-[10px] text-zinc-400 flex items-center justify-between">
+                    <span>1R</span>
+                    <span className="text-rose-400 font-bold">-₹{defaultRisk}</span>
+                  </div>
+                </div>
+              </div>
 
-                    return (
-                      <div
-                        key={item.id}
-                        onClick={() => handleToggleCheck(item.id, checkDetails.isAutoChecked)}
-                        className={`p-2 rounded-xl border text-xs cursor-pointer select-none transition-all flex items-center justify-between gap-2.5 ${
-                          checkDetails.isChecked
-                            ? 'bg-emerald-500/10 border-emerald-500/40 text-emerald-300'
-                            : 'bg-white/[0.02] border-white/[0.06] text-zinc-400 hover:border-white/15 hover:text-zinc-200'
-                        }`}
-                      >
-                        <div className="flex items-center gap-2.5 min-w-0">
-                          <div className={`h-4 w-4 rounded-md border flex items-center justify-center shrink-0 transition-colors ${
-                            checkDetails.isChecked ? 'bg-emerald-500 border-emerald-400 text-black' : 'border-white/20 bg-zinc-900'
-                          }`}>
-                            {checkDetails.isChecked && <Check className="w-3 h-3 stroke-[3]" />}
-                          </div>
-                          <span className="text-[11px] leading-snug truncate">{item.text}</span>
-                        </div>
-
-                        {checkDetails.autoBadgeText && (
-                          <span className={`text-[9px] px-1.5 py-0.5 rounded-md border font-mono font-bold shrink-0 ${checkDetails.autoBadgeColor}`}>
-                            {checkDetails.autoBadgeText}
-                          </span>
-                        )}
-                      </div>
-                    );
-                  })}
+              {/* CAPITAL & MARGIN STRIP */}
+              <div className="p-2 rounded-xl bg-black/40 border border-white/[0.04] text-[10px] grid grid-cols-2 sm:grid-cols-4 gap-1.5">
+                <div>
+                  <span className="text-zinc-500 block uppercase text-[8.5px]">Value</span>
+                  <span className="text-zinc-200 font-bold truncate block">₹{activeData.totalTradeValue.toLocaleString('en-IN')}</span>
                 </div>
 
-                {/* TRAILING DEFENSE REMINDER BOX */}
-                <div className="p-2.5 rounded-xl bg-purple-950/20 border border-purple-500/30 text-[10px] space-y-1">
-                  <span className="text-purple-300 font-bold uppercase tracking-wider block">
-                    🛡️ Trailing Stop / Capital Defense Rule:
+                <div>
+                  <span className="text-zinc-500 block uppercase text-[8.5px]">Margin 5x</span>
+                  <span className="text-cyan-300 font-bold truncate block">₹{activeData.marginUsed.toLocaleString('en-IN')}</span>
+                </div>
+
+                <div>
+                  <span className="text-zinc-500 block uppercase text-[8.5px]">Margin Free</span>
+                  <span className="text-zinc-400 font-bold truncate block">₹{activeData.marginFree.toLocaleString('en-IN')}</span>
+                </div>
+
+                <div>
+                  <span className="text-zinc-500 block uppercase text-[8.5px]">Actual Risk</span>
+                  <span className={`font-black truncate block ${activeData.isCapped ? 'text-amber-400' : 'text-emerald-400'}`}>
+                    ₹{activeData.actualRupeeRisk} ({activeData.actualREffective}R)
                   </span>
-                  {!isWidgetMode && isEditMode ? (
-                    <textarea
-                      value={activeGatekeeperSetup.trailingRule}
-                      onChange={(e) => handleUpdateTrailingRule(e.target.value)}
-                      className="w-full bg-black/50 border border-purple-500/40 rounded p-1.5 text-zinc-200 outline-none h-14"
-                    />
-                  ) : (
-                    <p className="text-purple-200/80 leading-relaxed font-bold">
-                      {activeGatekeeperSetup.trailingRule}
-                    </p>
-                  )}
                 </div>
               </div>
-            )}
-
-            {/* RESTORE DEFAULTS */}
-            {!isWidgetMode && isEditMode && (
-              <div className="pt-1 flex justify-end">
-                <button
-                  type="button"
-                  onClick={() => {
-                    saveGatekeeperConfig(DEFAULT_GATEKEEPER_CONFIG);
-                  }}
-                  className="text-[10px] text-zinc-500 hover:text-rose-400 underline font-mono flex items-center gap-1"
-                >
-                  <RotateCcw className="w-2.5 h-2.5" />
-                  <span>Restore Playbook Defaults</span>
-                </button>
-              </div>
-            )}
-
-            {/* EXECUTION SAFETY GATE BUTTON */}
-            {(!isEditMode || isWidgetMode) && (
-              <div className="pt-1 space-y-1.5">
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (isExecutionUnlocked) {
-                      setViewMode('engine');
-                    }
-                  }}
-                  className={`w-full py-2.5 px-3 rounded-xl font-mono text-xs font-black transition-all flex items-center justify-center gap-2 shadow-lg ${
-                    isExecutionUnlocked
-                      ? 'bg-emerald-500 hover:bg-emerald-400 text-black shadow-emerald-500/25 cursor-pointer ring-1 ring-emerald-300'
-                      : 'bg-rose-950/40 border border-rose-500/40 text-rose-300 cursor-not-allowed'
-                  }`}
-                >
-                  {isExecutionUnlocked ? (
-                    <>
-                      <Unlock className="w-4 h-4" />
-                      <span>{activeTicker}: RULES SATISFIED — READY TO EXECUTE</span>
-                    </>
-                  ) : (
-                    <>
-                      <Lock className="w-4 h-4 text-rose-400" />
-                      <span>{activeTicker}: EXECUTION LOCKED ({totalRequiredChecks - checkedCount} CHECKS REMAINING)</span>
-                    </>
-                  )}
-                </button>
-
-                <div className="flex items-center justify-between text-[10px] text-zinc-500">
-                  <span>Checked: <strong className="text-white">{checkedCount} / {totalRequiredChecks}</strong></span>
-                  <button
-                    type="button"
-                    onClick={handleResetChecklist}
-                    className="hover:text-zinc-300 underline"
-                  >
-                    Reset {activeTicker} Checklist
-                  </button>
-                </div>
-              </div>
-            )}
+            </div>
           </div>
         )}
 
