@@ -259,7 +259,7 @@ export function EngineView({
   const [capitalInput, setCapitalInput] = useState<string>(String(tradingCapital || 70000));
   const [copiedPrice, setCopiedPrice] = useState<string | null>(null);
 
-  // GATEKEEPER STATE WITH SYNC BRIDGE
+  // GATEKEEPER STATE
   const [localGatekeeperConfig, setLocalGatekeeperConfig] = useState<GatekeeperConfig>(
     gatekeeperConfigProp || DEFAULT_GATEKEEPER_CONFIG
   );
@@ -282,10 +282,7 @@ export function EngineView({
     }
   };
 
-  // Per-Ticker checked states
   const [tickerChecks, setTickerChecks] = useState<Record<string, Record<string, boolean>>>({});
-
-  // Live IST Time Tracker
   const [istTime, setIstTime] = useState(getISTTimeInfo);
 
   useEffect(() => {
@@ -349,27 +346,62 @@ export function EngineView({
     onUpdateTickerZone(activeTicker, zoneHighInput, val);
   };
 
-  // ROBUST CLIPBOARD COPY
+  // ROBUST MULTI-WINDOW CLIPBOARD COPY (WORKS IN ALWAYS-ON-TOP PIP & BROWSER)
   const handleCopy = async (text: string | number, label: string) => {
     const str = String(text);
-    try {
-      if (navigator?.clipboard?.writeText) {
-        await navigator.clipboard.writeText(str);
-      } else {
-        throw new Error('Fallback required');
-      }
-    } catch {
-      const el = document.createElement('textarea');
-      el.value = str;
-      el.setAttribute('readonly', '');
-      el.style.position = 'fixed';
-      el.style.left = '-9999px';
-      el.style.top = '0';
-      document.body.appendChild(el);
-      el.select();
-      document.execCommand('copy');
-      document.body.removeChild(el);
+    
+    // Resolve the active document & window that received the click
+    const activeDoc = containerRef.current?.ownerDocument || document;
+    const activeWin = activeDoc.defaultView || window;
+
+    let copied = false;
+
+    // 1. Try active window's clipboard API first
+    if ((activeWin as any).navigator?.clipboard?.writeText) {
+      try {
+        await (activeWin as any).navigator.clipboard.writeText(str);
+        copied = true;
+      } catch {}
     }
+
+    // 2. Try global window's clipboard API
+    if (!copied && navigator?.clipboard?.writeText) {
+      try {
+        await navigator.clipboard.writeText(str);
+        copied = true;
+      } catch {}
+    }
+
+    // 3. Fallback: execCommand('copy') on textarea appended directly into the active focused document body
+    if (!copied) {
+      try {
+        const el = activeDoc.createElement('textarea');
+        el.value = str;
+        el.setAttribute('readonly', '');
+        el.style.position = 'fixed';
+        el.style.left = '0';
+        el.style.top = '0';
+        el.style.opacity = '0';
+        el.style.width = '2em';
+        el.style.height = '2em';
+        el.style.padding = '0';
+        el.style.border = 'none';
+        el.style.outline = 'none';
+        el.style.boxShadow = 'none';
+        el.style.background = 'transparent';
+        
+        activeDoc.body.appendChild(el);
+        el.focus();
+        el.select();
+        el.setSelectionRange(0, el.value.length);
+        
+        copied = activeDoc.execCommand('copy');
+        activeDoc.body.removeChild(el);
+      } catch (err) {
+        console.warn('execCommand copy fallback error:', err);
+      }
+    }
+
     setCopiedPrice(label);
     setTimeout(() => setCopiedPrice(null), 1500);
   };
