@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
+import Link from 'next/link';
 import { CustomNumberInput } from '@/components/ui/CustomControls';
 import { User } from 'firebase/auth';
 import { Trade, PlaybookCollection, ChartSpecimen } from '@/types/trade';
@@ -23,6 +24,8 @@ import {
   AlertTriangle,
   FolderArchive,
   Loader2,
+  Dumbbell,
+  ArrowRight,
   X
 } from 'lucide-react';
 
@@ -204,7 +207,30 @@ export function SettingsView({
         </div>
       </div>
 
-      {/* 2. TERMINAL SECURITY & PIN LOCK */}
+      {/* 2. DISCRETE PHYSICAL BODY PROTOCOL LINK */}
+      <div className="p-4 sm:p-5 rounded-2xl bg-[#090A10] border border-white/[0.06] flex items-center justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <div className="p-2 rounded-xl bg-emerald-500/10 text-emerald-400 shrink-0 border border-emerald-500/20">
+            <Dumbbell className="w-4 h-4" />
+          </div>
+          <div>
+            <h3 className="font-bold text-sm text-white">Physical Sovereignty Protocol</h3>
+            <p className="text-xs text-zinc-500">
+              Hidden daily pushups, leg conditioning, and village nutrition protocol.
+            </p>
+          </div>
+        </div>
+
+        <Link
+          href="/body"
+          className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-xs font-mono font-bold transition-all shrink-0"
+        >
+          <span>Open /body</span>
+          <ArrowRight className="w-3.5 h-3.5" />
+        </Link>
+      </div>
+
+      {/* 3. TERMINAL SECURITY & PIN LOCK */}
       <div className="p-4 sm:p-5 rounded-2xl bg-[#090A10] border border-white/[0.06] space-y-3">
         <div className="flex items-center gap-3">
           <div className="p-2 rounded-xl bg-cyan-500/10 text-cyan-400 shrink-0 border border-cyan-500/20">
@@ -276,7 +302,7 @@ export function SettingsView({
         </form>
       </div>
 
-      {/* 3. 1R CAPITAL BENCHMARK */}
+      {/* 4. 1R CAPITAL BENCHMARK */}
       <div className="p-4 sm:p-5 rounded-2xl bg-[#090A10] border border-white/[0.06] space-y-3">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div className="flex items-center gap-3">
@@ -302,7 +328,7 @@ export function SettingsView({
         </div>
       </div>
 
-      {/* 4. DATABASE BACKUP & GLOBAL CHART PORTABILITY */}
+      {/* 5. DATABASE BACKUP & GLOBAL CHART PORTABILITY */}
       <div className="p-4 sm:p-5 rounded-2xl bg-[#090A10] border border-white/[0.06] space-y-3">
         <div className="flex items-center gap-3">
           <div className="p-2 rounded-xl bg-purple-500/10 text-purple-400 shrink-0">
@@ -314,7 +340,6 @@ export function SettingsView({
           </div>
         </div>
 
-        {/* JSON Import/Export Buttons */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
           <button
             onClick={onExport}
@@ -331,7 +356,6 @@ export function SettingsView({
           </label>
         </div>
 
-        {/* Global Chart Backup Button */}
         <div className="pt-2 border-t border-white/[0.04]">
           <button
             type="button"
@@ -366,7 +390,7 @@ export function SettingsView({
         </div>
       </div>
 
-      {/* 5. DANGER ZONE */}
+      {/* 6. DANGER ZONE */}
       <div className="p-4 rounded-2xl bg-rose-950/10 border border-rose-900/30 flex items-center justify-between gap-3">
         <div>
           <h4 className="font-bold text-xs text-rose-300">Purge Complete Journal & Codex</h4>
@@ -385,11 +409,10 @@ export function SettingsView({
         </button>
       </div>
 
-      {/* RED DANGER WARNING POPUP MODAL WITH PASSWORD CHECK */}
+      {/* RED DANGER WARNING POPUP MODAL */}
       {isWipeModalOpen && (
         <div className="fixed inset-0 z-50 bg-black/90 backdrop-blur-md flex items-center justify-center p-4">
           <div className="bg-[#0D0507] border-2 border-rose-600/80 rounded-2xl max-w-md w-full p-5 sm:p-6 space-y-4 shadow-[0_0_50px_rgba(225,29,72,0.35)] animate-in fade-in zoom-in-95 duration-150">
-            
             <div className="flex items-start justify-between">
               <div className="flex items-center gap-3">
                 <div className="p-2.5 rounded-xl bg-rose-600/20 text-rose-400 border border-rose-600/40">
@@ -462,7 +485,6 @@ export function SettingsView({
                 </button>
               </div>
             </form>
-
           </div>
         </div>
       )}
