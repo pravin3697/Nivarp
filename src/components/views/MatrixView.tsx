@@ -251,13 +251,13 @@ export function MatrixView({ collections, trades, onOpenInspector }: MatrixViewP
     };
   }, [normalizedTrades]);
 
-  // 2. Mainzone Height (%) Sweet-Spot Segments
+  // 2. Mainzone Height (%) Sweet-Spot Segments (< 0.33% valid space)
   const zoneHeightAnalytics = useMemo(() => {
     const brackets = [
       { key: 'tight', label: 'Ultra-Tight (< 0.15%)', min: 0, max: 0.15, trades: 0, wins: 0, netR: 0, totalMae: 0 },
-      { key: 'golden', label: 'Golden Zone (0.15% - 0.25%)', min: 0.15, max: 0.25, trades: 0, wins: 0, netR: 0, totalMae: 0 },
-      { key: 'wide', label: 'Wide Zone (0.25% - 0.33%)', min: 0.25, max: 0.33, trades: 0, wins: 0, netR: 0, totalMae: 0 },
-      { key: 'void', label: 'Overextended (> 0.33%)', min: 0.33, max: 999, trades: 0, wins: 0, netR: 0, totalMae: 0 }
+      { key: 'golden', label: 'Golden Zone (0.15% - 0.22%)', min: 0.15, max: 0.22, trades: 0, wins: 0, netR: 0, totalMae: 0 },
+      { key: 'wide', label: 'Wide Zone (0.22% - 0.28%)', min: 0.22, max: 0.28, trades: 0, wins: 0, netR: 0, totalMae: 0 },
+      { key: 'overextended', label: 'Overextended (0.28% - 0.33%)', min: 0.28, max: 999, trades: 0, wins: 0, netR: 0, totalMae: 0 }
     ];
 
     let recordedCount = 0;
@@ -1051,7 +1051,7 @@ export function MatrixView({ collections, trades, onOpenInspector }: MatrixViewP
         )}
       </div>
 
-      {/* 3. MAINZONE HEIGHT (%) SWEET-SPOT EDGE MATRIX */}
+      {/* 3. MAINZONE HEIGHT (%) SWEET-SPOT EDGE MATRIX (CALIBRATED TO <= 0.33%) */}
       <div className="p-4 sm:p-6 rounded-2xl bg-[#090A10] border border-white/[0.06] space-y-4">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-3 border-b border-white/[0.06] gap-2">
           <div className="flex items-center gap-2">
@@ -1061,7 +1061,7 @@ export function MatrixView({ collections, trades, onOpenInspector }: MatrixViewP
                 Mainzone Height (%) Sweet-Spot Edge Matrix
               </h3>
               <p className="text-[11px] font-mono text-zinc-400">
-                Statistical correlation between structural zone width, win rate, harvested R, and MAE heat.
+                Statistical correlation between structural zone width (&le; 0.33%), win rate, harvested R, and MAE heat.
               </p>
             </div>
           </div>
@@ -1084,7 +1084,7 @@ export function MatrixView({ collections, trades, onOpenInspector }: MatrixViewP
                 <div 
                   key={bracket.key}
                   className={`p-3.5 rounded-xl border flex flex-col justify-between space-y-3 ${
-                    bracket.key === 'void' 
+                    bracket.key === 'overextended' 
                       ? 'bg-rose-950/15 border-rose-500/30' 
                       : bracket.key === 'golden' 
                         ? 'bg-cyan-500/10 border-cyan-500/30' 
@@ -1093,7 +1093,7 @@ export function MatrixView({ collections, trades, onOpenInspector }: MatrixViewP
                 >
                   <div className="flex items-center justify-between pb-1.5 border-b border-white/[0.04]">
                     <span className={`text-[11px] font-bold ${
-                      bracket.key === 'void' ? 'text-rose-400' :
+                      bracket.key === 'overextended' ? 'text-rose-400' :
                       bracket.key === 'golden' ? 'text-cyan-300' : 'text-zinc-200'
                     }`}>
                       {bracket.label}
