@@ -53,24 +53,37 @@ const SESSION_UNLOCKED_KEY = 'NIVARP_SESSION_UNLOCKED';
 const ENGINE_WATCHLIST_KEY = 'NIVARP_ENGINE_WATCHLIST';
 const CONTRACT_STORAGE_KEY = 'NIVARP_EXECUTION_CONTRACT';
 
-const DEFAULT_CONTRACT_STATE: ExecutionContractState = {
-  currentAttempt: 2,
-  startDate: '2026-11-04',
-  targetEndDate: '2027-05-04',
-  totalTargetDays: 180,
-  history: [
-    {
-      attemptNumber: 1,
-      startDate: '2026-09-26',
-      endDate: '2026-11-03',
-      status: 'FAILED',
-      failedDay: 39,
-      failureReason: 'Left terminal during active trade (fell asleep). Allowed a +2R runner to reverse into full SL instead of trailing to BE.',
-      costNote: 'Surrendered winning mechanical setup (-1.22R) and severed a 39-day / 14-trade clean streak.',
-      cleanTradesCount: 14
-    }
-  ]
+// Normalizer function to prevent stale cloud data from ever resetting Attempt 1
+const normalizeContractHistory = (c?: ExecutionContractState): ExecutionContractState => {
+  const currentAttempt = c?.currentAttempt || 2;
+  const startDate = c?.startDate || '2026-11-04';
+  const targetEndDate = c?.targetEndDate || '2027-05-04';
+  const totalTargetDays = 180;
+
+  const rawHistory = c?.history && c.history.length > 0 ? c.history : [];
+  const otherAttempts = rawHistory.filter(h => h.attemptNumber !== 1);
+
+  const normalizedAttempt1 = {
+    attemptNumber: 1,
+    startDate: '2026-10-26',
+    endDate: '2026-11-03',
+    status: 'FAILED' as const,
+    failedDay: 9,
+    failureReason: 'Left terminal during active trade (fell asleep). Allowed a +2R runner to reverse into full SL instead of trailing to BE.',
+    costNote: 'Signed on Oct 26. Failed on Day 9 (-1.22R). (Clean streak was 35 days / 7 trades since last hallucinated error on Sep 29).',
+    cleanTradesCount: 7
+  };
+
+  return {
+    currentAttempt,
+    startDate,
+    targetEndDate,
+    totalTargetDays,
+    history: [normalizedAttempt1, ...otherAttempts]
+  };
 };
+
+const DEFAULT_CONTRACT_STATE: ExecutionContractState = normalizeContractHistory();
 
 const DEFAULT_WATCHLIST_DATA: Record<string, { high: string; low: string }> = {
   DLF: { high: '', low: '' },
@@ -114,7 +127,6 @@ export default function NivarpOS() {
   const [engineWatchlist, setEngineWatchlist] = useState<Record<string, { high: string; low: string }>>(DEFAULT_WATCHLIST_DATA);
   const [activeEngineTicker, setActiveEngineTicker] = useState<string>('DLF');
 
-  // STABLE CALLBACK TO PREVENT UNNECESSARY RERENDERS
   const handleSelectTicker = useCallback((ticker: string) => {
     setActiveEngineTicker(ticker);
   }, []);
@@ -295,7 +307,9 @@ export default function NivarpOS() {
             setEngineWatchlist(prev => ({ ...prev, ...cloudData.engineWatchlist }));
           }
           if (cloudData.executionContract) {
-            setContract(cloudData.executionContract);
+            const safeNormalized = normalizeContractHistory(cloudData.executionContract);
+            setContract(safeNormalized);
+            idbSet(CONTRACT_STORAGE_KEY, safeNormalized);
           }
           if (cloudData.securityPin !== undefined) {
             setSecurityPin(cloudData.securityPin);
@@ -386,6 +400,7 @@ export default function NivarpOS() {
     });
   }, [deduplicatedCollections, categoryOrder]);
 
+  // Initial Load with permanent normalizer & cloud sync
   useEffect(() => {
     let isMounted = true;
 
@@ -401,22 +416,9 @@ export default function NivarpOS() {
         ]);
 
         if (idbContract) {
-          const migratedHistory = (idbContract.history || []).map(h => {
-            if (h.attemptNumber === 1 && (h.startDate !== '2026-09-26' || h.failedDay !== 39)) {
-              return {
-                ...h,
-                startDate: '2026-09-26',
-                endDate: '2026-11-03',
-                failedDay: 39,
-                cleanTradesCount: 14,
-                costNote: 'Surrendered winning mechanical setup (-1.22R) and severed a 39-day / 14-trade clean streak.'
-              };
-            }
-            return h;
-          });
-          const updated = { ...idbContract, history: migratedHistory };
-          setContract(updated);
-          idbSet(CONTRACT_STORAGE_KEY, updated);
+          const safeNormalized = normalizeContractHistory(idbContract);
+          setContract(safeNormalized);
+          idbSet(CONTRACT_STORAGE_KEY, safeNormalized);
         }
 
         if (idbSecurity) {
@@ -474,7 +476,9 @@ export default function NivarpOS() {
             setEngineWatchlist(prev => ({ ...prev, ...cloudData.engineWatchlist }));
           }
           if (cloudData.executionContract) {
-            setContract(cloudData.executionContract);
+            const safeNormalized = normalizeContractHistory(cloudData.executionContract);
+            setContract(safeNormalized);
+            idbSet(CONTRACT_STORAGE_KEY, safeNormalized);
           }
           if (cloudData.securityPin !== undefined) {
             setSecurityPin(cloudData.securityPin);
@@ -628,7 +632,7 @@ export default function NivarpOS() {
           : MASTER_CATEGORY_ORDER;
         const restoredStudy = Array.isArray(d.studySpecimens) ? d.studySpecimens : [];
         const restoredWatchlist = d.engineWatchlist && typeof d.engineWatchlist === 'object' ? d.engineWatchlist : DEFAULT_WATCHLIST_DATA;
-        const restoredContract = d.executionContract || DEFAULT_CONTRACT_STATE;
+        const restoredContract = normalizeContractHistory(d.executionContract || DEFAULT_CONTRACT_STATE);
 
         setTrades(restoredTrades);
         setCollections(restoredCols);

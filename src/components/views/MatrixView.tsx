@@ -2,7 +2,7 @@
 
 import React, { useMemo, useState, useEffect } from 'react';
 import { Trade, PlaybookCollection, BehavioralTag } from '@/types/trade';
-import { parseDateToTimestamp, displaySetupName, cleanSecurityName } from '@/lib/parser';
+import { parseDateToTimestamp, displaySetupName, cleanSecurityName, getTradeFullTimestamp } from '@/lib/parser';
 import { 
   ResponsiveContainer, 
   AreaChart, 
@@ -154,7 +154,7 @@ export function MatrixView({ collections, trades, onOpenInspector }: MatrixViewP
     return null;
   };
 
-  // 1. BEHAVIORAL EXECUTION ANALYTICS (SPLIT SL HUNT CARD LOGIC)
+  // 1. BEHAVIORAL EXECUTION ANALYTICS
   const behaviorAnalytics = useMemo(() => {
     const totalTrades = normalizedTrades.length;
 
@@ -163,12 +163,10 @@ export function MatrixView({ collections, trades, onOpenInspector }: MatrixViewP
     let mistakeR = 0;
     let brokenRuleCount = 0;
 
-    // Rules Followed (Green)
     let rulesTrades = 0;
     let rulesWins = 0;
     let rulesNetR = 0;
 
-    // SL Hunt Internal Split (Purple Card)
     let cleanHuntTrades = 0;
     let cleanHuntWins = 0;
     let cleanHuntR = 0;
@@ -177,12 +175,10 @@ export function MatrixView({ collections, trades, onOpenInspector }: MatrixViewP
     let badHuntWins = 0;
     let badHuntR = 0;
 
-    // No Confirmation Impulse (Amber)
     let noConfirmTrades = 0;
     let noConfirmWins = 0;
     let noConfirmR = 0;
 
-    // Hallucinated Revenge (Rose)
     let hallucinatedTrades = 0;
     let hallucinatedWins = 0;
     let hallucinatedR = 0;
@@ -203,7 +199,7 @@ export function MatrixView({ collections, trades, onOpenInspector }: MatrixViewP
         cleanHuntTrades++;
         if (isWin) cleanHuntWins++;
         cleanHuntR = Number((cleanHuntR + t.rMultiple).toFixed(2));
-        disciplinedTrades++; // Clean market variance counts as disciplined
+        disciplinedTrades++;
       } else if (tag === 'SL Hunt (Defense Abandoned)') {
         badHuntTrades++;
         if (isWin) badHuntWins++;
@@ -290,7 +286,7 @@ export function MatrixView({ collections, trades, onOpenInspector }: MatrixViewP
     };
   }, [normalizedTrades]);
 
-  // 3. Setup Realization Edge with Exit Capture Efficiency
+  // 3. Setup Realization Edge
   const setupEdge = useMemo(() => {
     const getBaseModelName = (name: string): string => {
       const clean = displaySetupName(name);
@@ -535,10 +531,10 @@ export function MatrixView({ collections, trades, onOpenInspector }: MatrixViewP
     };
   }, [normalizedTrades]);
 
-  // 5. Drawdown Depth Curve
+  // 5. Drawdown Depth Curve with Date + Time Chronological Sorting
   const drawdownData = useMemo(() => {
     if (!normalizedTrades.length) return { data: [], maxDrawdown: 0 };
-    const sorted = [...normalizedTrades].sort((a, b) => parseDateToTimestamp(a.tradeDate) - parseDateToTimestamp(b.tradeDate));
+    const sorted = [...normalizedTrades].sort((a, b) => getTradeFullTimestamp(a) - getTradeFullTimestamp(b));
     
     let cumR = 0;
     let peakR = 0;
@@ -738,7 +734,7 @@ export function MatrixView({ collections, trades, onOpenInspector }: MatrixViewP
         </div>
       </div>
 
-      {/* 1. BEHAVIORAL EXECUTION AUDIT (PERFECTLY BALANCED 4 CARDS WITH HORIZONTAL SPLIT) */}
+      {/* 1. BEHAVIORAL EXECUTION AUDIT */}
       <div className="p-4 sm:p-6 rounded-2xl bg-[#090A10] border border-white/[0.06] space-y-4">
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 pb-3 border-b border-white/[0.06]">
           <div className="flex items-center gap-2">
@@ -764,7 +760,7 @@ export function MatrixView({ collections, trades, onOpenInspector }: MatrixViewP
           </div>
         </div>
 
-        {/* 4 BALANCED BEHAVIORAL CARDS (MATCHING HEIGHT) */}
+        {/* 4 BALANCED BEHAVIORAL CARDS */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
           
           {/* CARD 1: RULES FOLLOWED */}
@@ -795,7 +791,7 @@ export function MatrixView({ collections, trades, onOpenInspector }: MatrixViewP
             </div>
           </div>
 
-          {/* CARD 2: PURPLE CONTAINER (HORIZONTAL SPLIT BESIDE RETURN TO MATCH HEIGHT) */}
+          {/* CARD 2: PURPLE CONTAINER */}
           <div className="p-4 rounded-xl border border-purple-500/30 bg-purple-500/10 flex flex-col justify-between space-y-3">
             <div className="flex items-start justify-between">
               <div className="space-y-0.5">
@@ -810,7 +806,6 @@ export function MatrixView({ collections, trades, onOpenInspector }: MatrixViewP
               </span>
             </div>
 
-            {/* HORIZONTAL SPACE: RETURN ON LEFT + MINI SPLIT ON RIGHT */}
             <div className="flex items-center justify-between gap-2">
               <div>
                 <span className="text-[10px] font-mono text-zinc-400 block">Realized Return</span>
@@ -819,7 +814,6 @@ export function MatrixView({ collections, trades, onOpenInspector }: MatrixViewP
                 </div>
               </div>
 
-              {/* Compact horizontal breakdown pill */}
               <div className="p-1.5 rounded-lg bg-black/45 border border-purple-500/25 font-mono text-[9.5px] space-y-0.5 text-right shrink-0">
                 <div className="text-purple-300 flex items-center justify-end gap-1">
                   <span className="h-1.5 w-1.5 rounded-full bg-purple-400" />
@@ -840,7 +834,7 @@ export function MatrixView({ collections, trades, onOpenInspector }: MatrixViewP
             </div>
           </div>
 
-          {/* CARD 3: NO CONFIRMATION (IMPULSE) */}
+          {/* CARD 3: NO CONFIRMATION */}
           <div className="p-4 rounded-xl border border-amber-500/30 bg-amber-500/10 flex flex-col justify-between space-y-3">
             <div className="flex items-start justify-between">
               <div className="space-y-0.5">
@@ -928,7 +922,7 @@ export function MatrixView({ collections, trades, onOpenInspector }: MatrixViewP
         </div>
       </div>
 
-      {/* 2. CONSOLIDATED SETUP PROBABILITY, EXCURSION & EXIT EFFICIENCY MATRIX */}
+      {/* 2. CONSOLIDATED SETUP PROBABILITY */}
       <div className="w-full p-4 sm:p-6 rounded-2xl bg-[#090A10] border border-white/[0.06] space-y-4">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-3 border-b border-white/[0.06] gap-2">
           <div className="flex items-center gap-2.5">
@@ -1285,7 +1279,7 @@ export function MatrixView({ collections, trades, onOpenInspector }: MatrixViewP
         </div>
       </div>
 
-      {/* 5. UNDERWATER DRAWDOWN & GLOBAL TIME EDGE */}
+      {/* 5. UNDERWATER DRAWDOWN */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6">
         <div className="lg:col-span-2 p-4 sm:p-5 rounded-2xl bg-[#090A10] border border-white/[0.06] flex flex-col justify-between">
           <div className="flex items-center justify-between mb-3 sm:mb-4">

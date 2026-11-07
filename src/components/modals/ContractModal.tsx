@@ -79,9 +79,15 @@ export function ContractModal({
     onClose();
   };
 
+  // Helper to calculate exact days between two dates
+  const calculateExactDays = (start: string, end: string) => {
+    const s = new Date(start).getTime();
+    const e = new Date(end).getTime();
+    return Math.max(1, Math.floor((e - s) / (1000 * 60 * 60 * 24)) + 1);
+  };
+
   return (
     <div className="fixed inset-0 z-50 bg-black/90 backdrop-blur-md flex items-center justify-center p-3 sm:p-4">
-      {/* FIXED CONTAINER HEIGHT (ELIMINATES ALL VERTICAL RESIZING AND JUMPING) */}
       <div className={`bg-[#08090E] border-2 rounded-3xl max-w-2xl w-full p-5 sm:p-6 h-[540px] max-h-[92vh] flex flex-col font-mono text-xs overflow-hidden transition-all ${
         pendingBreachTrade 
           ? 'border-rose-500/80 shadow-[0_0_60px_rgba(244,63,94,0.3)] animate-shake' 
@@ -90,7 +96,6 @@ export function ContractModal({
         
         {/* FROZEN TOP SECTION */}
         <div className="shrink-0 space-y-3 pb-3 border-b border-white/[0.08]">
-          {/* Header Bar */}
           <div className="flex items-start justify-between gap-3">
             <div className="flex items-center gap-3 min-w-0">
               <div className={`p-2.5 rounded-2xl border shrink-0 ${
@@ -167,10 +172,9 @@ export function ContractModal({
         {/* SCROLLABLE INNER VIEWPORT */}
         <div className="flex-1 overflow-y-auto pt-3.5 pr-1 space-y-4">
           
-          {/* TAB 1: HUD STATUS & BREACH CONFESSION */}
+          {/* TAB 1: HUD STATUS */}
           {activeTab === 'status' && (
             <div className="space-y-3.5 animate-in fade-in duration-150">
-              {/* Progress Bar */}
               <div className="p-3.5 rounded-2xl bg-white/[0.02] border border-white/[0.06] space-y-2">
                 <div className="flex items-center justify-between text-xs">
                   <span className="text-zinc-400 font-bold uppercase tracking-wider">
@@ -236,7 +240,7 @@ export function ContractModal({
                 </p>
               </div>
 
-              {/* AUTOMATED OR MANUAL BREACH CONFESSION FORM */}
+              {/* BREACH CONFESSION FORM */}
               <div className="pt-1">
                 {!isConfessingBreach ? (
                   <button
@@ -306,7 +310,7 @@ export function ContractModal({
 
               <div className="p-3 rounded-xl bg-white/[0.02] border border-white/[0.06] space-y-1">
                 <span className="font-bold text-cyan-300 block">Law 3: Mandatory Trailing Defense</span>
-                <p className="text-zinc-400">Once price meets your trailing threshold (e.g. LL break on Origin Retest, or HH break on B2B), trailing stop to Breakeven is mandatory. Never surrender a winning trade to a full loss.</p>
+                <p className="text-zinc-400">Once price meets your structural trailing threshold, moving your stop is mandatory. Never surrender a winning trade to a full loss.</p>
               </div>
 
               <div className="p-3 rounded-xl bg-white/[0.02] border border-white/[0.06] space-y-1">
@@ -321,7 +325,7 @@ export function ContractModal({
             </div>
           )}
 
-          {/* TAB 3: THE GRAVEYARD (ATTEMPT #1: 26 SEP ➔ 03 NOV, 39 DAYS) */}
+          {/* TAB 3: THE GRAVEYARD (ACCURATE: 26 OCT ➔ 03 NOV, DAY 9) */}
           {activeTab === 'graveyard' && (
             <div className="space-y-3 animate-in fade-in duration-150">
               <div className="flex items-center gap-2 text-zinc-400 text-xs pb-0.5">
@@ -329,31 +333,35 @@ export function ContractModal({
                 <span>Permanent record of past attempts. Truth is the only cure.</span>
               </div>
 
-              {contract.history.map(item => (
-                <div 
-                  key={item.attemptNumber}
-                  className="p-3.5 rounded-2xl bg-rose-950/20 border border-rose-500/30 space-y-1.5 font-mono"
-                >
-                  <div className="flex items-center justify-between text-xs flex-wrap gap-2">
-                    <span className="font-black text-rose-300 text-sm">
-                      ATTEMPT #{item.attemptNumber} • FAILED ON DAY {item.failedDay || 39}
-                    </span>
-                    <span className="text-[10px] text-zinc-400 bg-black/40 px-2 py-0.5 rounded border border-white/5">
-                      {item.startDate} ➔ {item.endDate}
-                    </span>
-                  </div>
+              {contract.history.map(item => {
+                const calculatedDays = calculateExactDays(item.startDate, item.endDate);
 
-                  <div className="text-[11px] text-zinc-300 leading-relaxed pt-0.5">
-                    <strong className="text-rose-400">Cause: </strong>{item.failureReason}
-                  </div>
-
-                  {item.costNote && (
-                    <div className="text-[10px] text-zinc-500 pt-1 border-t border-rose-500/20">
-                      {item.costNote}
+                return (
+                  <div 
+                    key={item.attemptNumber}
+                    className="p-4 rounded-2xl bg-rose-950/20 border border-rose-500/30 space-y-2 font-mono"
+                  >
+                    <div className="flex items-center justify-between text-xs flex-wrap gap-2">
+                      <span className="font-black text-rose-300 text-sm">
+                        ATTEMPT #{item.attemptNumber} • FAILED ON DAY {item.failedDay || calculatedDays}
+                      </span>
+                      <span className="text-[10px] text-zinc-400 bg-black/40 px-2.5 py-0.5 rounded-lg border border-white/5 font-bold">
+                        {item.startDate} ➔ {item.endDate} ({calculatedDays} Days)
+                      </span>
                     </div>
-                  )}
-                </div>
-              ))}
+
+                    <div className="text-[11px] text-zinc-300 leading-relaxed pt-0.5">
+                      <strong className="text-rose-400">Cause: </strong>{item.failureReason}
+                    </div>
+
+                    {item.costNote && (
+                      <div className="text-[10px] text-zinc-500 pt-1.5 border-t border-rose-500/20">
+                        {item.costNote}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
             </div>
           )}
 

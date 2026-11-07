@@ -5,7 +5,6 @@ export function resolveDirectImageUrl(rawUrl?: string): string {
   if (!rawUrl) return '';
   const clean = rawUrl.trim();
 
-  // Match TradingView snapshot IDs
   const tvMatch = clean.match(/tradingview\.com\/x\/([a-zA-Z0-9]+)/i);
   if (tvMatch && tvMatch[1]) {
     const id = tvMatch[1];
@@ -28,7 +27,6 @@ export function cleanSecurityName(rawName: string): string {
     .trim()
     .toUpperCase();
 
-  // Standardize DLF variants
   if (
     raw === 'DLF' || 
     raw.startsWith('DLF') || 
@@ -38,7 +36,6 @@ export function cleanSecurityName(rawName: string): string {
     return 'DLF';
   }
 
-  // Standardize Tata Motors / TATA variants into TATAMOTORS
   if (
     raw.includes('TATA MOTOR') || 
     raw.includes('TATAMOTOR') || 
@@ -48,7 +45,6 @@ export function cleanSecurityName(rawName: string): string {
     return 'TATAMOTORS';
   }
 
-  // Standardize SBI / State Bank
   if (raw.includes('STATE BANK') || raw.includes('SBI') || raw === 'SBIN') {
     return 'SBIN';
   }
@@ -68,12 +64,10 @@ export function cleanSecurityName(rawName: string): string {
     return 'HINDALCO';
   }
 
-  // Remove whitespace and special characters
   const cleanToken = raw.replace(/\s+/g, '').replace(/[^A-Z0-9&_-]/gi, '');
   return cleanToken || raw;
 }
 
-// Strips "1 - ", "2 - ", "3 - "
 export function displaySetupName(name?: string): string {
   if (!name) return 'General Setup';
   return name
@@ -83,7 +77,6 @@ export function displaySetupName(name?: string): string {
     .trim();
 }
 
-// Converts 24h military timestamps ("14:18:58") into 12h AM/PM ("02:18 PM")
 export function convertTo12Hour(timeStr: string): string {
   if (!timeStr) return '';
   const clean = timeStr.trim();
@@ -104,7 +97,6 @@ export function convertTo12Hour(timeStr: string): string {
   return clean;
 }
 
-// Converts ranged 24h strings ("14:18:58 - 14:40:30") into ("02:18 PM - 02:40 PM")
 export function formatTo12HourRange(rangeStr?: string): string {
   if (!rangeStr) return '';
   if (rangeStr.includes('-')) {
@@ -112,6 +104,46 @@ export function formatTo12HourRange(rangeStr?: string): string {
     return `${convertTo12Hour(start)} - ${convertTo12Hour(end)}`;
   }
   return convertTo12Hour(rangeStr);
+}
+
+export function parseDateToTimestamp(dateStr: string): number {
+  if (!dateStr) return 0;
+  if (dateStr.includes('/')) {
+    const parts = dateStr.split('/');
+    if (parts.length === 3) {
+      const [day, month, year] = parts;
+      return new Date(Number(year), Number(month) - 1, Number(day)).getTime();
+    }
+  }
+  const t = new Date(dateStr).getTime();
+  return isNaN(t) ? 0 : t;
+}
+
+export function extractEntryMinuteOfDay(rawTime?: string): number {
+  if (!rawTime || typeof rawTime !== 'string' || rawTime.trim() === '') return -1;
+  const entryPart = rawTime.includes('-') ? rawTime.split('-')[0].trim() : rawTime.trim();
+
+  const match = entryPart.match(/(\d{1,2})\s*:\s*(\d{2})(?:\s*:\s*\d{2})?\s*(AM|PM)?/i);
+  if (!match) return -1;
+
+  let hours = parseInt(match[1], 10);
+  const minutes = parseInt(match[2], 10);
+  const ampm = match[3] ? match[3].toUpperCase() : null;
+
+  if (ampm === 'PM' && hours < 12) {
+    hours += 12;
+  } else if (ampm === 'AM' && hours === 12) {
+    hours = 0;
+  }
+
+  return hours * 60 + minutes;
+}
+
+// Combines Date and Execution Time for exact millisecond sorting
+export function getTradeFullTimestamp(t: { tradeDate: string; tradeTime?: string }): number {
+  const dateBase = parseDateToTimestamp(t.tradeDate) || 0;
+  const minutes = extractEntryMinuteOfDay(t.tradeTime);
+  return dateBase + (minutes > 0 ? minutes * 60 * 1000 : 0);
 }
 
 function parseTimeToMinutes(timeStr: string): number {
@@ -290,17 +322,4 @@ export function parseKotakNeoCsv(
   });
 
   return matchedTrades;
-}
-
-export function parseDateToTimestamp(dateStr: string): number {
-  if (!dateStr) return 0;
-  if (dateStr.includes('/')) {
-    const parts = dateStr.split('/');
-    if (parts.length === 3) {
-      const [day, month, year] = parts;
-      return new Date(Number(year), Number(month) - 1, Number(day)).getTime();
-    }
-  }
-  const t = new Date(dateStr).getTime();
-  return isNaN(t) ? 0 : t;
 }

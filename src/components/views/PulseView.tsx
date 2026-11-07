@@ -2,7 +2,7 @@
 
 import React, { useMemo, useState, useRef, useEffect } from 'react';
 import { Trade } from '@/types/trade';
-import { parseDateToTimestamp, displaySetupName } from '@/lib/parser';
+import { parseDateToTimestamp, displaySetupName, getTradeFullTimestamp, extractEntryMinuteOfDay } from '@/lib/parser';
 import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip } from 'recharts';
 import { 
   Activity, 
@@ -41,26 +41,6 @@ const TIME_WINDOWS = [
   { label: '02:00 - 03:30 PM', value: '02:00 - 03:30 PM', startMin: 14 * 60, endMin: 15 * 60 + 30 },
 ];
 
-function extractEntryMinuteOfDay(rawTime?: string): number {
-  if (!rawTime || typeof rawTime !== 'string' || rawTime.trim() === '') return -1;
-  const entryPart = rawTime.includes('-') ? rawTime.split('-')[0].trim() : rawTime.trim();
-
-  const match = entryPart.match(/(\d{1,2})\s*:\s*(\d{2})(?:\s*:\s*\d{2})?\s*(AM|PM)?/i);
-  if (!match) return -1;
-
-  let hours = parseInt(match[1], 10);
-  const minutes = parseInt(match[2], 10);
-  const ampm = match[3] ? match[3].toUpperCase() : null;
-
-  if (ampm === 'PM' && hours < 12) {
-    hours += 12;
-  } else if (ampm === 'AM' && hours === 12) {
-    hours = 0;
-  }
-
-  return hours * 60 + minutes;
-}
-
 export function PulseView({
   trades,
   stats: globalStats,
@@ -68,7 +48,6 @@ export function PulseView({
   onOpenInspector,
   onOpenDebrief,
 }: PulseViewProps) {
-  // Defaults to 'all' (All Executions)
   const [filterMode, setFilterMode] = useState<'rules-only' | 'all'>('all');
 
   const latestTradeDate = useMemo(() => {
@@ -182,7 +161,9 @@ export function PulseView({
     const shorts = list.filter(t => t.direction === 'SHORT').length;
 
     let runR = 0, peak = 0, maxDD = 0;
-    list.forEach(t => {
+    // Chronological order for real maxDD
+    const sortedChronological = [...list].sort((a, b) => getTradeFullTimestamp(a) - getTradeFullTimestamp(b));
+    sortedChronological.forEach(t => {
       runR += t.rMultiple;
       if (runR > peak) peak = runR;
       const dd = peak - runR;
@@ -212,8 +193,9 @@ export function PulseView({
     };
   }, [dashboardTrades]);
 
+  // Chronological Growth Curve using Date + Time
   const dynamicGrowthCurve = useMemo(() => {
-    const chronological = [...dashboardTrades].sort((a, b) => parseDateToTimestamp(a.tradeDate) - parseDateToTimestamp(b.tradeDate));
+    const chronological = [...dashboardTrades].sort((a, b) => getTradeFullTimestamp(a) - getTradeFullTimestamp(b));
     let cumR = 0;
     return chronological.map((t, idx) => {
       cumR += t.rMultiple;
@@ -221,6 +203,7 @@ export function PulseView({
     });
   }, [dashboardTrades]);
 
+  // NEWEST FIRST: Uses Date + Time so afternoon trade is strictly ABOVE morning trade!
   const sortedRecentTrades = useMemo(() => {
     const targetSlot = TIME_WINDOWS.find(w => w.value === listTimeSlot);
 
@@ -232,9 +215,7 @@ export function PulseView({
     });
 
     return [...filteredList].sort((a, b) => {
-      const timeA = parseDateToTimestamp(a.tradeDate);
-      const timeB = parseDateToTimestamp(b.tradeDate);
-      return timeB - timeA;
+      return getTradeFullTimestamp(b) - getTradeFullTimestamp(a);
     });
   }, [dashboardTrades, listTimeSlot]);
 
@@ -449,7 +430,7 @@ export function PulseView({
         </div>
       </div>
 
-      {/* Logged Trade Entries with Zone Height Badge */}
+      {/* Logged Trade Entries with Date & Time Chronological Sorting */}
       <div className="p-4 sm:p-6 rounded-2xl bg-[#090A10] border border-white/[0.06] space-y-3">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-2 border-b border-white/[0.06] gap-2.5">
           <div>
@@ -490,30 +471,28 @@ export function PulseView({
             </div>
 
             {isTimeDropdownOpen && (
-              <div className="absolute right-0 top-full mt-1.5 z-50 w-56 bg-[#0B0D14]/95 border border-white/15 rounded-2xl shadow-[0_16px_40px_rgba(0,0,0,0.85)] backdrop-blur-2xl py-1.5 font-mono text-xs divide-y divide-white/[0.05] animate-in fade-in zoom-in-95 duration-100">
-                <div className="p-1 space-y-0.5">
-                  {TIME_WINDOWS.map(w => {
-                    const isSelected = listTimeSlot === w.value;
-                    return (
-                      <button
-                        key={w.value}
-                        type="button"
-                        onClick={() => {
-                          setListTimeSlot(w.value);
-                          setIsTimeDropdownOpen(false);
-                        }}
-                        className={`w-full px-3 py-2 rounded-xl flex items-center justify-between text-left transition-all ${
-                          isSelected
-                            ? 'bg-cyan-500/15 text-cyan-300 font-bold border border-cyan-500/30'
-                            : 'text-zinc-300 hover:text-white hover:bg-white/[0.06]'
-                        }`}
-                      >
-                        <span>{w.label}</span>
-                        {isSelected && <Check className="w-3.5 h-3.5 text-cyan-400 shrink-0" />}
-                      </button>
-                    );
-                  })}
-                </div>
+              <div className="absolute right-0 top-full mt-1.5 z-50 w-56 bg-[#0B0D14]/95 border border-white/15 rounded-2xl shadow-[0_16px_40px_rgba(0,0,0,0.85)] backdrop-blur-2xl p-2.5 font-mono text-xs space-y-0.5 animate-in fade-in zoom-in-95 duration-100">
+                {TIME_WINDOWS.map(w => {
+                  const isSelected = listTimeSlot === w.value;
+                  return (
+                    <button
+                      key={w.value}
+                      type="button"
+                      onClick={() => {
+                        setListTimeSlot(w.value);
+                        setIsTimeDropdownOpen(false);
+                      }}
+                      className={`w-full px-3 py-2 rounded-xl flex items-center justify-between text-left transition-all ${
+                        isSelected
+                          ? 'bg-cyan-500/15 text-cyan-300 font-bold border border-cyan-500/30'
+                          : 'text-zinc-300 hover:text-white hover:bg-white/[0.06]'
+                      }`}
+                    >
+                      <span>{w.label}</span>
+                      {isSelected && <Check className="w-3.5 h-3.5 text-cyan-400 shrink-0" />}
+                    </button>
+                  );
+                })}
               </div>
             )}
           </div>
@@ -549,7 +528,6 @@ export function PulseView({
                         <span className="text-sm font-bold text-white">{t.symbol}</span>
                         <span className="text-[11px] text-zinc-500 font-mono">({t.tradeDate})</span>
 
-                        {/* Mainzone Height Badge */}
                         {t.mainzoneHeightPct !== undefined && t.mainzoneHeightPct > 0 && (
                           <span className={`flex items-center gap-1 px-1.5 py-0.2 rounded text-[9px] font-mono font-bold border ${
                             t.mainzoneHeightPct > 0.33 
